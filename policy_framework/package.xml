@@ -15,6 +15,8 @@
 
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
+  <depend>onnxruntime_vendor</depend>
+  <depend>pluginlib</depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
 

@@ -1,0 +1,5 @@
+<library path="policy_framework">
+  <class type="policy_framework::OnnxInference" base_class_type="policy_framework::Inference">
+    <description>Runs a float32 ONNX model with ONNX Runtime on CPU.</description>
+  </class>
+</library>
