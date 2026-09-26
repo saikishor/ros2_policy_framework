@@ -14,4 +14,7 @@
   <class type="policy_framework::OdometrySource" base_class_type="policy_framework::InputSource">
     <description>nav_msgs/Odometry topic to pose and twist entries.</description>
   </class>
+  <class type="policy_framework::MultiDofCommandExecutor" base_class_type="policy_framework::Executor">
+    <description>Publishes the commands as control_msgs/MultiDOFCommand.</description>
+  </class>
 </library>
