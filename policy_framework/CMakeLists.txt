@@ -11,6 +11,7 @@ ament_auto_find_build_dependencies()
 ament_auto_add_library(${PROJECT_NAME} SHARED
   src/policy_pipeline.cpp
   src/onnx_inference.cpp
+  src/topic_sources.cpp
 )
 target_link_libraries(${PROJECT_NAME} onnxruntime::onnxruntime)
 # All plugin base classes live in this package, so every plugin type is exported against it.
@@ -27,6 +28,8 @@ if(BUILD_TESTING)
   target_compile_definitions(test_onnx_inference PRIVATE
     TEST_MODELS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/models")
   ament_add_gtest_test(test_onnx_inference)
+  ament_add_gtest(test_topic_sources test/test_topic_sources.cpp)
+  target_link_libraries(test_topic_sources ${PROJECT_NAME})
 endif()
 
 ament_auto_package()

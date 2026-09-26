@@ -2,4 +2,16 @@
   <class type="policy_framework::OnnxInference" base_class_type="policy_framework::Inference">
     <description>Runs a float32 ONNX model with ONNX Runtime on CPU.</description>
   </class>
+  <class type="policy_framework::JointStateSource" base_class_type="policy_framework::InputSource">
+    <description>sensor_msgs/JointState topic to joint position/velocity/effort entries.</description>
+  </class>
+  <class type="policy_framework::ImuSource" base_class_type="policy_framework::InputSource">
+    <description>sensor_msgs/Imu topic to IMU orientation/angular_velocity/linear_acceleration entries.</description>
+  </class>
+  <class type="policy_framework::TwistSource" base_class_type="policy_framework::InputSource">
+    <description>geometry_msgs/Twist velocity command, zero when absent or stale.</description>
+  </class>
+  <class type="policy_framework::OdometrySource" base_class_type="policy_framework::InputSource">
+    <description>nav_msgs/Odometry topic to pose and twist entries.</description>
+  </class>
 </library>
