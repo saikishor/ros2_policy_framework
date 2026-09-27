@@ -17,4 +17,10 @@
   <class type="policy_framework::MultiDofCommandExecutor" base_class_type="policy_framework::Executor">
     <description>Publishes the commands as control_msgs/MultiDOFCommand.</description>
   </class>
+  <class type="policy_framework::ConcatPreprocessor" base_class_type="policy_framework::Preprocessor">
+    <description>Concatenates state entries into one model input.</description>
+  </class>
+  <class type="policy_framework::SplitPostprocessor" base_class_type="policy_framework::Postprocessor">
+    <description>Writes each value of one model output to a command entry.</description>
+  </class>
 </library>

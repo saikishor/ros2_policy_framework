@@ -1,0 +1,91 @@
+// Copyright 2026 PAL Robotics S.L.
+// SPDX-License-Identifier: Apache-2.0
+
+#include <gtest/gtest.h>
+
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "policy_framework/generic_stages.hpp"
+#include "rclcpp/rclcpp.hpp"
+
+using policy_framework::DataStore;
+using policy_framework::ModelInfo;
+using policy_framework::PluginContext;
+using policy_framework::TensorMap;
+
+namespace
+{
+
+PluginContext make_context(const std::vector<rclcpp::Parameter> & params)
+{
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  return {std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_generic", opts), "p"};
+}
+
+ModelInfo make_model()
+{
+  ModelInfo m;
+  m.inputs["obs"] = {{1, 3}, std::vector<float>(3, 0.0F)};
+  m.outputs["actions"] = {{1, 2}, std::vector<float>(2, 0.0F)};
+  return m;
+}
+
+}  // namespace
+
+TEST(ConcatPreprocessor, RegistersEntriesAndConcatenatesThem)
+{
+  const auto model = make_model();
+  DataStore state;
+  policy_framework::ConcatPreprocessor pre;
+  pre.configure(
+    make_context({{"p.input_tensor", "obs"},
+        {"p.input_entries", std::vector<std::string>{"a", "b", "c"}}}), model, state);
+  EXPECT_EQ(state.size(), 3u);
+
+  TensorMap in = model.inputs;
+  EXPECT_FALSE(pre.compute(state, model.outputs, in));  // waits for data
+  state.set(state.index("a"), 1.0, 0.0);
+  state.set(state.index("b"), 2.0, 0.0);
+  state.set(state.index("c"), 3.0, 0.0);
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_EQ(in["obs"].data, (std::vector<float>{1.0F, 2.0F, 3.0F}));
+}
+
+TEST(ConcatPreprocessor, RejectsSizeMismatch)
+{
+  DataStore state;
+  policy_framework::ConcatPreprocessor pre;
+  EXPECT_THROW(
+    pre.configure(
+      make_context({{"p.input_tensor", "obs"},
+          {"p.input_entries", std::vector<std::string>{"a"}}}), make_model(), state),
+    std::runtime_error);
+}
+
+TEST(SplitPostprocessor, WritesEachOutputValueToItsEntry)
+{
+  const auto model = make_model();
+  DataStore commands;
+  policy_framework::SplitPostprocessor post;
+  post.configure(
+    make_context({{"p.output_tensor", "actions"},
+        {"p.output_entries", std::vector<std::string>{"j1/position", "j2/position"}}}),
+    model, commands);
+  TensorMap out = model.outputs;
+  out["actions"].data = {0.5F, -0.5F};
+  ASSERT_TRUE(post.compute(out, commands));
+  EXPECT_DOUBLE_EQ(commands.get(commands.index("j1/position")), 0.5);
+  EXPECT_DOUBLE_EQ(commands.get(commands.index("j2/position")), -0.5);
+}
+
+int main(int argc, char ** argv)
+{
+  ::testing::InitGoogleTest(&argc, argv);
+  rclcpp::init(argc, argv);
+  const int ret = RUN_ALL_TESTS();
+  rclcpp::shutdown();
+  return ret;
+}
