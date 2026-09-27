@@ -62,6 +62,20 @@ struct PluginContext
 };
 
 /**
+ * @brief Declare (when not declared yet) and return the plugin parameter `<ctx.name>.<param>`.
+ *
+ * Several policies can share a plugin type, and the node and the controller both re-run
+ * configuration, hence the "declare once" semantics.
+ */
+template<typename T>
+T get_parameter(const PluginContext & ctx, const std::string & param, const T & default_value)
+{
+  const auto full = ctx.name + "." + param;
+  if (!ctx.node->has_parameter(full)) {ctx.node->declare_parameter<T>(full, default_value);}
+  return ctx.node->get_parameter(full).template get_value<T>();
+}
+
+/**
  * @brief Runs the model. The only framework-specific stage (ONNX, TensorRT, ...).
  */
 class Inference

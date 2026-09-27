@@ -14,9 +14,7 @@ namespace policy_framework
 void MultiDofCommandExecutor::configure(const PluginContext & ctx, const DataStore & commands)
 {
   auto get = [&](const std::string & param, const std::string & def) {
-      const auto full = ctx.name + "." + param;
-      if (!ctx.node->has_parameter(full)) {ctx.node->declare_parameter<std::string>(full, def);}
-      return ctx.node->get_parameter(full).as_string();
+      return get_parameter<std::string>(ctx, param, def);
     };
   const auto topic = get("topic", "~/" + ctx.name);
   const auto values_suffix = "/" + get("values_interface", "position");

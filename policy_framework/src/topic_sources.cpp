@@ -53,7 +53,7 @@ void FieldWriter::write(DataStore & store, const double * values, double stamp)
 
 void JointStateSource::configure_source(const PluginContext & ctx)
 {
-  joints_ = declare<std::vector<std::string>>(ctx, "joints", {});
+  joints_ = get_parameter<std::vector<std::string>>(ctx, "joints", {});
 }
 
 bool JointStateSource::provides(const std::string & name) const
@@ -99,7 +99,7 @@ void JointStateSource::read(DataStore & state, double now)
 void ImuSource::configure_source(const PluginContext & ctx)
 {
   fields_ = FieldWriter(
-    declare<std::string>(ctx, "sensor_name", ctx.name),
+    get_parameter<std::string>(ctx, "sensor_name", ctx.name),
     {"orientation.x", "orientation.y", "orientation.z", "orientation.w",
       "angular_velocity.x", "angular_velocity.y", "angular_velocity.z",
       "linear_acceleration.x", "linear_acceleration.y", "linear_acceleration.z"});
@@ -121,7 +121,7 @@ void ImuSource::read(DataStore & state, double now)
 
 void TwistSource::configure_source(const PluginContext & ctx)
 {
-  timeout_ = declare<double>(ctx, "timeout", 1.0);
+  timeout_ = get_parameter<double>(ctx, "timeout", 1.0);
   fields_ = FieldWriter(
     ctx.name, {"linear.x", "linear.y", "linear.z", "angular.x", "angular.y", "angular.z"});
 }

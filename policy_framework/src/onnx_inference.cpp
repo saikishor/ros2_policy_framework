@@ -72,15 +72,11 @@ std::string OnnxInference::resolve_model_path(const std::string & path)
 void OnnxInference::configure(const PluginContext & ctx)
 {
   logger_ = ctx.node->get_logger().get_child(ctx.name);
-  const auto & node = ctx.node;
-  const auto path_param = ctx.name + ".model_path";
-  const auto threads_param = ctx.name + ".num_threads";
-  if (!node->has_parameter(path_param)) {node->declare_parameter<std::string>(path_param, "");}
-  if (!node->has_parameter(threads_param)) {node->declare_parameter<int>(threads_param, 1);}
-  const auto model_path = resolve_model_path(node->get_parameter(path_param).as_string());
+  const auto model_path = resolve_model_path(get_parameter<std::string>(ctx, "model_path", ""));
+  const auto num_threads = get_parameter<int64_t>(ctx, "num_threads", 1);
 
   Ort::SessionOptions options;
-  options.SetIntraOpNumThreads(static_cast<int>(node->get_parameter(threads_param).as_int()));
+  options.SetIntraOpNumThreads(static_cast<int>(num_threads));
   options.SetInterOpNumThreads(1);
   session_ = std::make_unique<Ort::Session>(ort_env(), model_path.c_str(), options);
 

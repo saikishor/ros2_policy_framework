@@ -37,7 +37,7 @@ public:
   {
     name_ = ctx.name;
     node_ = ctx.node;
-    const auto topic = declare<std::string>(ctx, "topic", "~/" + ctx.name);
+    const auto topic = get_parameter<std::string>(ctx, "topic", "~/" + ctx.name);
     configure_source(ctx);
     sub_ = ctx.node->template create_subscription<MsgT>(
       topic, rclcpp::SystemDefaultsQoS(), [this](const std::shared_ptr<const MsgT> msg) {
@@ -51,15 +51,6 @@ protected:
     std::shared_ptr<const MsgT> msg;
     double receive_time = 0.0;  ///< Seconds, node clock.
   };
-
-  /// Declare (if needed) and get `<name>.<param>`.
-  template<typename T>
-  static T declare(const PluginContext & ctx, const std::string & param, const T & default_value)
-  {
-    const auto full = ctx.name + "." + param;
-    if (!ctx.node->has_parameter(full)) {ctx.node->declare_parameter<T>(full, default_value);}
-    return ctx.node->get_parameter(full).template get_value<T>();
-  }
 
   /// Hook for derived classes to read their own parameters.
   virtual void configure_source(const PluginContext &) {}
