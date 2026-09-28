@@ -1,26 +1,26 @@
 <library path="policy_framework">
-  <class type="policy_framework::OnnxInference" base_class_type="policy_framework::Inference">
+  <class name="policy_framework/OnnxInference" type="policy_framework::OnnxInference" base_class_type="policy_framework::Inference">
     <description>Runs a float32 ONNX model with ONNX Runtime on CPU.</description>
   </class>
-  <class type="policy_framework::JointStateSource" base_class_type="policy_framework::InputSource">
+  <class name="policy_framework/JointStateSource" type="policy_framework::JointStateSource" base_class_type="policy_framework::InputSource">
     <description>sensor_msgs/JointState topic to joint position/velocity/effort entries.</description>
   </class>
-  <class type="policy_framework::ImuSource" base_class_type="policy_framework::InputSource">
+  <class name="policy_framework/ImuSource" type="policy_framework::ImuSource" base_class_type="policy_framework::InputSource">
     <description>sensor_msgs/Imu topic to IMU orientation/angular_velocity/linear_acceleration entries.</description>
   </class>
-  <class type="policy_framework::TwistSource" base_class_type="policy_framework::InputSource">
+  <class name="policy_framework/TwistSource" type="policy_framework::TwistSource" base_class_type="policy_framework::InputSource">
     <description>geometry_msgs/Twist velocity command, zero when absent or stale.</description>
   </class>
-  <class type="policy_framework::OdometrySource" base_class_type="policy_framework::InputSource">
+  <class name="policy_framework/OdometrySource" type="policy_framework::OdometrySource" base_class_type="policy_framework::InputSource">
     <description>nav_msgs/Odometry topic to pose and twist entries.</description>
   </class>
-  <class type="policy_framework::MultiDofCommandExecutor" base_class_type="policy_framework::Executor">
+  <class name="policy_framework/MultiDofCommandExecutor" type="policy_framework::MultiDofCommandExecutor" base_class_type="policy_framework::Executor">
     <description>Publishes the commands as control_msgs/MultiDOFCommand.</description>
   </class>
-  <class type="policy_framework::ConcatPreprocessor" base_class_type="policy_framework::Preprocessor">
+  <class name="policy_framework/ConcatPreprocessor" type="policy_framework::ConcatPreprocessor" base_class_type="policy_framework::Preprocessor">
     <description>Concatenates state entries into one model input.</description>
   </class>
-  <class type="policy_framework::SplitPostprocessor" base_class_type="policy_framework::Postprocessor">
+  <class name="policy_framework/SplitPostprocessor" type="policy_framework::SplitPostprocessor" base_class_type="policy_framework::Postprocessor">
     <description>Writes each value of one model output to a command entry.</description>
   </class>
 </library>

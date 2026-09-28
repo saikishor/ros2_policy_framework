@@ -8,14 +8,21 @@ endif()
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 
+rosidl_generate_interfaces(${PROJECT_NAME}_interfaces
+  srv/SwitchPolicy.srv
+  LIBRARY_NAME ${PROJECT_NAME}
+)
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces rosidl_typesupport_cpp)
+
 ament_auto_add_library(${PROJECT_NAME} SHARED
   src/policy_pipeline.cpp
   src/onnx_inference.cpp
   src/topic_sources.cpp
   src/multi_dof_command_executor.cpp
   src/generic_stages.cpp
+  src/policy_runner.cpp
 )
-target_link_libraries(${PROJECT_NAME} onnxruntime::onnxruntime)
+target_link_libraries(${PROJECT_NAME} onnxruntime::onnxruntime "${cpp_typesupport_target}")
 # All plugin base classes live in this package, so every plugin type is exported against it.
 pluginlib_export_plugin_description_file(${PROJECT_NAME} plugins.xml)
 
@@ -36,6 +43,11 @@ if(BUILD_TESTING)
   target_link_libraries(test_multi_dof_command_executor ${PROJECT_NAME})
   ament_add_gtest(test_generic_stages test/test_generic_stages.cpp)
   target_link_libraries(test_generic_stages ${PROJECT_NAME})
+  ament_add_gtest(test_policy_runner test/test_policy_runner.cpp)
+  target_link_libraries(test_policy_runner ${PROJECT_NAME})
+  target_compile_definitions(test_policy_runner PRIVATE
+    TEST_MODELS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/models")
 endif()
 
+ament_export_dependencies(rosidl_default_runtime)
 ament_auto_package()
