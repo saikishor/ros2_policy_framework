@@ -64,6 +64,13 @@ public:
   bool request_switch(const std::string & name, std::string & message);
 
   /**
+   * @brief Activate the default (first) policy, from scratch, at the next step(). Thread-safe.
+   *
+   * Bypasses the interruptible check; meant for (re)activation of the host, not for users.
+   */
+  void restart() {requested_.store(0);}
+
+  /**
    * @brief Run one step of the active policy (applying any pending switch first).
    * @param state Inputs, read by the preprocessor.
    * @param commands Outputs, written by the postprocessor.

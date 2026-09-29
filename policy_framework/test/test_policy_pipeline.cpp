@@ -187,3 +187,20 @@ TEST_F(PolicyPipelineTest, AddPolicyRejectsDuplicateNames)
   pipeline.add_policy(a.policy("a"));
   EXPECT_THROW(pipeline.add_policy(a.policy("a")), std::invalid_argument);
 }
+
+TEST_F(PolicyPipelineTest, RestartActivatesDefaultPolicyEvenWhenNotInterruptible)
+{
+  Fakes a(1.0F), jump(10.0F);
+  pipeline.add_policy(a.policy("a"));
+  pipeline.add_policy(jump.policy("jump", 0, false));
+  std::string msg;
+  ASSERT_TRUE(pipeline.request_switch("jump", msg));
+  pipeline.step(state, commands);
+  ASSERT_EQ(pipeline.active_policy(), "jump");
+
+  pipeline.restart();
+  pipeline.step(state, commands);
+  EXPECT_EQ(pipeline.active_policy(), "a");
+  EXPECT_EQ(a.pre->resets, 1);
+  EXPECT_DOUBLE_EQ(cmd(), 1.0);
+}
