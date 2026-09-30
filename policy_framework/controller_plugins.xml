@@ -1,0 +1,9 @@
+<library path="policy_framework">
+  <class name="policy_framework/PolicyController" type="policy_framework::PolicyController"
+    base_class_type="controller_interface::ControllerInterface">
+    <description>
+      Runs policy_framework policies inside ros2_control: inputs from state interfaces and/or
+      topics, commands to command interfaces and/or topics. Runs async with is_async: true.
+    </description>
+  </class>
+</library>

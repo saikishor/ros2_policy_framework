@@ -22,12 +22,14 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   src/generic_stages.cpp
   src/policy_runner.cpp
   src/policy_node.cpp
+  src/policy_controller.cpp
 )
 target_link_libraries(${PROJECT_NAME} onnxruntime::onnxruntime "${cpp_typesupport_target}")
 # All plugin base classes live in this package, so every plugin type is exported against it.
 ament_auto_add_executable(policy_node src/policy_node_main.cpp)
 
 pluginlib_export_plugin_description_file(${PROJECT_NAME} plugins.xml)
+pluginlib_export_plugin_description_file(controller_interface controller_plugins.xml)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -49,6 +51,10 @@ if(BUILD_TESTING)
   ament_add_gtest(test_policy_runner test/test_policy_runner.cpp)
   target_link_libraries(test_policy_runner ${PROJECT_NAME})
   target_compile_definitions(test_policy_runner PRIVATE
+    TEST_MODELS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/models")
+  ament_add_gtest(test_policy_controller test/test_policy_controller.cpp)
+  target_link_libraries(test_policy_controller ${PROJECT_NAME})
+  target_compile_definitions(test_policy_controller PRIVATE
     TEST_MODELS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/models")
   ament_add_gtest(test_policy_node test/test_policy_node.cpp)
   target_link_libraries(test_policy_node ${PROJECT_NAME})
