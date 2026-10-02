@@ -24,7 +24,7 @@ TEST(DataStore, FindReturnsEmptyForUnknownNames)
   store.add("a");
   EXPECT_TRUE(store.find("a").has_value());
   EXPECT_FALSE(store.find("b").has_value());
-  EXPECT_THROW(store.index("b"), std::out_of_range);
+  EXPECT_THROW((void)store.index("b"), std::out_of_range);
 }
 
 TEST(DataStore, ValuesStartUnreceivedAndTrackStamp)
