@@ -3,6 +3,8 @@
 
 #include "policy_framework/onnx_inference.hpp"
 
+#include <onnxruntime_cxx_api.h>
+
 #include <algorithm>
 #include <filesystem>
 #include <functional>
@@ -44,7 +46,51 @@ Tensor make_tensor(const Ort::TypeInfo & info, const std::string & name)
   return t;
 }
 
+/// Re-create @p values when the buffers of @p tensors (in @p names order) changed.
+void bind_tensors(
+  const std::vector<std::string> & names, const TensorMap & tensors, const ModelInfo & model,
+  const Ort::MemoryInfo & memory_info, std::vector<const float *> & bound,
+  std::vector<Ort::Value> & values)
+{
+  bool same = bound.size() == names.size();
+  for (size_t i = 0; same && i < names.size(); ++i) {
+    same = tensors.at(names[i]).data.data() == bound[i];
+  }
+  if (same) {return;}
+  // Only reached on the first run (or when the caller swaps buffers): allocates.
+  bound.clear();
+  values.clear();
+  for (const auto & name : names) {
+    const auto & t = tensors.at(name);
+    const auto & spec = model.inputs.count(name) ? model.inputs.at(name) : model.outputs.at(name);
+    if (t.data.size() != spec.data.size()) {
+      throw std::runtime_error("Tensor '" + name + "' has the wrong size");
+    }
+    // ORT never writes to input tensors; outputs are written in place (hence non-const data).
+    values.push_back(
+      Ort::Value::CreateTensor<float>(
+        memory_info, const_cast<float *>(t.data.data()), t.data.size(),
+        t.shape.data(), t.shape.size()));
+    bound.push_back(t.data.data());
+  }
+}
+
 }  // namespace
+
+struct OnnxInference::Impl
+{
+  std::unique_ptr<Ort::Session> session;
+  Ort::MemoryInfo memory_info{Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)};
+  std::vector<std::string> input_names, output_names;
+  std::vector<const char *> input_cnames, output_cnames;
+  std::vector<const float *> bound_inputs, bound_outputs;
+  std::vector<Ort::Value> input_values, output_values;
+};
+
+OnnxInference::OnnxInference()
+: impl_(std::make_unique<Impl>()) {}
+
+OnnxInference::~OnnxInference() = default;
 
 std::string OnnxInference::resolve_model_path(const std::string & path)
 {
@@ -78,34 +124,36 @@ void OnnxInference::configure(const PluginContext & ctx)
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(static_cast<int>(num_threads));
   options.SetInterOpNumThreads(1);
-  session_ = std::make_unique<Ort::Session>(ort_env(), model_path.c_str(), options);
+  impl_ = std::make_unique<Impl>();
+  auto & s = *impl_;
+  s.session = std::make_unique<Ort::Session>(ort_env(), model_path.c_str(), options);
 
   model_ = ModelInfo{};
   Ort::AllocatorWithDefaultOptions allocator;
-  auto metadata = session_->GetModelMetadata();
+  auto metadata = s.session->GetModelMetadata();
   for (const auto & key : metadata.GetCustomMetadataMapKeysAllocated(allocator)) {
     auto value = metadata.LookupCustomMetadataMapAllocated(key.get(), allocator);
     model_.metadata[key.get()] = value ? value.get() : "";
   }
 
-  input_names_.clear();
-  output_names_.clear();
-  for (size_t i = 0; i < session_->GetInputCount(); ++i) {
-    input_names_.push_back(session_->GetInputNameAllocated(i, allocator).get());
-    model_.inputs[input_names_.back()] =
-      make_tensor(session_->GetInputTypeInfo(i), input_names_.back());
+  s.input_names.clear();
+  s.output_names.clear();
+  for (size_t i = 0; i < s.session->GetInputCount(); ++i) {
+    s.input_names.push_back(s.session->GetInputNameAllocated(i, allocator).get());
+    model_.inputs[s.input_names.back()] =
+      make_tensor(s.session->GetInputTypeInfo(i), s.input_names.back());
   }
-  for (size_t i = 0; i < session_->GetOutputCount(); ++i) {
-    output_names_.push_back(session_->GetOutputNameAllocated(i, allocator).get());
-    model_.outputs[output_names_.back()] =
-      make_tensor(session_->GetOutputTypeInfo(i), output_names_.back());
+  for (size_t i = 0; i < s.session->GetOutputCount(); ++i) {
+    s.output_names.push_back(s.session->GetOutputNameAllocated(i, allocator).get());
+    model_.outputs[s.output_names.back()] =
+      make_tensor(s.session->GetOutputTypeInfo(i), s.output_names.back());
   }
-  input_cnames_.clear();
-  output_cnames_.clear();
-  for (const auto & n : input_names_) {input_cnames_.push_back(n.c_str());}
-  for (const auto & n : output_names_) {output_cnames_.push_back(n.c_str());}
-  bound_inputs_.clear();
-  bound_outputs_.clear();
+  s.input_cnames.clear();
+  s.output_cnames.clear();
+  for (const auto & n : s.input_names) {s.input_cnames.push_back(n.c_str());}
+  for (const auto & n : s.output_names) {s.output_cnames.push_back(n.c_str());}
+  s.bound_inputs.clear();
+  s.bound_outputs.clear();
 
   RCLCPP_INFO(logger_, "Loaded ONNX model %s", model_path.c_str());
   for (const auto & [name, t] : model_.inputs) {
@@ -116,42 +164,16 @@ void OnnxInference::configure(const PluginContext & ctx)
   }
 }
 
-void OnnxInference::bind(
-  const std::vector<std::string> & names, const TensorMap & tensors,
-  std::vector<const float *> & bound, std::vector<Ort::Value> & values)
-{
-  bool same = bound.size() == names.size();
-  for (size_t i = 0; same && i < names.size(); ++i) {
-    same = tensors.at(names[i]).data.data() == bound[i];
-  }
-  if (same) {return;}
-  // Only reached on the first run (or when the caller swaps buffers): allocates.
-  bound.clear();
-  values.clear();
-  for (const auto & name : names) {
-    const auto & t = tensors.at(name);
-    const auto & spec = model_.inputs.count(name) ? model_.inputs.at(name) :
-      model_.outputs.at(name);
-    if (t.data.size() != spec.data.size()) {
-      throw std::runtime_error("Tensor '" + name + "' has the wrong size");
-    }
-    // ORT never writes to input tensors; outputs are written in place (hence non-const data).
-    values.push_back(
-      Ort::Value::CreateTensor<float>(
-        memory_info_, const_cast<float *>(t.data.data()), t.data.size(),
-        t.shape.data(), t.shape.size()));
-    bound.push_back(t.data.data());
-  }
-}
-
 bool OnnxInference::run(const TensorMap & inputs, TensorMap & outputs)
 {
+  auto & s = *impl_;
   try {
-    bind(input_names_, inputs, bound_inputs_, input_values_);
-    bind(output_names_, outputs, bound_outputs_, output_values_);
-    session_->Run(
-      Ort::RunOptions{nullptr}, input_cnames_.data(), input_values_.data(), input_values_.size(),
-      output_cnames_.data(), output_values_.data(), output_values_.size());
+    bind_tensors(s.input_names, inputs, model_, s.memory_info, s.bound_inputs, s.input_values);
+    bind_tensors(s.output_names, outputs, model_, s.memory_info, s.bound_outputs, s.output_values);
+    s.session->Run(
+      Ort::RunOptions{nullptr}, s.input_cnames.data(), s.input_values.data(),
+      s.input_values.size(), s.output_cnames.data(), s.output_values.data(),
+      s.output_values.size());
   } catch (const std::exception & e) {
     RCLCPP_ERROR_THROTTLE(
       logger_, steady_clock_, 1000, "ONNX inference failed: %s", e.what());

@@ -4,8 +4,6 @@
 #ifndef POLICY_FRAMEWORK__ONNX_INFERENCE_HPP_
 #define POLICY_FRAMEWORK__ONNX_INFERENCE_HPP_
 
-#include <onnxruntime_cxx_api.h>
-
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,6 +30,9 @@ namespace policy_framework
 class OnnxInference : public Inference
 {
 public:
+  OnnxInference();
+  ~OnnxInference() override;
+
   /// @throws std::runtime_error when the model cannot be found/loaded or is not float32.
   void configure(const PluginContext & ctx) override;
   const ModelInfo & model() const override {return model_;}
@@ -44,18 +45,10 @@ public:
   static std::string resolve_model_path(const std::string & path);
 
 private:
-  /// Re-create @p values when the buffers of @p tensors (in @p names order) changed.
-  void bind(
-    const std::vector<std::string> & names, const TensorMap & tensors,
-    std::vector<const float *> & bound, std::vector<Ort::Value> & values);
-
+  // ONNX Runtime stays out of this header, so that users of the class do not need it.
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
   ModelInfo model_;
-  std::unique_ptr<Ort::Session> session_;
-  Ort::MemoryInfo memory_info_{Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)};
-  std::vector<std::string> input_names_, output_names_;
-  std::vector<const char *> input_cnames_, output_cnames_;
-  std::vector<const float *> bound_inputs_, bound_outputs_;
-  std::vector<Ort::Value> input_values_, output_values_;
   rclcpp::Logger logger_{rclcpp::get_logger("OnnxInference")};
   rclcpp::Clock steady_clock_{RCL_STEADY_TIME};
 };
