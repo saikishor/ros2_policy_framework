@@ -3,4 +3,8 @@
     type="policy_framework_mjlab::MjlabPreprocessor" base_class_type="policy_framework::Preprocessor">
     <description>Builds mjlab observations (with history) from the ONNX metadata.</description>
   </class>
+  <class name="policy_framework_mjlab/MjlabPostprocessor"
+    type="policy_framework_mjlab::MjlabPostprocessor" base_class_type="policy_framework::Postprocessor">
+    <description>Scales mjlab actions into joint position references and sends policy gains.</description>
+  </class>
 </library>
