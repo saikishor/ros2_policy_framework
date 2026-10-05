@@ -1,0 +1,6 @@
+<library path="policy_framework_mjlab">
+  <class name="policy_framework_mjlab/MjlabPreprocessor"
+    type="policy_framework_mjlab::MjlabPreprocessor" base_class_type="policy_framework::Preprocessor">
+    <description>Builds mjlab observations (with history) from the ONNX metadata.</description>
+  </class>
+</library>
