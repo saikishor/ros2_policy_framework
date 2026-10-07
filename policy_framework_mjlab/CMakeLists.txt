@@ -20,6 +20,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_mjlab_preprocessor ${PROJECT_NAME})
   ament_add_gtest(test_mjlab_postprocessor test/test_mjlab_postprocessor.cpp)
   target_link_libraries(test_mjlab_postprocessor ${PROJECT_NAME})
+  ament_add_gtest(test_shipped_models test/test_shipped_models.cpp TIMEOUT 300)
+  target_link_libraries(test_shipped_models ${PROJECT_NAME})
 endif()
 
 ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR)

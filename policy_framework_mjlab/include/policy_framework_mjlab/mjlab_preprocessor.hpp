@@ -55,6 +55,9 @@ public:
     const policy_framework::DataStore & state, const policy_framework::TensorMap & last_outputs,
     policy_framework::TensorMap & inputs) override;
 
+  /// @return Number of past observations per term in the model input. Valid after configure().
+  size_t history_length() const {return history_length_;}
+
 private:
   enum class Kind
   {
