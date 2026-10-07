@@ -24,4 +24,4 @@ if(BUILD_TESTING)
   target_link_libraries(test_shipped_models ${PROJECT_NAME})
 endif()
 
-ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR)
+ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR INSTALL_TO_SHARE config launch)

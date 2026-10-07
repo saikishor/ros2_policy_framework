@@ -1,0 +1,16 @@
+# Standalone node: every input from topics, commands published to the pid_controller reference.
+policy_node:
+  ros__parameters:
+    update_rate: 50.0
+    sources: [joint_states, imu, cmd_vel]
+    joint_states:
+      type: policy_framework/JointStateSource
+      topic: /joint_states
+    imu:
+      type: policy_framework/ImuSource
+      topic: /torso_imu_sensor_broadcaster/imu
+      sensor_name: torso_imu_sensor
+    executors: [reference]
+    reference:
+      type: policy_framework/MultiDofCommandExecutor
+      topic: /rl_impedance_controller/reference
