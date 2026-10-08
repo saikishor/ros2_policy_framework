@@ -199,7 +199,14 @@ bool MjlabPreprocessor::compute(
   for (auto & t : terms_) {
     // Drop the oldest entry, append the current value as the newest.
     std::copy(t.history.begin() + t.dim, t.history.end(), t.history.begin());
-    current_value(t, state, last_outputs, t.history.data() + t.history.size() - t.dim);
+    float * newest = t.history.data() + t.history.size() - t.dim;
+    current_value(t, state, last_outputs, newest);
+    if (first_step_) {
+      // Like mjlab's CircularBuffer: the first push after reset back-fills the whole history.
+      for (size_t h = 0; h + 1 < history_length_; ++h) {
+        std::copy(newest, newest + t.dim, t.history.begin() + h * t.dim);
+      }
+    }
     std::copy(t.history.begin(), t.history.end(), obs.begin() + offset);
     offset += t.history.size();
   }

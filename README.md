@@ -156,8 +156,9 @@ Topic `topic` parameters default to `~/<name>`.
 | `command` (otherwise) | `<velocity_command_name>/linear.x`, `linear.y`, `angular.z` |
 
 The history length is `obs size / single observation size`. Each term is its own block of
-`history × dim` values, oldest first. A `time_step` model input receives the number of steps
-since activation.
+`history × dim` values, oldest first; as in mjlab's `CircularBuffer`, the first step after
+activation back-fills the whole history with the current value. A `time_step` model input
+receives the number of steps since activation.
 
 `MjlabPostprocessor` writes `<joint>/position = action_scale · action + default_joint_pos`
 (and `<joint>/velocity = 0`) for the metadata joints minus `excluded_joints`, and with

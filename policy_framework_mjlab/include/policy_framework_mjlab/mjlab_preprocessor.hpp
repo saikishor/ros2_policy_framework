@@ -36,7 +36,8 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  *
  * History: the history length is the input size divided by the single observation size. Each
  * term is laid out as its own block, oldest first and newest last (matching mjlab's
- * per-term history with flattening). After reset() the history is zero-filled.
+ * per-term history with flattening). As mjlab's CircularBuffer does, the first step after
+ * reset() back-fills the whole history with the current value.
  *
  * If the model has a `time_step` input it receives the number of steps since reset().
  *

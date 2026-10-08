@@ -122,14 +122,15 @@ TEST(MjlabPreprocessor, BuildsTermMajorHistoryOldestFirst)
   TensorMap out = model.outputs;
 
   ASSERT_TRUE(pre.compute(state, out, in));
-  // History is zero-filled after reset, the newest entry is last.
+  // Like mjlab's CircularBuffer, the first step after reset back-fills the whole history with
+  // the current value; the newest entry is last.
   const Floats first = {
-    0, 0, 0, 0.5F, 0, 0,          // base_ang_vel
-    0, 0, 1.0F, 1.0F,             // joint_pos relative to the defaults
-    0, 0, 0, 3.0F,                // joint_vel
+    0.5F, 0, 0, 0.5F, 0, 0,       // base_ang_vel
+    1.0F, 1.0F, 1.0F, 1.0F,       // joint_pos relative to the defaults
+    0, 3.0F, 0, 3.0F,             // joint_vel
     0, 0,                         // actions (none yet)
-    0, 0, 0, 0.4F, 0, 0,          // command: lin x, lin y, ang z
-    0, 0, 0, 0, 0, -1.0F,         // imu_projected_gravity
+    0.4F, 0, 0, 0.4F, 0, 0,       // command: lin x, lin y, ang z
+    0, 0, -1.0F, 0, 0, -1.0F,     // imu_projected_gravity
   };
   for (size_t i = 0; i < first.size(); ++i) {
     EXPECT_NEAR(in["obs"].data[i], first[i], 1e-6) << "index " << i;
@@ -143,9 +144,12 @@ TEST(MjlabPreprocessor, BuildsTermMajorHistoryOldestFirst)
   for (size_t i = 0; i < 4; ++i) {EXPECT_NEAR(in["obs"].data[6 + i], joint_pos[i], 1e-6);}
   for (size_t i = 0; i < 2; ++i) {EXPECT_NEAR(in["obs"].data[14 + i], actions[i], 1e-6);}
 
+  // After reset the history is back-filled again from the current value only.
   pre.reset();
   ASSERT_TRUE(pre.compute(state, model.outputs, in));
-  EXPECT_NEAR(in["obs"].data[6], 0.0F, 1e-6);  // history cleared again
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_NEAR(in["obs"].data[6 + i], (Floats{2.0F, 1.0F, 2.0F, 1.0F})[i], 1e-6);
+  }
 }
 
 TEST(MjlabPreprocessor, MotionCommandIsSeededFromRobotThenFedFromOutputs)
