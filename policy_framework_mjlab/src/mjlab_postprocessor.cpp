@@ -4,7 +4,11 @@
 #include "policy_framework_mjlab/mjlab_postprocessor.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -17,6 +21,80 @@ using policy_framework::get_parameter;
 
 namespace policy_framework_mjlab
 {
+
+class GainsSender
+{
+public:
+  GainsSender(const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & target)
+  : target_(target), logger_(node->get_logger()),
+    client_(std::make_shared<rclcpp::AsyncParametersClient>(node, target)),
+    timer_(node->create_wall_timer(std::chrono::milliseconds(500), [this]() {send();}))
+  {
+  }
+
+  /// Real-time safe: replaces any request not sent yet.
+  void request(const GainsRequest * r) {pending_.store(r);}
+
+  /// Drop @p r if still pending (its owner is going away).
+  void cancel(const GainsRequest * r) {pending_.compare_exchange_strong(r, nullptr);}
+
+  /// Shared sender for (@p node, @p target): one timer and one latest-wins slot per target.
+  static std::shared_ptr<GainsSender> get(
+    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & target)
+  {
+    static std::mutex mutex;
+    static std::map<std::string, std::weak_ptr<GainsSender>> senders;
+    const std::lock_guard<std::mutex> lock(mutex);
+    auto & weak = senders[std::string(node->get_node_base_interface()->get_fully_qualified_name()) + "|" + target];
+    auto sender = weak.lock();
+    if (!sender) {
+      sender = std::make_shared<GainsSender>(node, target);
+      weak = sender;
+    }
+    return sender;
+  }
+
+private:
+  void send()
+  {
+    if (!pending_.load()) {return;}
+    if (!client_->service_is_ready()) {
+      RCLCPP_WARN_THROTTLE(
+        logger_, steady_clock_, 5000, "Waiting for %s parameter services to set the gains",
+        target_.c_str());
+      return;
+    }
+    const auto * r = pending_.exchange(nullptr);
+    if (!r) {return;}
+    const auto gains = r->gains;
+    const auto policy = r->policy;
+    client_->set_parameters(
+      gains,
+      [this, gains, policy](
+        std::shared_future<std::vector<rcl_interfaces::msg::SetParametersResult>> f) {
+        const auto results = f.get();
+        size_t failed = 0;
+        for (size_t i = 0; i < results.size(); ++i) {
+          if (!results[i].successful) {
+            ++failed;
+            RCLCPP_ERROR(
+              logger_, "[%s] Failed to set %s: %s", policy.c_str(), gains[i].get_name().c_str(),
+              results[i].reason.c_str());
+          }
+        }
+        RCLCPP_INFO(
+          logger_, "[%s] Sent %zu gains to %s (%zu failed)", policy.c_str(), results.size(),
+          target_.c_str(), failed);
+      });
+  }
+
+  std::string target_;
+  rclcpp::Logger logger_;
+  rclcpp::Clock steady_clock_{RCL_STEADY_TIME};
+  rclcpp::AsyncParametersClient::SharedPtr client_;
+  rclcpp::TimerBase::SharedPtr timer_;
+  std::atomic<const GainsRequest *> pending_{nullptr};
+};
 
 std::vector<rclcpp::Parameter> make_gain_parameters(
   const std::vector<std::string> & joints, const std::vector<double> & stiffness,
@@ -48,7 +126,7 @@ void MjlabPostprocessor::configure(
   const auto excluded = get_parameter<std::vector<std::string>>(ctx, "excluded_joints", {});
   const auto pos_iface = get_parameter<std::string>(ctx, "position_interface", "position");
   const auto vel_iface = get_parameter<std::string>(ctx, "velocity_interface", "velocity");
-  gains_controller_ = get_parameter<std::string>(ctx, "gains_controller", "");
+  const auto gains_controller = get_parameter<std::string>(ctx, "gains_controller", "");
 
   std::vector<std::string> actuated;
   offset_.clear();
@@ -76,10 +154,10 @@ void MjlabPostprocessor::configure(
     if (!vel_iface.empty()) {velocity_idx_.push_back(commands.add(j + "/" + vel_iface));}
   }
 
-  gains_.clear();
-  gains_client_.reset();
-  gains_timer_.reset();
-  if (gains_controller_.empty()) {
+  if (gains_sender_) {gains_sender_->cancel(&gains_request_);}
+  gains_sender_.reset();
+  gains_request_ = GainsRequest{ctx.name, {}};
+  if (gains_controller.empty()) {
     return;
   }
   const auto stiffness = md.count("joint_stiffness") ?
@@ -87,48 +165,24 @@ void MjlabPostprocessor::configure(
   const auto damping = md.count("joint_damping") ?
     parse_doubles(md.at("joint_damping")) : std::vector<double>{};
   try {
-    gains_ = make_gain_parameters(actuated, stiffness, damping);
+    gains_request_.gains = make_gain_parameters(actuated, stiffness, damping);
   } catch (const std::invalid_argument & e) {
     // Same as the reference deployer: run the policy, leave the controller gains untouched.
-    RCLCPP_ERROR(logger_, "Not sending gains to %s: %s", gains_controller_.c_str(), e.what());
+    RCLCPP_ERROR(logger_, "Not sending gains to %s: %s", gains_controller.c_str(), e.what());
     return;
   }
-  gains_client_ = std::make_shared<rclcpp::AsyncParametersClient>(ctx.node, gains_controller_);
-  gains_timer_ = ctx.node->create_wall_timer(
-    std::chrono::milliseconds(500), [this]() {send_gains();});
+  gains_sender_ = GainsSender::get(ctx.node, gains_controller);
+}
+
+MjlabPostprocessor::~MjlabPostprocessor()
+{
+  // The sender may outlive this policy (shared with others): never leave it our request.
+  if (gains_sender_) {gains_sender_->cancel(&gains_request_);}
 }
 
 void MjlabPostprocessor::reset()
 {
-  gains_pending_.store(gains_client_ != nullptr);
-}
-
-void MjlabPostprocessor::send_gains()
-{
-  if (!gains_pending_.load()) {return;}
-  if (!gains_client_->service_is_ready()) {
-    RCLCPP_WARN_THROTTLE(
-      logger_, *rclcpp::Clock::make_shared(RCL_STEADY_TIME), 5000,
-      "Waiting for %s parameter services to set the gains", gains_controller_.c_str());
-    return;
-  }
-  gains_pending_.store(false);
-  gains_client_->set_parameters(
-    gains_, [this](std::shared_future<std::vector<rcl_interfaces::msg::SetParametersResult>> f) {
-      const auto results = f.get();
-      size_t failed = 0;
-      for (size_t i = 0; i < results.size(); ++i) {
-        if (!results[i].successful) {
-          ++failed;
-          RCLCPP_ERROR(
-            logger_, "Failed to set %s: %s", gains_[i].get_name().c_str(),
-            results[i].reason.c_str());
-        }
-      }
-      RCLCPP_INFO(
-        logger_, "Sent %zu gains to %s (%zu failed)", results.size(), gains_controller_.c_str(),
-        failed);
-    });
+  if (gains_sender_) {gains_sender_->request(&gains_request_);}
 }
 
 bool MjlabPostprocessor::compute(

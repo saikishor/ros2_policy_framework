@@ -120,6 +120,42 @@ TEST(MjlabPostprocessor, SendsPolicyGainsToTheControllerOnReset)
   EXPECT_DOUBLE_EQ(pid->get_parameter("gains.c.d").as_double(), 3.0);
 }
 
+TEST(MjlabPostprocessor, OnlyTheLatestActivatedPolicyGainsAreSent)
+{
+  auto pid = std::make_shared<rclcpp::Node>("fake_pid_latest");
+  for (const auto * n : {"gains.a.p", "gains.a.d", "gains.c.p", "gains.c.d"}) {
+    pid->declare_parameter<double>(n, 0.0);
+  }
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({
+    {"walk.excluded_joints", StringArray{"passive"}},
+    {"walk.gains_controller", "/fake_pid_latest"},
+    {"jump.excluded_joints", StringArray{"passive"}},
+    {"jump.gains_controller", "/fake_pid_latest"}});
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_latest_gains", opts);
+  auto jump_model = model();
+  jump_model.metadata["joint_stiffness"] = "99.0,99.0";
+  DataStore commands;
+  MjlabPostprocessor walk, jump;
+  walk.configure({node, "walk"}, model(), commands);
+  jump.configure({node, "jump"}, jump_model, commands);
+
+  // Two activations within one gains period: jump, then walk. walk was configured first, so
+  // its timer fires first: without latest-wins, jump's gains would land last.
+  jump.reset();
+  walk.reset();
+
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(pid);
+  exec.add_node(node->get_node_base_interface());
+  const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
+  while (std::chrono::steady_clock::now() < end) {
+    exec.spin_some();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_DOUBLE_EQ(pid->get_parameter("gains.a.p").as_double(), 10.0);
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

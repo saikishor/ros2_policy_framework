@@ -4,8 +4,7 @@
 #ifndef POLICY_FRAMEWORK_MJLAB__MJLAB_POSTPROCESSOR_HPP_
 #define POLICY_FRAMEWORK_MJLAB__MJLAB_POSTPROCESSOR_HPP_
 
-#include <atomic>
-#include <optional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -19,6 +18,16 @@ namespace policy_framework_mjlab
  * @brief pid_controller gain parameters `gains.<joint>.p` / `gains.<joint>.d`.
  * @throws std::invalid_argument when the sizes differ or there is no gain.
  */
+/// Gains of one policy for its gains controller.
+struct GainsRequest
+{
+  std::string policy;
+  std::vector<rclcpp::Parameter> gains;
+};
+
+/// Sends gains to one controller, latest request wins (shared by the policies of a node).
+class GainsSender;
+
 std::vector<rclcpp::Parameter> make_gain_parameters(
   const std::vector<std::string> & joints, const std::vector<double> & stiffness,
   const std::vector<double> & damping);
@@ -34,7 +43,9 @@ std::vector<rclcpp::Parameter> make_gain_parameters(
  * Gains: when `gains_controller` is set (e.g. `/rl_impedance_controller`), the metadata
  * `joint_stiffness` / `joint_damping` of the policy are sent as that pid_controller's
  * `gains.<joint>.p/.d` parameters every time the policy is activated, from a non real-time
- * timer that retries every 0.5 s until the controller's parameter service is available.
+ * timer that retries every 0.5 s until the controller's parameter service is available. When
+ * policies are switched faster than that, only the gains of the latest activated policy are
+ * sent.
  *
  * Parameters (under `<policy>.`): `excluded_joints` (string array, default empty),
  * `position_interface` (default `position`), `velocity_interface` (default `velocity`),
@@ -43,6 +54,8 @@ std::vector<rclcpp::Parameter> make_gain_parameters(
 class MjlabPostprocessor : public policy_framework::Postprocessor
 {
 public:
+  ~MjlabPostprocessor() override;
+
   /// @throws std::runtime_error on missing metadata or size mismatch.
   void configure(
     const policy_framework::PluginContext & ctx, const policy_framework::ModelInfo & model,
@@ -53,18 +66,13 @@ public:
     const policy_framework::TensorMap & outputs, policy_framework::DataStore & commands) override;
 
 private:
-  void send_gains();
-
   std::vector<double> scale_, offset_;
   std::vector<size_t> position_idx_;
   std::vector<size_t> velocity_idx_;
 
   rclcpp::Logger logger_{rclcpp::get_logger("MjlabPostprocessor")};
-  std::vector<rclcpp::Parameter> gains_;
-  std::string gains_controller_;
-  rclcpp::AsyncParametersClient::SharedPtr gains_client_;
-  rclcpp::TimerBase::SharedPtr gains_timer_;
-  std::atomic<bool> gains_pending_{false};
+  GainsRequest gains_request_;
+  std::shared_ptr<GainsSender> gains_sender_;
 };
 
 }  // namespace policy_framework_mjlab
