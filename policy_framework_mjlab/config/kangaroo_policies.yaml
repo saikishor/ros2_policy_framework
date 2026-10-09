@@ -1,4 +1,4 @@
-# Policies of the Kangaroo lower body, shared by the standalone node and the controller.
+# Kangaroo policies (any robot_type), shared by the standalone node and the controller.
 # Placeholders @...@ are filled by launch/kangaroo_mjlab.launch.py.
 /**:
   ros__parameters:
