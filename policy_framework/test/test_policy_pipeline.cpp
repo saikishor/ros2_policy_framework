@@ -49,6 +49,7 @@ class FakePreprocessor : public policy_framework::Preprocessor
 public:
   void configure(const PluginContext &, const ModelInfo &, DataStore &) override {}
   void reset() override {++resets;}
+  void clear() override {++clears;}
   bool compute(const DataStore &, const TensorMap & last, TensorMap & in) override
   {
     if (!ready) {return false;}
@@ -57,6 +58,7 @@ public:
   }
   bool ready = true;
   int resets = 0;
+  int clears = 0;
 };
 
 class FakePostprocessor : public policy_framework::Postprocessor
@@ -114,7 +116,8 @@ TEST_F(PolicyPipelineTest, StepRunsStagesAndFeedsBackPreviousOutputs)
   EXPECT_DOUBLE_EQ(cmd(), 1.0);
   ASSERT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::OK);
   EXPECT_DOUBLE_EQ(cmd(), 2.0);
-  EXPECT_EQ(a.pre->resets, 1);  // reset once on the first activation
+  EXPECT_EQ(a.pre->resets, 1);  // activated once
+  EXPECT_EQ(a.pre->clears, 1);  // first start is from scratch
 }
 
 TEST_F(PolicyPipelineTest, StepWaitsWhenPreprocessorHasNoData)
@@ -131,27 +134,30 @@ TEST_F(PolicyPipelineTest, StepWithoutPoliciesIsAnError)
   EXPECT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::ERROR);
 }
 
-TEST_F(PolicyPipelineTest, SwitchIsAppliedOnNextStepAndResetsTheNewPolicy)
+TEST_F(PolicyPipelineTest, SwitchIsAppliedOnNextStepAndKeepsThePolicyMemory)
 {
   Fakes a(1.0F), b(10.0F);
   pipeline.add_policy(a.policy("a"));
   pipeline.add_policy(b.policy("b"));
   pipeline.step(state, commands);
-  pipeline.step(state, commands);
+  pipeline.step(state, commands);  // a's last action: 2
 
   std::string msg;
   ASSERT_TRUE(pipeline.request_switch("b", msg)) << msg;
   EXPECT_EQ(pipeline.active_policy(), "a");  // not applied before the next step
   pipeline.step(state, commands);
   EXPECT_EQ(pipeline.active_policy(), "b");
-  EXPECT_DOUBLE_EQ(cmd(), 10.0);  // b starts from zeroed outputs
+  EXPECT_DOUBLE_EQ(cmd(), 10.0);  // b never ran: zero outputs
   EXPECT_EQ(b.pre->resets, 1);
+  EXPECT_EQ(b.pre->clears, 1);  // first activation of b
 
-  // Switching back resets 'a' as well: its feedback starts from zero again.
+  // Switching back activates 'a' again (reset) but keeps its memory: it continues from its
+  // last action, like a policy that kept observing (no clear).
   ASSERT_TRUE(pipeline.request_switch("a", msg));
   pipeline.step(state, commands);
-  EXPECT_DOUBLE_EQ(cmd(), 1.0);
+  EXPECT_DOUBLE_EQ(cmd(), 3.0);
   EXPECT_EQ(a.pre->resets, 2);
+  EXPECT_EQ(a.pre->clears, 1);
 }
 
 TEST_F(PolicyPipelineTest, SwitchToUnknownPolicyIsRejected)
@@ -188,11 +194,13 @@ TEST_F(PolicyPipelineTest, AddPolicyRejectsDuplicateNames)
   EXPECT_THROW(pipeline.add_policy(a.policy("a")), std::invalid_argument);
 }
 
-TEST_F(PolicyPipelineTest, RestartActivatesDefaultPolicyEvenWhenNotInterruptible)
+TEST_F(PolicyPipelineTest, RestartActivatesDefaultPolicyFromScratchEvenWhenNotInterruptible)
 {
   Fakes a(1.0F), jump(10.0F);
   pipeline.add_policy(a.policy("a"));
   pipeline.add_policy(jump.policy("jump", 0, false));
+  pipeline.step(state, commands);
+  pipeline.step(state, commands);  // a's last action: 2
   std::string msg;
   ASSERT_TRUE(pipeline.request_switch("jump", msg));
   pipeline.step(state, commands);
@@ -201,6 +209,7 @@ TEST_F(PolicyPipelineTest, RestartActivatesDefaultPolicyEvenWhenNotInterruptible
   pipeline.restart();
   pipeline.step(state, commands);
   EXPECT_EQ(pipeline.active_policy(), "a");
-  EXPECT_EQ(a.pre->resets, 1);
-  EXPECT_DOUBLE_EQ(cmd(), 1.0);
+  EXPECT_DOUBLE_EQ(cmd(), 1.0);  // outputs cleared
+  EXPECT_EQ(a.pre->clears, 2);
+  EXPECT_EQ(jump.pre->clears, 1);  // every policy starts from scratch after a restart
 }

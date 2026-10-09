@@ -110,13 +110,22 @@ public:
    * @throws std::exception on any configuration error.
    */
   virtual void configure(const PluginContext & ctx, const ModelInfo & model, DataStore & state) = 0;
-  /// Called whenever the policy becomes active, before the next compute(). Clear history here.
+  /**
+   * @brief Forget everything observed so far (e.g. the observation history). Called before
+   *        the first activation and when the host (re)starts, never in between.
+   */
+  virtual void clear() {}
+  /**
+   * @brief Called whenever the policy becomes active (after clear() if any), before the next
+   *        compute(). Reset per-activation state here (e.g. a motion time step); state that
+   *        should survive a switch away and back (e.g. history) belongs to clear().
+   */
   virtual void reset() {}
   /**
    * @brief Fill the model inputs. Called from the control cycle.
    * @param state Latest values of all inputs.
-   * @param last_outputs Model outputs of the previous step of this policy (zeros after reset()),
-   *        e.g. to feed back the last action.
+   * @param last_outputs Model outputs of the previous step of this policy (zeros after
+   *        clear()), e.g. to feed back the last action.
    * @param inputs Tensors to fill, shaped as ModelInfo::inputs.
    * @return false when the required data is not available yet (the cycle is skipped).
    */

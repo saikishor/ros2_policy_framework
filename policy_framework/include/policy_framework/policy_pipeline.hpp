@@ -33,8 +33,10 @@ struct Policy
  *
  * Switching is requested from any thread with request_switch() and applied at the beginning
  * of the next step(), so a cycle never mixes two policies. On activation the policy's
- * preprocessor and postprocessor are reset() and its previous outputs are zeroed, i.e. a
- * policy always starts from a clean history (also when switching back to it).
+ * preprocessor and postprocessor are reset(). A policy keeps its memory (previous outputs,
+ * preprocessor history) across a switch away and back, like pal_policy_deployer; it is only
+ * cleared (outputs zeroed, Preprocessor::clear()) before its first activation and after
+ * restart().
  *
  * Policies must all be added before the first step(); step() itself does not allocate unless
  * the plugins do.
@@ -64,11 +66,16 @@ public:
   bool request_switch(const std::string & name, std::string & message);
 
   /**
-   * @brief Activate the default (first) policy, from scratch, at the next step(). Thread-safe.
+   * @brief Clear every policy and activate the default (first) one at the next step().
+   *        Thread-safe.
    *
    * Bypasses the interruptible check; meant for (re)activation of the host, not for users.
    */
-  void restart() {requested_.store(0);}
+  void restart()
+  {
+    restart_requested_.store(true);
+    requested_.store(0);
+  }
 
   /**
    * @brief Run one step of the active policy (applying any pending switch first).
@@ -91,6 +98,7 @@ private:
     Policy policy;
     TensorMap inputs;
     TensorMap outputs;
+    bool needs_clear = true;  ///< Only touched from step().
   };
 
   void activate(size_t index);
@@ -99,6 +107,7 @@ private:
   std::atomic<size_t> active_{0};
   /// Pending switch request (-1: none), written by any thread, consumed by step().
   std::atomic<int> requested_{-1};
+  std::atomic<bool> restart_requested_{false};
   // Only touched from step().
   bool needs_reset_ = true;
   int steps_ = 0;

@@ -57,12 +57,19 @@ PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore &
   if (entries_.empty()) {
     return Status::ERROR;
   }
+  if (restart_requested_.exchange(false)) {
+    for (auto & entry : entries_) {entry.needs_clear = true;}
+  }
   if (const int req = requested_.exchange(-1); req >= 0) {
     activate(static_cast<size_t>(req));
   }
   auto & e = entries_[active_.load()];
-  if (needs_reset_) {
+  if (e.needs_clear) {
     for (auto & [name, t] : e.outputs) {std::fill(t.data.begin(), t.data.end(), 0.0F);}
+    e.policy.preprocessor->clear();
+    e.needs_clear = false;
+  }
+  if (needs_reset_) {
     e.policy.preprocessor->reset();
     e.policy.postprocessor->reset();
     steps_ = 0;
