@@ -11,8 +11,8 @@
 
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "policy_framework/latest_message.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
-#include "realtime_tools/realtime_buffer.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 
@@ -36,34 +36,24 @@ public:
   void configure(const PluginContext & ctx) override
   {
     name_ = ctx.name;
-    node_ = ctx.node;
     const auto topic = get_parameter<std::string>(ctx, "topic", "~/" + ctx.name);
     configure_source(ctx);
-    sub_ = ctx.node->template create_subscription<MsgT>(
-      topic, rclcpp::SystemDefaultsQoS(), [this](const std::shared_ptr<const MsgT> msg) {
-        buffer_.writeFromNonRT(Received{msg, node_->get_clock()->now().seconds()});
-      });
+    topic_.subscribe(ctx.node, topic);
   }
 
 protected:
-  struct Received
-  {
-    std::shared_ptr<const MsgT> msg;
-    double receive_time = 0.0;  ///< Seconds, node clock.
-  };
+  using Received = typename LatestMessage<MsgT>::Received;
 
   /// Hook for derived classes to read their own parameters.
   virtual void configure_source(const PluginContext &) {}
 
   /// @return The latest message (may be null) and when it arrived. Real-time safe.
-  Received latest() {return *buffer_.readFromRT();}
+  Received latest() {return topic_.get();}
 
   std::string name_;
 
 private:
-  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
-  typename rclcpp::Subscription<MsgT>::SharedPtr sub_;
-  realtime_tools::RealtimeBuffer<Received> buffer_;
+  LatestMessage<MsgT> topic_;
 };
 
 /**

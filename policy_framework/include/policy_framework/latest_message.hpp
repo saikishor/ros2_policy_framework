@@ -1,0 +1,57 @@
+// Copyright 2026 PAL Robotics S.L.
+// SPDX-License-Identifier: Apache-2.0
+
+#ifndef POLICY_FRAMEWORK__LATEST_MESSAGE_HPP_
+#define POLICY_FRAMEWORK__LATEST_MESSAGE_HPP_
+
+#include <memory>
+#include <string>
+
+#include "realtime_tools/realtime_buffer.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+
+namespace policy_framework
+{
+
+/**
+ * @brief Subscription that hands the latest message over to the control cycle, real-time safe.
+ *
+ * Shared by the topic input sources and the topic observation terms. Not copyable or movable:
+ * the subscription callback refers to this object.
+ */
+template<typename MsgT>
+class LatestMessage
+{
+public:
+  struct Received
+  {
+    std::shared_ptr<const MsgT> msg;  ///< Null until the first message arrives.
+    double receive_time = 0.0;        ///< Seconds, node clock.
+  };
+
+  LatestMessage() = default;
+  LatestMessage(const LatestMessage &) = delete;
+  LatestMessage & operator=(const LatestMessage &) = delete;
+
+  /// Subscribe to @p topic on @p node (replacing any previous subscription).
+  void subscribe(const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & topic)
+  {
+    clock_ = node->get_clock();
+    sub_ = node->template create_subscription<MsgT>(
+      topic, rclcpp::SystemDefaultsQoS(), [this](const std::shared_ptr<const MsgT> msg) {
+        buffer_.writeFromNonRT(Received{msg, clock_->now().seconds()});
+      });
+  }
+
+  /// @return The latest message and when it arrived. Real-time safe.
+  Received get() {return *buffer_.readFromRT();}
+
+private:
+  rclcpp::Clock::SharedPtr clock_;
+  typename rclcpp::Subscription<MsgT>::SharedPtr sub_;
+  realtime_tools::RealtimeBuffer<Received> buffer_;
+};
+
+}  // namespace policy_framework
+
+#endif  // POLICY_FRAMEWORK__LATEST_MESSAGE_HPP_
