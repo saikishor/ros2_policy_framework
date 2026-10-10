@@ -55,8 +55,11 @@ received) skips the cycle without sending anything.
 ros2 service call /<node or controller>/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: imitation}"
 ```
 
-The switch is applied at the start of the next cycle, and the activated policy starts from a
-clean state (history zeroed, previous outputs zeroed, `reset()` of its stages). Per policy:
+The switch is applied at the start of the next cycle and calls `reset()` on the activated
+policy's stages (e.g. restart a motion's time step). A policy keeps its memory (observation
+history, previous outputs) when switched away and back, as `pal_policy_deployer` does; it is
+cleared (`Preprocessor::clear()`, outputs zeroed) only before its first activation and when
+the node/controller is (re)activated. Per policy:
 
 - `max_steps` (default 0 = unlimited): after N steps return to the first policy (e.g. the
   length of a jump motion);
@@ -156,19 +159,21 @@ Topic `topic` parameters default to `~/<name>`.
 | `command` (otherwise) | `<velocity_command_name>/linear.x`, `linear.y`, `angular.z` |
 
 The history length is `obs size / single observation size`. Each term is its own block of
-`history × dim` values, oldest first; as in mjlab's `CircularBuffer`, the first step after
-activation back-fills the whole history with the current value. A `time_step` model input
-receives the number of steps since activation.
+`history × dim` values, oldest first; as in mjlab's `CircularBuffer`, the first step after a
+clear back-fills the whole history with the current value. A `time_step` model input
+receives the number of steps since activation, and a motion command is re-seeded from the
+robot state on every activation.
 
 `MjlabPostprocessor` writes `<joint>/position = action_scale · action + default_joint_pos`
 (and `<joint>/velocity = 0`) for the metadata joints minus `excluded_joints`, and with
 `gains_controller` pushes the policy's `joint_stiffness`/`joint_damping` as
-`gains.<joint>.p/.d` parameters of that pid_controller each time the policy is activated.
+`gains.<joint>.p/.d` parameters of that pid_controller each time the policy is activated
+(only the latest activated policy's gains when switching quickly).
 
-### Kangaroo (lower body)
+### Kangaroo
 
 ```bash
-# simulation
+# simulation (arm_type:=4dof for robot_type:=full_body_4dof)
 ros2 launch kangaroo_mujoco kangaroo_mujoco.launch.py arm_type:=no-arm moveit:=False
 # policies: mode:=controller (default) | controller_async | node (add use_sim_time:=true)
 ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py mode:=controller
@@ -177,13 +182,22 @@ ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.6}}"
 ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: imitation}"
 ```
 
-Launch arguments: `models_dir` (default: `models` of `pal_policy_deployer` when installed),
-`loco_model` (`v315`), `imitation_model` (`v719`), `imitation_frames` (147). The controller
-manager must be started with this workspace sourced so that it finds the controller plugin.
+| Launch argument | Default |
+|-----------------|---------|
+| `mode` | `controller` (`controller_async`, `node`) |
+| `robot_type` | `lower_body` (`full_body_4dof`) |
+| `models_dir` | `models` of `pal_policy_deployer` when installed |
+| `loco_model`, `imitation_model`, `imitation_frames` | per robot type: `v315`, `v719`, 147 (lower body); `v265`, `v30`, 300 (4dof) |
+| `activate_impedance_controller` | `True`; `False` loads and configures the controllers inactive |
+| `use_sim_time` | `false` (node mode only) |
 
-Configuration files in `policy_framework_mjlab/config`:
-`kangaroo_lower_body_policies.yaml` (policies, shared), `kangaroo_policy_controller.yaml`,
-`kangaroo_policy_node.yaml`, `kangaroo_lower_body_impedance.yaml` (pid_controller).
+The controller manager must be started with this workspace sourced so that it finds the
+controller plugin. In node mode the launch shuts down (unloading `rl_impedance_controller`)
+when the policy node exits.
+
+Configuration files in `policy_framework_mjlab/config`: `kangaroo_policies.yaml` (policies,
+shared by node and controller), `kangaroo_policy_controller.yaml`, `kangaroo_policy_node.yaml`,
+`kangaroo_<robot_type>_impedance.yaml` (pid_controller).
 
 ## Writing plugins
 
