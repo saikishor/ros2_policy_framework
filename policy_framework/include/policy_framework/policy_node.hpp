@@ -18,7 +18,8 @@ namespace policy_framework
  * rate. The timer uses the node clock, so it follows `/clock` with `use_sim_time`.
  *
  * - configure: loads everything; fails when a policy input is not provided by any source.
- * - activate: starts the timer. A newly activated node starts its policies from scratch.
+ * - activate: starts the timer. Every activation starts from the default (first) policy with
+ *   all policies cleared, even if a non-interruptible policy was active.
  * - deactivate: stops the timer.
  */
 class PolicyNode : public rclcpp_lifecycle::LifecycleNode

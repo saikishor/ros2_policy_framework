@@ -44,6 +44,7 @@ PolicyNode::CallbackReturn PolicyNode::on_activate(const rclcpp_lifecycle::State
     RCLCPP_ERROR(get_logger(), "update_rate must be > 0, got %f", rate);
     return CallbackReturn::FAILURE;
   }
+  runner_->pipeline().restart();
   timer_ = rclcpp::create_timer(
     this, get_clock(), rclcpp::Duration::from_seconds(1.0 / rate), [this]() {update();});
   return CallbackReturn::SUCCESS;
