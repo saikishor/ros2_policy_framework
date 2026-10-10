@@ -138,9 +138,13 @@ void MjlabPreprocessor::configure(
     motion ? ", motion command" : "");
 }
 
+void MjlabPreprocessor::clear()
+{
+  history_filled_ = false;
+}
+
 void MjlabPreprocessor::reset()
 {
-  for (auto & t : terms_) {std::fill(t.history.begin(), t.history.end(), 0.0F);}
   first_step_ = true;
   step_ = 0;
 }
@@ -201,8 +205,8 @@ bool MjlabPreprocessor::compute(
     std::copy(t.history.begin() + t.dim, t.history.end(), t.history.begin());
     float * newest = t.history.data() + t.history.size() - t.dim;
     current_value(t, state, last_outputs, newest);
-    if (first_step_) {
-      // Like mjlab's CircularBuffer: the first push after reset back-fills the whole history.
+    if (!history_filled_) {
+      // Like mjlab's CircularBuffer: the first push after clear back-fills the whole history.
       for (size_t h = 0; h + 1 < history_length_; ++h) {
         std::copy(newest, newest + t.dim, t.history.begin() + h * t.dim);
       }
@@ -213,6 +217,7 @@ bool MjlabPreprocessor::compute(
   if (has_time_step_) {
     inputs.at("time_step").data[0] = static_cast<float>(step_);
   }
+  history_filled_ = true;
   first_step_ = false;
   ++step_;
   return true;

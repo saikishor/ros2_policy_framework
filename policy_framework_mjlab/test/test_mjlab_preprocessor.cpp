@@ -144,11 +144,19 @@ TEST(MjlabPreprocessor, BuildsTermMajorHistoryOldestFirst)
   for (size_t i = 0; i < 4; ++i) {EXPECT_NEAR(in["obs"].data[6 + i], joint_pos[i], 1e-6);}
   for (size_t i = 0; i < 2; ++i) {EXPECT_NEAR(in["obs"].data[14 + i], actions[i], 1e-6);}
 
-  // After reset the history is back-filled again from the current value only.
+  // reset() (policy activated again after a switch) keeps the history...
+  set(state, "a/position", 3.1);
   pre.reset();
   ASSERT_TRUE(pre.compute(state, model.outputs, in));
   for (size_t i = 0; i < 4; ++i) {
-    EXPECT_NEAR(in["obs"].data[6 + i], (Floats{2.0F, 1.0F, 2.0F, 1.0F})[i], 1e-6);
+    EXPECT_NEAR(in["obs"].data[6 + i], (Floats{2.0F, 1.0F, 3.0F, 1.0F})[i], 1e-6);
+  }
+  // ...clear() forgets it: the next step back-fills from the current value again.
+  pre.clear();
+  pre.reset();
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_NEAR(in["obs"].data[6 + i], (Floats{3.0F, 1.0F, 3.0F, 1.0F})[i], 1e-6);
   }
 }
 

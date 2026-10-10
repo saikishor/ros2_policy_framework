@@ -37,9 +37,13 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * History: the history length is the input size divided by the single observation size. Each
  * term is laid out as its own block, oldest first and newest last (matching mjlab's
  * per-term history with flattening). As mjlab's CircularBuffer does, the first step after
- * reset() back-fills the whole history with the current value.
+ * clear() (first activation, host restart) back-fills the whole history with the current
+ * value. The history is kept when the policy is switched away and back (reset() only), like
+ * pal_policy_deployer: back-filling a single frame of a dynamic state (e.g. a jump landing)
+ * made history-3 policies fall in simulation.
  *
- * If the model has a `time_step` input it receives the number of steps since reset().
+ * If the model has a `time_step` input it receives the number of steps since reset(); the
+ * motion command is re-seeded from the robot state after reset().
  *
  * Parameters (under `<policy>.`): `imu_name` (default `imu`), `velocity_command_name`
  * (default `cmd_vel`), `odometry_name` (default `odom`), `observation_input` (default `obs`).
@@ -51,6 +55,7 @@ public:
   void configure(
     const policy_framework::PluginContext & ctx, const policy_framework::ModelInfo & model,
     policy_framework::DataStore & state) override;
+  void clear() override;
   void reset() override;
   bool compute(
     const policy_framework::DataStore & state, const policy_framework::TensorMap & last_outputs,
@@ -87,7 +92,8 @@ private:
   std::vector<size_t> joint_pos_, joint_vel_, ang_vel_, lin_acc_, quat_, lin_vel_, twist_;
   // Control-cycle state.
   std::vector<float> scratch_;
-  bool first_step_ = true;
+  bool history_filled_ = false;
+  bool first_step_ = true;  ///< First step since reset().
   int step_ = 0;
 };
 
