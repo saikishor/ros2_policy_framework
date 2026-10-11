@@ -4,6 +4,7 @@
 #include "policy_framework_mjlab/mjlab_preprocessor.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -80,36 +81,48 @@ void MjlabPreprocessor::configure(
   size_t single_dim = 0;
   for (const auto & name : split(require(md, "observation_names"))) {
     Term t{};
-    if (name == "base_ang_vel") {
-      t = {Kind::BASE_ANG_VEL, 3, {}};
+    const auto plugin = get_parameter<std::string>(ctx, "terms." + name + ".type", "");
+    if (!plugin.empty()) {
+      if (!term_loader_) {
+        term_loader_ = std::make_unique<pluginlib::ClassLoader<policy_framework::ObservationTerm>>(
+          "policy_framework", "policy_framework::ObservationTerm");
+      }
+      t.kind = Kind::PLUGIN;
+      t.plugin = term_loader_->createSharedInstance(plugin);
+      t.dim = t.plugin->configure({ctx.node, ctx.name + ".terms." + name}, model, state);
+      if (t.dim == 0) {
+        throw std::runtime_error("Observation term plugin '" + name + "' has size 0");
+      }
+    } else if (name == "base_ang_vel") {
+      t = {Kind::BASE_ANG_VEL, 3, {}, nullptr};
       ang_vel_ = add_all(imu + "/angular_velocity.", {"x", "y", "z"});
     } else if (name == "base_lin_acc") {
-      t = {Kind::BASE_LIN_ACC, 3, {}};
+      t = {Kind::BASE_LIN_ACC, 3, {}, nullptr};
       lin_acc_ = add_all(imu + "/linear_acceleration.", {"x", "y", "z"});
     } else if (name == "imu_projected_gravity" || name == "projected_gravity") {
-      t = {Kind::PROJECTED_GRAVITY, 3, {}};
+      t = {Kind::PROJECTED_GRAVITY, 3, {}, nullptr};
       quat_ = add_all(imu + "/orientation.", {"w", "x", "y", "z"});
     } else if (name == "base_lin_vel") {
-      t = {Kind::BASE_LIN_VEL, 3, {}};
+      t = {Kind::BASE_LIN_VEL, 3, {}, nullptr};
       lin_vel_ = add_all(odom + "/linear.", {"x", "y", "z"});
     } else if (name == "joint_pos") {
-      t = {Kind::JOINT_POS, joints.size(), {}};
+      t = {Kind::JOINT_POS, joints.size(), {}, nullptr};
       joint_pos_ = joint_entries("position");
     } else if (name == "joint_vel") {
-      t = {Kind::JOINT_VEL, joints.size(), {}};
+      t = {Kind::JOINT_VEL, joints.size(), {}, nullptr};
       joint_vel_ = joint_entries("velocity");
     } else if (name == "actions") {
-      t = {Kind::ACTIONS, output_size("actions"), {}};
+      t = {Kind::ACTIONS, output_size("actions"), {}, nullptr};
     } else if (name == "command" && motion) {
       if (output_size("joint_pos") != joints.size() || output_size("joint_vel") != joints.size()) {
         throw std::runtime_error("Motion outputs joint_pos/joint_vel must have one value per joint");
       }
-      t = {Kind::MOTION_COMMAND, 2 * joints.size(), {}};
+      t = {Kind::MOTION_COMMAND, 2 * joints.size(), {}, nullptr};
       // Seeds the command on the first step after reset.
       joint_pos_ = joint_entries("position");
       joint_vel_ = joint_entries("velocity");
     } else if (name == "command") {
-      t = {Kind::TWIST_COMMAND, 3, {}};
+      t = {Kind::TWIST_COMMAND, 3, {}, nullptr};
       twist_ = add_all(cmd + "/", {"linear.x", "linear.y", "angular.z"});
     } else {
       throw std::runtime_error("Unsupported mjlab observation term '" + name + "'");
@@ -147,6 +160,9 @@ void MjlabPreprocessor::reset()
 {
   first_step_ = true;
   step_ = 0;
+  for (auto & t : terms_) {
+    if (t.plugin) {t.plugin->reset();}
+  }
 }
 
 void MjlabPreprocessor::current_value(
@@ -165,6 +181,7 @@ void MjlabPreprocessor::current_value(
       projected_gravity(
         state.get(quat_[0]), state.get(quat_[1]), state.get(quat_[2]), state.get(quat_[3]), out);
       break;
+    case Kind::PLUGIN: term.plugin->compute(state, last_outputs, out); break;
     case Kind::JOINT_POS:
       for (size_t i = 0; i < joint_pos_.size(); ++i) {
         out[i] = static_cast<float>(state.get(joint_pos_[i]) - default_joint_pos_[i]);
@@ -197,6 +214,9 @@ bool MjlabPreprocessor::compute(
 {
   if (!state.all_received(required_)) {
     return false;
+  }
+  for (auto & t : terms_) {
+    if (t.plugin && !t.plugin->ready(state)) {return false;}
   }
   auto & obs = inputs.at(obs_input_).data;
   size_t offset = 0;

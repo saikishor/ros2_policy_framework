@@ -4,9 +4,12 @@
 #ifndef POLICY_FRAMEWORK_MJLAB__MJLAB_PREPROCESSOR_HPP_
 #define POLICY_FRAMEWORK_MJLAB__MJLAB_PREPROCESSOR_HPP_
 
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "pluginlib/class_loader.hpp"
+#include "policy_framework/observation_term.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 
 namespace policy_framework_mjlab
@@ -42,6 +45,13 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * pal_policy_deployer: back-filling a single frame of a dynamic state (e.g. a jump landing)
  * made history-3 policies fall in simulation.
  *
+ * Term plugins: with `<policy>.terms.<term>.type` set, the term is a
+ * policy_framework::ObservationTerm plugin of that class (parameters under
+ * `<policy>.terms.<term>.`) instead of the built-in one. This replaces a built-in term (e.g.
+ * `command` from a topic with policy_framework_mjlab/TwistCommandTerm) or adds a term the list
+ * above does not know. History and layout apply to plugin terms as to built-in ones; the cycle
+ * is skipped while a plugin term is not ready().
+ *
  * If the model has a `time_step` input it receives the number of steps since reset(); the
  * motion command is re-seeded from the robot state after reset().
  *
@@ -68,13 +78,14 @@ private:
   enum class Kind
   {
     BASE_ANG_VEL, BASE_LIN_ACC, PROJECTED_GRAVITY, BASE_LIN_VEL, JOINT_POS, JOINT_VEL,
-    ACTIONS, TWIST_COMMAND, MOTION_COMMAND
+    ACTIONS, TWIST_COMMAND, MOTION_COMMAND, PLUGIN
   };
   struct Term
   {
     Kind kind;
     size_t dim;
     std::vector<float> history;  ///< history_length * dim values, oldest first.
+    std::shared_ptr<policy_framework::ObservationTerm> plugin;  ///< Kind::PLUGIN only.
   };
 
   /// Write the current value of @p term into @p out (term.dim values).
@@ -82,6 +93,8 @@ private:
     const Term & term, const policy_framework::DataStore & state,
     const policy_framework::TensorMap & last_outputs, float * out) const;
 
+  // Declared before terms_ so that it outlives the plugin instances.
+  std::unique_ptr<pluginlib::ClassLoader<policy_framework::ObservationTerm>> term_loader_;
   std::vector<Term> terms_;
   size_t history_length_ = 1;
   std::string obs_input_;

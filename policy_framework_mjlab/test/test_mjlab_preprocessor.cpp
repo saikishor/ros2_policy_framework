@@ -24,10 +24,11 @@ namespace
 
 Tensor zeros(int64_t n) {return {{1, n}, std::vector<float>(static_cast<size_t>(n), 0.0F)};}
 
-PluginContext make_context()
+PluginContext make_context(std::vector<rclcpp::Parameter> params = {})
 {
   rclcpp::NodeOptions opts;
-  opts.parameter_overrides({{"p.imu_name", "imu"}});
+  params.emplace_back("p.imu_name", "imu");
+  opts.parameter_overrides(params);
   return {std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_mjlab_pre", opts), "p"};
 }
 
@@ -205,6 +206,43 @@ TEST(MjlabPreprocessor, RejectsInconsistentModels)
   auto unknown_term = twist_model(1);
   unknown_term.metadata["observation_names"] = "base_ang_vel,height_scan";
   EXPECT_THROW(pre.configure(make_context(), unknown_term, state), std::runtime_error);
+}
+
+TEST(MjlabPreprocessor, TermPluginReplacesABuiltinTerm)
+{
+  // command from TwistCommandTerm (topic, zero without message) instead of cmd_vel entries.
+  const auto model = twist_model(1);
+  DataStore state;
+  MjlabPreprocessor pre;
+  pre.configure(
+    make_context({{"p.terms.command.type", "policy_framework_mjlab/TwistCommandTerm"},
+      {"p.terms.command.topic", "/test_pre_cmd_vel"}}), model, state);
+  EXPECT_FALSE(state.find("cmd_vel/linear.x").has_value());
+  set(state, "imu/orientation.w", 1.0);
+  for (const auto * n : {"imu/orientation.x", "imu/orientation.y", "imu/orientation.z",
+      "imu/angular_velocity.x", "imu/angular_velocity.y", "imu/angular_velocity.z",
+      "a/position", "b/position", "a/velocity", "b/velocity"})
+  {
+    set(state, n, 0.0);
+  }
+  pre.reset();
+  TensorMap in = model.inputs;
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  for (size_t i = 8; i < 11; ++i) {EXPECT_FLOAT_EQ(in["obs"].data[i], 0.0F);}  // command
+  EXPECT_FLOAT_EQ(in["obs"].data[13], -1.0F);  // gravity z still after it
+}
+
+TEST(MjlabPreprocessor, TermPluginProvidesATermUnknownToThePreprocessor)
+{
+  auto model = twist_model(2);
+  model.metadata["observation_names"] = "base_ang_vel,my_velocity";
+  model.inputs["obs"] = zeros(2 * (3 + 3));
+  DataStore state;
+  MjlabPreprocessor pre;
+  pre.configure(
+    make_context({{"p.terms.my_velocity.type", "policy_framework_mjlab/TwistCommandTerm"}}),
+    model, state);
+  EXPECT_EQ(pre.history_length(), 2U);
 }
 
 TEST(ProjectedGravity, RotatesWorldGravityIntoBodyFrame)
