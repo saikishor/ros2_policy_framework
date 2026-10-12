@@ -43,7 +43,7 @@ std::unique_ptr<pluginlib::ClassLoader<T>> make_loader(const std::string & base)
 
 void PolicyRunner::configure(const rclcpp_lifecycle::LifecycleNode::SharedPtr & node)
 {
-  node_ = node;
+  logger_ = node->get_logger();
   const auto logger = node->get_logger();
   // Reconfiguration starts from scratch: drop plugins before their loaders.
   sources_.clear();
@@ -104,7 +104,7 @@ void PolicyRunner::configure(const rclcpp_lifecycle::LifecycleNode::SharedPtr & 
       const std::shared_ptr<srv::SwitchPolicy::Request> req,
       std::shared_ptr<srv::SwitchPolicy::Response> res) {
       res->success = pipeline_->request_switch(req->policy_name, res->message);
-      RCLCPP_INFO(node_->get_logger(), "switch_policy: %s", res->message.c_str());
+      RCLCPP_INFO(logger_, "switch_policy: %s", res->message.c_str());
     });
 
   last_status_ = PolicyPipeline::Status::OK;
@@ -141,21 +141,21 @@ PolicyPipeline::Status PolicyRunner::step()
   try {
     status = pipeline_->step(state_, commands_);
   } catch (const std::exception & e) {
-    RCLCPP_ERROR(node_->get_logger(), "Policy step failed: %s", e.what());
+    RCLCPP_ERROR(logger_, "Policy step failed: %s", e.what());
     status = PolicyPipeline::Status::ERROR;
   }
   // ponytail: logs from the control cycle on transitions only (rare), not real-time safe; move
   // to a realtime publisher if a robot ever shows jitter on switches.
   const auto & active = pipeline_->active_policy();
   if (active != last_policy_) {
-    RCLCPP_INFO(node_->get_logger(), "Active policy: '%s'", active.c_str());
+    RCLCPP_INFO(logger_, "Active policy: '%s'", active.c_str());
     last_policy_ = active;
   }
   if (status != last_status_) {
     if (status == PolicyPipeline::Status::WAITING_FOR_DATA) {
-      RCLCPP_WARN(node_->get_logger(), "Waiting for input data of policy '%s'", active.c_str());
+      RCLCPP_WARN(logger_, "Waiting for input data of policy '%s'", active.c_str());
     } else if (status == PolicyPipeline::Status::OK) {
-      RCLCPP_INFO(node_->get_logger(), "Policy '%s' is running", active.c_str());
+      RCLCPP_INFO(logger_, "Policy '%s' is running", active.c_str());
     }
     last_status_ = status;
   }

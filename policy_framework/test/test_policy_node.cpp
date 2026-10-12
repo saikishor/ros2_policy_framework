@@ -58,6 +58,18 @@ TEST(PolicyNode, ConfigureFailsWhenNoSourceProvidesAnInput)
   EXPECT_EQ(node->configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
 }
 
+TEST(PolicyNode, IsDestroyedWhenReleasedWhileActive)
+{
+  // A reference cycle would keep the node, its publishers and DDS entities alive until process
+  // exit, where unloading the middleware with its threads still running crashed.
+  auto node = make_node({"j1", "j2", "j3"});
+  ASSERT_EQ(node->configure().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(node->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  std::weak_ptr<policy_framework::PolicyNode> weak = node;
+  node.reset();
+  EXPECT_TRUE(weak.expired());
+}
+
 TEST(PolicyNode, ActiveNodePublishesCommandsComputedFromTopics)
 {
   auto node = make_node({});

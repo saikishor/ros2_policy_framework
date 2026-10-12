@@ -62,7 +62,8 @@ public:
   PolicyPipeline & pipeline() {return *pipeline_;}
 
 private:
-  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
+  // Not the node itself: PolicyNode owns its runner, a node pointer here would be a cycle.
+  rclcpp::Logger logger_ = rclcpp::get_logger("policy_runner");
   // Loaders must outlive the plugin instances created from them (declared first, destroyed
   // last).
   std::unique_ptr<pluginlib::ClassLoader<InputSource>> source_loader_;
