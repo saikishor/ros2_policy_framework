@@ -1,9 +1,8 @@
-# ros2_control controller: joint and IMU states from state interfaces, cmd_vel from its topic,
+# ros2_control controller: joint and IMU states from state interfaces (cmd_vel: see the loco term),
 # commands chained into the reference interfaces of rl_impedance_controller (pid_controller).
 policy_controller:
   ros__parameters:
     type: policy_framework/PolicyController
     update_rate: 50  # one policy step per update: the policy rate
     is_async: @IS_ASYNC@
-    sources: [cmd_vel]
     command_interface_prefix: rl_impedance_controller

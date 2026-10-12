@@ -11,7 +11,12 @@
       postprocessor: policy_framework_mjlab/MjlabPostprocessor
       model_path: "@LOCO_MODEL_DIR@"
       imu_name: torso_imu_sensor
-      velocity_command_name: cmd_vel
+      # Velocity command read directly from its topic, zero when older than timeout.
+      terms:
+        command:
+          type: policy_framework_mjlab/TwistCommandTerm
+          topic: /cmd_vel
+          timeout: 1.0
       # Passive joints of the leg closed chains: observed, but not actuated by the policy.
       excluded_joints: [leg_left_femur_joint, leg_left_knee_joint,
                         leg_right_femur_joint, leg_right_knee_joint]
@@ -29,9 +34,3 @@
       # Number of frames of the motion; then back to 'loco'. Not interruptible meanwhile.
       max_steps: @IMITATION_FRAMES@
       interruptible: false
-
-    # Velocity command, zeroed when older than timeout.
-    cmd_vel:
-      type: policy_framework/TwistSource
-      topic: /cmd_vel
-      timeout: 1.0

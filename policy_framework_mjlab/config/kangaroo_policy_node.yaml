@@ -2,7 +2,7 @@
 policy_node:
   ros__parameters:
     update_rate: 50.0
-    sources: [joint_states, imu, cmd_vel]
+    sources: [joint_states, imu]
     joint_states:
       type: policy_framework/JointStateSource
       topic: /joint_states
