@@ -15,8 +15,8 @@ and several policies can be loaded at once and **switched at runtime**.
 
 | Package | Content |
 |---------|---------|
-| `policy_framework` | Core: plugin base classes, `DataStore`, `PolicyPipeline`, `PolicyRunner`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, concat/split stages), `SwitchPolicy` service |
-| `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab policies (observation terms with history, action scaling, per-policy PID gains) and the Kangaroo deployment config/launch |
+| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, concat/split stages), `SwitchPolicy` service |
+| `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab policies (observation terms with history, action scaling, per-policy PID gains), the `TwistCommandTerm` observation term and the Kangaroo deployment config/launch |
 
 ## Architecture
 
@@ -36,7 +36,9 @@ and several policies can be loaded at once and **switched at runtime**.
   Entries are registered at configure time; the control cycle only uses indices.
 - **Preprocessor** reads the state store and fills the model inputs. It also receives the
   model outputs of the previous step (to feed back the last action, an autoregressive motion
-  reference, ...), and owns the observation history.
+  reference, ...), and owns the observation history. `MjlabPreprocessor` can be extended
+  with **`ObservationTerm` plugins**, which read the state store or subscribe to a topic
+  directly (data with no state interface equivalent: velocity commands, custom messages).
 - **Inference** runs the model (`policy_framework/OnnxInference`: ONNX Runtime, CPU,
   zero-copy binding to the pipeline buffers). Tensors are named float32 arrays
   (`TensorMap`), so the other stages do not depend on the inference backend.
@@ -95,7 +97,7 @@ policy_controller:
     is_async: false          # true: update() (inference) runs in its own thread
     command_interface_prefix: rl_impedance_controller   # chain into a pid_controller
     use_command_interfaces: true
-    sources: [cmd_vel]       # anything else the policies need is claimed as state interface
+    sources: []              # topic sources; anything else the policies need is claimed as state interface
     # ... policies as below
 ```
 
@@ -136,10 +138,11 @@ policy_controller:
 | `policy_framework/MultiDofCommandExecutor` | Executor | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`) |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
-| `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`) |
+| `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type` (term plugin, see below) |
 | `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface`, `velocity_interface`, `gains_controller` |
+| `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm | `topic` (`cmd_vel`), `timeout` (1.0 s) → linear.x, linear.y, angular.z of a Twist; zero when absent or stale |
 
-Topic `topic` parameters default to `~/<name>`.
+Source and executor `topic` parameters default to `~/<name>`.
 
 ## mjlab policies
 
@@ -157,12 +160,35 @@ Topic `topic` parameters default to `~/<name>`.
 | `actions` | previous raw (unscaled) `actions` output |
 | `command` (`command_names: motion`) | previous `joint_pos`, `joint_vel` outputs; robot state on the first step |
 | `command` (otherwise) | `<velocity_command_name>/linear.x`, `linear.y`, `angular.z` |
+| any name with `terms.<name>.type` set | the `ObservationTerm` plugin of that class |
 
 The history length is `obs size / single observation size`. Each term is its own block of
 `history × dim` values, oldest first; as in mjlab's `CircularBuffer`, the first step after a
 clear back-fills the whole history with the current value. A `time_step` model input
 receives the number of steps since activation, and a motion command is re-seeded from the
 robot state on every activation.
+
+#### Observation term plugins
+
+A term listed in the model's `observation_names` is computed by an `ObservationTerm` plugin
+instead of the built-in code when `<policy>.terms.<term>.type` is set; its parameters are
+under `<policy>.terms.<term>.`. This replaces a built-in term or adds a term
+`MjlabPreprocessor` does not know, without modifying it. The preprocessor still keeps the
+history and the layout; the term only writes its current value, and the cycle waits while a
+term is not `ready()`. For example, the velocity command straight from its topic:
+
+```yaml
+loco:
+  preprocessor: policy_framework_mjlab/MjlabPreprocessor
+  terms:
+    command:
+      type: policy_framework_mjlab/TwistCommandTerm
+      topic: /cmd_vel
+      timeout: 1.0
+```
+
+Topic terms need no input source and claim no state interface. Keep data that also exists as
+state interfaces (joints, IMU) in the state store, so the controller reads it in real time.
 
 `MjlabPostprocessor` writes `<joint>/position = action_scale · action + default_joint_pos`
 (and `<joint>/velocity = 0`) for the metadata joints minus `excluded_joints`, and with
@@ -214,6 +240,29 @@ only use indices. `Preprocessor::compute` returns false until its inputs are rec
 `InputSource` callbacks must not touch the store: buffer the message (e.g.
 `realtime_tools::RealtimeBuffer`) and copy it in `read()`. `policy_framework_mjlab` is a
 complete example.
+
+A new observation term (e.g. from a custom message) derives from
+`policy_framework::TopicTerm<Msg>` (`policy_framework/observation_term.hpp`), which owns the
+subscription and hands the latest message to the control cycle real-time safely:
+
+```cpp
+class MyTerm : public policy_framework::TopicTerm<my_msgs::msg::Foo>
+{
+public:
+  MyTerm() : TopicTerm("foo") {}  // default topic
+  void compute(const DataStore &, const TensorMap &, float * out) override
+  {
+    const auto msg = latest().msg;  // non-null: ready() is true once a message arrived
+    out[0] = msg->a;  out[1] = msg->b;
+  }
+protected:
+  size_t configure_term(const PluginContext & ctx, const ModelInfo &) override {return 2;}
+};
+```
+
+Export it with `base_class_type="policy_framework::ObservationTerm"`. A term reading the
+state store derives from `ObservationTerm` directly, registers its entries in `configure()`
+and checks them in `ready()`.
 
 ## Tests
 
