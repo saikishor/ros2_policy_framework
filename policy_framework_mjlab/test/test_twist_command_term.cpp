@@ -29,7 +29,9 @@ TEST(TwistCommandTerm, IsLinearXYAngularZOfTheTopicAndZeroWhenAbsentOrStale)
   // A policy must not wait for a velocity command to start: ready and zero without one.
   float out[3] = {9.0F, 9.0F, 9.0F};
   EXPECT_TRUE(term.ready(state));
-  term.compute(state, TensorMap{}, out);
+  // A zero command is generated now, so it is stamped now.
+  double before = node->now().seconds();
+  EXPECT_GE(term.compute(state, TensorMap{}, out), before);
   EXPECT_FLOAT_EQ(out[0], 0.0F);
   EXPECT_FLOAT_EQ(out[1], 0.0F);
   EXPECT_FLOAT_EQ(out[2], 0.0F);
@@ -43,18 +45,23 @@ TEST(TwistCommandTerm, IsLinearXYAngularZOfTheTopicAndZeroWhenAbsentOrStale)
   msg.linear.y = -0.1;
   msg.linear.z = 5.0;  // not part of the mjlab command
   msg.angular.z = 0.3;
+  double stamp = 0.0;
   for (int i = 0; i < 500 && out[0] < 0.5F; ++i) {
     pub->publish(msg);
     exec.spin_some();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    term.compute(state, TensorMap{}, out);
+    stamp = term.compute(state, TensorMap{}, out);
   }
+  // A received command is stamped with its receive time (a Twist has no header).
+  EXPECT_GT(stamp, before);
+  EXPECT_LE(stamp, node->now().seconds());
   EXPECT_FLOAT_EQ(out[0], 0.6F);
   EXPECT_FLOAT_EQ(out[1], -0.1F);
   EXPECT_FLOAT_EQ(out[2], 0.3F);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(400));
-  term.compute(state, TensorMap{}, out);
+  before = node->now().seconds();
+  EXPECT_GE(term.compute(state, TensorMap{}, out), before);
   EXPECT_FLOAT_EQ(out[0], 0.0F);
   EXPECT_FLOAT_EQ(out[2], 0.0F);
 }

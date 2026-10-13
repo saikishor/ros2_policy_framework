@@ -17,13 +17,15 @@ namespace policy_framework_mjlab
  * Parameters (under `<policy>.terms.<term>.`): `topic` (default `cmd_vel`), `timeout` (seconds,
  * default 1.0, <= 0 disables it). Always ready: a command that never arrived or is older than
  * `timeout` is zero, so a policy neither waits for a command nor acts on a stale one.
+ *
+ * Stamp: the receive time (a Twist has no header); the current time for a zero command.
  */
 class TwistCommandTerm : public policy_framework::TopicTerm<geometry_msgs::msg::Twist>
 {
 public:
   TwistCommandTerm() : TopicTerm("cmd_vel") {}
   bool ready(const policy_framework::DataStore &) override {return true;}
-  void compute(
+  double compute(
     const policy_framework::DataStore & state, const policy_framework::TensorMap & last_outputs,
     float * out) override;
 

@@ -26,9 +26,11 @@ class LinearXTerm : public policy_framework::TopicTerm<Twist>
 {
 public:
   LinearXTerm() : TopicTerm("~/default_topic") {}
-  void compute(const DataStore &, const TensorMap &, float * out) override
+  double compute(const DataStore &, const TensorMap &, float * out) override
   {
-    out[0] = static_cast<float>(latest().msg->linear.x);
+    const auto in = latest();
+    out[0] = static_cast<float>(in.msg->linear.x);
+    return in.receive_time;
   }
 
 protected:
@@ -61,8 +63,11 @@ TEST(TopicTerm, IsReadyOnceAMessageArrivedOnItsTopicParameter)
   }
   ASSERT_TRUE(term.ready(state));
   float out = 0.0F;
-  term.compute(state, TensorMap{}, &out);
+  const double stamp = term.compute(state, TensorMap{}, &out);
   EXPECT_FLOAT_EQ(out, 0.25F);
+  // The receive time, on the node clock.
+  EXPECT_GT(stamp, 0.0);
+  EXPECT_LE(stamp, node->now().seconds());
 }
 
 int main(int argc, char ** argv)

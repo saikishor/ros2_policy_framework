@@ -15,17 +15,19 @@ size_t TwistCommandTerm::configure_term(
   return 3;
 }
 
-void TwistCommandTerm::compute(
+double TwistCommandTerm::compute(
   const policy_framework::DataStore &, const policy_framework::TensorMap &, float * out)
 {
   const auto in = latest();
-  if (!in.msg || (timeout_ > 0.0 && now() - in.receive_time > timeout_)) {
+  const double t = now();
+  if (!in.msg || (timeout_ > 0.0 && t - in.receive_time > timeout_)) {
     out[0] = out[1] = out[2] = 0.0F;
-    return;
+    return t;
   }
   out[0] = static_cast<float>(in.msg->linear.x);
   out[1] = static_cast<float>(in.msg->linear.y);
   out[2] = static_cast<float>(in.msg->angular.z);
+  return in.receive_time;
 }
 
 }  // namespace policy_framework_mjlab

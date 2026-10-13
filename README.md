@@ -252,10 +252,11 @@ class MyTerm : public policy_framework::TopicTerm<my_msgs::msg::Foo>
 {
 public:
   MyTerm() : TopicTerm("foo") {}  // default topic
-  void compute(const DataStore &, const TensorMap &, float * out) override
+  double compute(const DataStore &, const TensorMap &, float * out) override
   {
-    const auto msg = latest().msg;  // non-null: ready() is true once a message arrived
-    out[0] = msg->a;  out[1] = msg->b;
+    const auto in = latest();  // msg non-null: ready() is true once a message arrived
+    out[0] = in.msg->a;  out[1] = in.msg->b;
+    return rclcpp::Time(in.msg->header.stamp).seconds();  // stamp of the value
   }
 protected:
   size_t configure_term(const PluginContext & ctx, const ModelInfo &) override {return 2;}

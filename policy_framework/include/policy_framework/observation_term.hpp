@@ -46,8 +46,11 @@ public:
    * @brief Write the current value. Called from the control cycle, only when ready().
    * @param last_outputs Model outputs of the previous step of the policy.
    * @param out The configure()d number of floats.
+   * @return Stamp of the written value (seconds, node clock): when the data was produced,
+   *         e.g. the message header stamp, else its receive time; the current time for a
+   *         value generated now (e.g. a default). Read it from the same message as the value.
    */
-  virtual void compute(const DataStore & state, const TensorMap & last_outputs, float * out) = 0;
+  virtual double compute(const DataStore & state, const TensorMap & last_outputs, float * out) = 0;
 };
 
 /**
