@@ -20,6 +20,8 @@ set(THIS_PACKAGE_DEPENDS
 )
 
 find_package(ament_cmake REQUIRED)
+# Prints a stack trace on crashes of every executable built here (policy_node, tests).
+find_package(backward_ros REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(onnxruntime_vendor REQUIRED)
 foreach(dep IN ITEMS ${THIS_PACKAGE_DEPENDS})

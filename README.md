@@ -80,7 +80,8 @@ ros2 run policy_framework policy_node --ros-args --params-file my_policies.yaml
 
 A lifecycle node that configures and activates itself (`autostart: true`, default). All
 policy inputs must come from input sources; configuration fails listing the inputs no source
-provides. Commands leave through executors. `update_rate` (Hz, default 50) is the policy rate;
+provides. Commands leave through executors. On a crash it prints a stack
+trace (`backward_ros`; the controller manager's `ros2_control_node` links it too). `update_rate` (Hz, default 50) is the policy rate;
 the timer follows `/clock` with `use_sim_time`.
 
 ### ros2_control controller

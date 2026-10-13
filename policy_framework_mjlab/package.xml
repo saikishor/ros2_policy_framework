@@ -15,6 +15,7 @@
 
   <depend>policy_framework</depend>
   <depend>geometry_msgs</depend>
+  <depend>backward_ros</depend>
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
