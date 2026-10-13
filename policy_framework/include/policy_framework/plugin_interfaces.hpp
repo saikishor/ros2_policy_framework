@@ -24,8 +24,9 @@
  *
  * Input sources and executors are the transport (topics, or state/command interfaces when
  * running inside the controller) and are shared by all policies. Preprocessor, inference and
- * postprocessor are owned by one policy and never see ROS transport, so the same policy runs
- * unchanged in the standalone node and in the controller.
+ * postprocessor are owned by one policy and do not see ROS transport, so the same policy runs
+ * unchanged in the standalone node and in the controller. The exception is a topic
+ * observation term (observation_term.hpp), for data that only exists on a topic.
  */
 
 namespace policy_framework

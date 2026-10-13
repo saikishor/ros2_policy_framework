@@ -227,7 +227,8 @@ shared by node and controller), `kangaroo_policy_controller.yaml`, `kangaroo_pol
 
 ## Writing plugins
 
-Derive from a base class of `policy_framework/plugin_interfaces.hpp`, export it with
+Derive from a base class of `policy_framework/plugin_interfaces.hpp` (or `ObservationTerm` /
+`TopicTerm` of `policy_framework/observation_term.hpp`), export it with
 `PLUGINLIB_EXPORT_CLASS` and a plugin description registered against `policy_framework`:
 
 ```cmake
