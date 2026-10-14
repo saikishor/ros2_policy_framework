@@ -79,10 +79,18 @@ PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore &
   if (!e.policy.preprocessor->compute(state, e.outputs, e.inputs)) {
     return Status::WAITING_FOR_DATA;
   }
+  observation_stamp_ = 0.0;
+  for (const auto & s : e.policy.preprocessor->input_stamps()) {
+    if (!s.from_previous_outputs && s.stamp > 0.0 &&
+      (observation_stamp_ <= 0.0 || s.stamp < observation_stamp_))
+    {
+      observation_stamp_ = s.stamp;
+    }
+  }
   if (!e.policy.inference->run(e.inputs, e.outputs)) {
     return Status::ERROR;
   }
-  if (!e.policy.postprocessor->compute(e.outputs, commands)) {
+  if (!e.policy.postprocessor->compute(e.outputs, observation_stamp_, commands)) {
     return Status::ERROR;
   }
 

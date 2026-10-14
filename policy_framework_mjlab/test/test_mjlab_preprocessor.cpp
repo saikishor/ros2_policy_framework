@@ -200,6 +200,7 @@ TEST(MjlabPreprocessor, ReportsTheOldestStampOfEachTerm)
   for (size_t i = 0; i < expected.size(); ++i) {
     EXPECT_EQ(stamps[i].name, expected[i].first);
     EXPECT_DOUBLE_EQ(stamps[i].stamp, expected[i].second) << expected[i].first;
+    EXPECT_EQ(stamps[i].from_previous_outputs, expected[i].first == "actions");
   }
 
   // The previous action derives from the previous observation, whose oldest input was 3.0.

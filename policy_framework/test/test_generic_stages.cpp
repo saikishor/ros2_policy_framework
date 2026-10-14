@@ -96,8 +96,9 @@ TEST(SplitPostprocessor, WritesEachOutputValueToItsEntry)
     model, commands);
   TensorMap out = model.outputs;
   out["actions"].data = {0.5F, -0.5F};
-  ASSERT_TRUE(post.compute(out, commands));
+  ASSERT_TRUE(post.compute(out, 7.5, commands));
   EXPECT_DOUBLE_EQ(commands.get(commands.index("j1/position")), 0.5);
+  EXPECT_DOUBLE_EQ(commands.stamp(commands.index("j2/position")), 7.5);
   EXPECT_DOUBLE_EQ(commands.get(commands.index("j2/position")), -0.5);
 }
 

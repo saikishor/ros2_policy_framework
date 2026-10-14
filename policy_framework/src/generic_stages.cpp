@@ -65,11 +65,11 @@ void SplitPostprocessor::configure(
     get_parameter<std::vector<std::string>>(ctx, "output_entries", {}), commands);
 }
 
-bool SplitPostprocessor::compute(const TensorMap & outputs, DataStore & commands)
+bool SplitPostprocessor::compute(const TensorMap & outputs, double stamp, DataStore & commands)
 {
   const auto & data = outputs.at(tensor_).data;
   for (size_t i = 0; i < indices_.size(); ++i) {
-    commands.set(indices_[i], data[i], 0.0);
+    commands.set(indices_[i], data[i], stamp);
   }
   return true;
 }

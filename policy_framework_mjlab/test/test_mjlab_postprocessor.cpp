@@ -58,8 +58,11 @@ TEST(MjlabPostprocessor, ScalesAndOffsetsActionsOfActuatedJoints)
 
   auto out = m.outputs;
   out["actions"].data = {1.0F, -1.0F};
-  ASSERT_TRUE(post.compute(out, commands));
+  ASSERT_TRUE(post.compute(out, 7.5, commands));
   EXPECT_NEAR(commands.get(commands.index("a/position")), 2.0 * 1.0 + 0.1, 1e-6);
+  // Commands carry the stamp of the observation they were computed from.
+  EXPECT_DOUBLE_EQ(commands.stamp(commands.index("a/position")), 7.5);
+  EXPECT_DOUBLE_EQ(commands.stamp(commands.index("c/velocity")), 7.5);
   EXPECT_NEAR(commands.get(commands.index("c/position")), 3.0 * -1.0 + 0.3, 1e-6);
   EXPECT_TRUE(commands.received(commands.index("c/velocity")));
   EXPECT_DOUBLE_EQ(commands.get(commands.index("c/velocity")), 0.0);

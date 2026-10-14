@@ -186,13 +186,13 @@ void MjlabPostprocessor::reset()
 }
 
 bool MjlabPostprocessor::compute(
-  const policy_framework::TensorMap & outputs, DataStore & commands)
+  const policy_framework::TensorMap & outputs, double stamp, DataStore & commands)
 {
   const auto & a = outputs.at("actions").data;
   for (size_t i = 0; i < position_idx_.size(); ++i) {
-    commands.set(position_idx_[i], scale_[i] * a[i] + offset_[i], 0.0);
+    commands.set(position_idx_[i], scale_[i] * a[i] + offset_[i], stamp);
   }
-  for (const auto i : velocity_idx_) {commands.set(i, 0.0, 0.0);}
+  for (const auto i : velocity_idx_) {commands.set(i, 0.0, stamp);}
   return true;
 }
 

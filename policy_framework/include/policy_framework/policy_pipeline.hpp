@@ -84,6 +84,19 @@ public:
    */
   Status step(const DataStore & state, DataStore & commands);
 
+  /**
+   * @return Stamp of the observation of the last successful step: the oldest known input
+   *         stamp of the active preprocessor, excluding inputs fed back from previous outputs
+   *         (0 when unknown). The commands of that step carry this stamp. Read it from the
+   *         thread calling step().
+   */
+  double observation_stamp() const {return observation_stamp_;}
+  /// @return Input stamps of the active policy's last step. Read from the thread calling step().
+  const InputStamps & input_stamps() const
+  {
+    return entries_.at(active_.load()).policy.preprocessor->input_stamps();
+  }
+
   /// @return Name of the active policy. Thread-safe.
   const std::string & active_policy() const {return entries_.at(active_.load()).policy.name;}
   /// @return All policies, in the order they were added.
@@ -111,6 +124,7 @@ private:
   // Only touched from step().
   bool needs_reset_ = true;
   int steps_ = 0;
+  double observation_stamp_ = 0.0;
 };
 
 }  // namespace policy_framework

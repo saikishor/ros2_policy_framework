@@ -56,7 +56,9 @@ public:
     in.at("obs").data[0] = last.at("actions").data[0];
     return true;
   }
+  const policy_framework::InputStamps & input_stamps() const override {return stamps;}
   bool ready = true;
+  policy_framework::InputStamps stamps;
   int resets = 0;
   int clears = 0;
 };
@@ -65,9 +67,9 @@ class FakePostprocessor : public policy_framework::Postprocessor
 {
 public:
   void configure(const PluginContext &, const ModelInfo &, DataStore &) override {}
-  bool compute(const TensorMap & out, DataStore & commands) override
+  bool compute(const TensorMap & out, double stamp, DataStore & commands) override
   {
-    commands.set(commands.index("cmd"), out.at("actions").data[0], 0.0);
+    commands.set(commands.index("cmd"), out.at("actions").data[0], stamp);
     return true;
   }
 };
@@ -118,6 +120,19 @@ TEST_F(PolicyPipelineTest, StepRunsStagesAndFeedsBackPreviousOutputs)
   EXPECT_DOUBLE_EQ(cmd(), 2.0);
   EXPECT_EQ(a.pre->resets, 1);  // activated once
   EXPECT_EQ(a.pre->clears, 1);  // first start is from scratch
+}
+
+TEST_F(PolicyPipelineTest, CommandsCarryTheOldestStampOfTheObservation)
+{
+  Fakes a(1.0F);
+  // Unknown (0) stamps and inputs fed back from previous outputs do not count.
+  a.pre->stamps = {{"imu", 5.0, false}, {"joints", 3.0, false}, {"cmd", 0.0, false},
+    {"actions", 1.0, true}};
+  pipeline.add_policy(a.policy("a"));
+  ASSERT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::OK);
+  EXPECT_DOUBLE_EQ(pipeline.observation_stamp(), 3.0);
+  EXPECT_DOUBLE_EQ(commands.stamp(commands.index("cmd")), 3.0);
+  EXPECT_EQ(pipeline.input_stamps().size(), 4u);
 }
 
 TEST_F(PolicyPipelineTest, StepWaitsWhenPreprocessorHasNoData)

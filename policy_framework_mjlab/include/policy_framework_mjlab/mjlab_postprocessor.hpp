@@ -62,8 +62,10 @@ public:
     policy_framework::DataStore & commands) override;
   /// Real-time safe: only flags the gains to be sent.
   void reset() override;
+  /// Writes the commands with @p stamp (the observation stamp).
   bool compute(
-    const policy_framework::TensorMap & outputs, policy_framework::DataStore & commands) override;
+    const policy_framework::TensorMap & outputs, double stamp,
+    policy_framework::DataStore & commands) override;
 
 private:
   std::vector<double> scale_, offset_;

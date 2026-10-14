@@ -172,14 +172,15 @@ void MjlabPreprocessor::reset()
 double MjlabPreprocessor::current_value(
   const Term & term, const DataStore & state, const TensorMap & last_outputs, float * out) const
 {
+  auto oldest = [&](const std::vector<size_t> & idx) {
+      double t = std::numeric_limits<double>::max();
+      for (const auto i : idx) {t = std::min(t, state.stamp(i));}
+      return t;
+    };
   // Copy the entries and return their oldest stamp.
   auto copy = [&](const std::vector<size_t> & idx, float * dst) {
-      double oldest = std::numeric_limits<double>::max();
-      for (size_t i = 0; i < idx.size(); ++i) {
-        dst[i] = static_cast<float>(state.get(idx[i]));
-        oldest = std::min(oldest, state.stamp(idx[i]));
-      }
-      return oldest;
+      for (size_t i = 0; i < idx.size(); ++i) {dst[i] = static_cast<float>(state.get(idx[i]));}
+      return oldest(idx);
     };
   switch (term.kind) {
     case Kind::BASE_ANG_VEL: return copy(ang_vel_, out);
@@ -188,19 +189,15 @@ double MjlabPreprocessor::current_value(
     case Kind::TWIST_COMMAND: return copy(twist_, out);
     case Kind::JOINT_VEL: return copy(joint_vel_, out);
     case Kind::PLUGIN: return term.plugin->compute(state, last_outputs, out);
-    case Kind::PROJECTED_GRAVITY: {
-        float q[4];  // w, x, y, z (float precision is enough for the projected gravity)
-        const double stamp = copy(quat_, q);
-        projected_gravity(q[0], q[1], q[2], q[3], out);
-        return stamp;
+    case Kind::PROJECTED_GRAVITY:
+      projected_gravity(
+        state.get(quat_[0]), state.get(quat_[1]), state.get(quat_[2]), state.get(quat_[3]), out);
+      return oldest(quat_);
+    case Kind::JOINT_POS:
+      for (size_t i = 0; i < joint_pos_.size(); ++i) {
+        out[i] = static_cast<float>(state.get(joint_pos_[i]) - default_joint_pos_[i]);
       }
-    case Kind::JOINT_POS: {
-        const double stamp = copy(joint_pos_, out);
-        for (size_t i = 0; i < joint_pos_.size(); ++i) {
-          out[i] = static_cast<float>(state.get(joint_pos_[i]) - default_joint_pos_[i]);
-        }
-        return stamp;
-      }
+      return oldest(joint_pos_);
     case Kind::ACTIONS: {
         const auto & a = last_outputs.at("actions").data;
         std::copy(a.begin(), a.end(), out);
@@ -240,9 +237,10 @@ bool MjlabPreprocessor::compute(
     std::copy(t.history.begin() + t.dim, t.history.end(), t.history.begin());
     float * newest = t.history.data() + t.history.size() - t.dim;
     const double stamp = current_value(t, state, last_outputs, newest);
-    stamps_[k].stamp = stamp;
     const bool derived = t.kind == Kind::ACTIONS ||
       (t.kind == Kind::MOTION_COMMAND && !first_step_);
+    stamps_[k].stamp = stamp;
+    stamps_[k].from_previous_outputs = derived;
     if (!derived && stamp > 0.0 && (obs_stamp <= 0.0 || stamp < obs_stamp)) {
       obs_stamp = stamp;
     }

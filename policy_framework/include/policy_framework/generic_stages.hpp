@@ -51,7 +51,7 @@ class SplitPostprocessor : public Postprocessor
 public:
   /// @throws std::runtime_error on unknown tensor or size mismatch.
   void configure(const PluginContext & ctx, const ModelInfo & model, DataStore & commands) override;
-  bool compute(const TensorMap & outputs, DataStore & commands) override;
+  bool compute(const TensorMap & outputs, double stamp, DataStore & commands) override;
 
 private:
   std::string tensor_;

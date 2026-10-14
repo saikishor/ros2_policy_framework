@@ -65,6 +65,9 @@ struct InputStamp
 {
   std::string name;
   double stamp = 0.0;
+  /// The input is fed back from the policy's previous outputs (e.g. the last action) and has
+  /// the stamp of the previous observation; it does not count for the observation stamp.
+  bool from_previous_outputs = false;
 };
 using InputStamps = std::vector<InputStamp>;
 
@@ -176,9 +179,11 @@ public:
   virtual void reset() {}
   /**
    * @brief Write the commands. Called from the control cycle.
+   * @param stamp Stamp of the observation the outputs were computed from (oldest input, see
+   *        PolicyPipeline::observation_stamp()); write it as the stamp of every command.
    * @return false on failure.
    */
-  virtual bool compute(const TensorMap & outputs, DataStore & commands) = 0;
+  virtual bool compute(const TensorMap & outputs, double stamp, DataStore & commands) = 0;
 };
 
 /**
