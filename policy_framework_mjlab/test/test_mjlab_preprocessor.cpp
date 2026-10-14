@@ -66,7 +66,10 @@ ModelInfo motion_model()
   return m;
 }
 
-void set(DataStore & s, const std::string & name, double v) {s.set(s.index(name), v, 0.0);}
+void set(DataStore & s, const std::string & name, double v, double stamp = 0.0)
+{
+  s.set(s.index(name), v, stamp);
+}
 
 void set_upright_robot(DataStore & s, double pos_a, double pos_b)
 {
@@ -161,6 +164,53 @@ TEST(MjlabPreprocessor, BuildsTermMajorHistoryOldestFirst)
   }
 }
 
+TEST(MjlabPreprocessor, ReportsTheOldestStampOfEachTerm)
+{
+  const auto model = twist_model(1);
+  DataStore state;
+  MjlabPreprocessor pre;
+  pre.configure(make_context(), model, state);
+  set_upright_robot(state, 1.1, 1.2);  // stamps 0
+  for (const auto * n : {"imu/orientation.w", "imu/orientation.x", "imu/orientation.y",
+      "imu/orientation.z"})
+  {
+    set(state, n, n[12] == 'w' ? 1.0 : 0.0, 5.0);
+  }
+  for (const auto * n : {"imu/angular_velocity.x", "imu/angular_velocity.y",
+      "imu/angular_velocity.z"})
+  {
+    set(state, n, 0.0, 5.1);
+  }
+  set(state, "a/position", 1.1, 4.0);
+  set(state, "b/position", 1.2, 4.2);
+  set(state, "a/velocity", 0.0, 4.1);
+  set(state, "b/velocity", 0.0, 4.1);
+  for (const auto * n : {"cmd_vel/linear.x", "cmd_vel/linear.y", "cmd_vel/angular.z"}) {
+    set(state, n, 0.0, 3.0);
+  }
+  pre.reset();
+  TensorMap in = model.inputs;
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  const auto & stamps = pre.input_stamps();
+  ASSERT_EQ(stamps.size(), 6u);  // one per term, in observation_names order
+  const std::vector<std::pair<std::string, double>> expected = {
+    {"base_ang_vel", 5.1}, {"joint_pos", 4.0}, {"joint_vel", 4.1},
+    {"actions", 0.0},  // previous outputs: none yet
+    {"command", 3.0}, {"imu_projected_gravity", 5.0}};
+  for (size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_EQ(stamps[i].name, expected[i].first);
+    EXPECT_DOUBLE_EQ(stamps[i].stamp, expected[i].second) << expected[i].first;
+  }
+
+  // The previous action derives from the previous observation, whose oldest input was 3.0.
+  set(state, "cmd_vel/linear.x", 0.0, 6.0);
+  set(state, "cmd_vel/linear.y", 0.0, 6.0);
+  set(state, "cmd_vel/angular.z", 0.0, 6.0);
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_DOUBLE_EQ(pre.input_stamps()[3].stamp, 3.0);
+  EXPECT_DOUBLE_EQ(pre.input_stamps()[4].stamp, 6.0);
+}
+
 TEST(MjlabPreprocessor, MotionCommandIsSeededFromRobotThenFedFromOutputs)
 {
   const auto model = motion_model();
@@ -227,8 +277,10 @@ TEST(MjlabPreprocessor, TermPluginReplacesABuiltinTerm)
   }
   pre.reset();
   TensorMap in = model.inputs;
+  const double before = make_context().node->now().seconds();
   ASSERT_TRUE(pre.compute(state, model.outputs, in));
   for (size_t i = 8; i < 11; ++i) {EXPECT_FLOAT_EQ(in["obs"].data[i], 0.0F);}  // command
+  EXPECT_GE(pre.input_stamps()[4].stamp, before);  // stamp from the plugin: zero made now
   EXPECT_FLOAT_EQ(in["obs"].data[13], -1.0F);  // gravity z still after it
 }
 

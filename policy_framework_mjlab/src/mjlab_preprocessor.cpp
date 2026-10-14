@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <memory>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -78,6 +79,7 @@ void MjlabPreprocessor::configure(
     };
 
   terms_.clear();
+  stamps_.clear();
   size_t single_dim = 0;
   for (const auto & name : split(require(md, "observation_names"))) {
     Term t{};
@@ -129,6 +131,7 @@ void MjlabPreprocessor::configure(
     }
     single_dim += t.dim;
     terms_.push_back(std::move(t));
+    stamps_.push_back({name, 0.0});
   }
 
   const auto in = model.inputs.find(obs_input_);
@@ -154,6 +157,7 @@ void MjlabPreprocessor::configure(
 void MjlabPreprocessor::clear()
 {
   history_filled_ = false;
+  prev_obs_stamp_ = 0.0;
 }
 
 void MjlabPreprocessor::reset()
@@ -165,48 +169,57 @@ void MjlabPreprocessor::reset()
   }
 }
 
-void MjlabPreprocessor::current_value(
+double MjlabPreprocessor::current_value(
   const Term & term, const DataStore & state, const TensorMap & last_outputs, float * out) const
 {
+  // Copy the entries and return their oldest stamp.
   auto copy = [&](const std::vector<size_t> & idx, float * dst) {
-      for (size_t i = 0; i < idx.size(); ++i) {dst[i] = static_cast<float>(state.get(idx[i]));}
+      double oldest = std::numeric_limits<double>::max();
+      for (size_t i = 0; i < idx.size(); ++i) {
+        dst[i] = static_cast<float>(state.get(idx[i]));
+        oldest = std::min(oldest, state.stamp(idx[i]));
+      }
+      return oldest;
     };
   switch (term.kind) {
-    case Kind::BASE_ANG_VEL: copy(ang_vel_, out); break;
-    case Kind::BASE_LIN_ACC: copy(lin_acc_, out); break;
-    case Kind::BASE_LIN_VEL: copy(lin_vel_, out); break;
-    case Kind::TWIST_COMMAND: copy(twist_, out); break;
-    case Kind::JOINT_VEL: copy(joint_vel_, out); break;
-    case Kind::PROJECTED_GRAVITY:
-      projected_gravity(
-        state.get(quat_[0]), state.get(quat_[1]), state.get(quat_[2]), state.get(quat_[3]), out);
-      break;
-    case Kind::PLUGIN: term.plugin->compute(state, last_outputs, out); break;
-    case Kind::JOINT_POS:
-      for (size_t i = 0; i < joint_pos_.size(); ++i) {
-        out[i] = static_cast<float>(state.get(joint_pos_[i]) - default_joint_pos_[i]);
+    case Kind::BASE_ANG_VEL: return copy(ang_vel_, out);
+    case Kind::BASE_LIN_ACC: return copy(lin_acc_, out);
+    case Kind::BASE_LIN_VEL: return copy(lin_vel_, out);
+    case Kind::TWIST_COMMAND: return copy(twist_, out);
+    case Kind::JOINT_VEL: return copy(joint_vel_, out);
+    case Kind::PLUGIN: return term.plugin->compute(state, last_outputs, out);
+    case Kind::PROJECTED_GRAVITY: {
+        float q[4];  // w, x, y, z (float precision is enough for the projected gravity)
+        const double stamp = copy(quat_, q);
+        projected_gravity(q[0], q[1], q[2], q[3], out);
+        return stamp;
       }
-      break;
+    case Kind::JOINT_POS: {
+        const double stamp = copy(joint_pos_, out);
+        for (size_t i = 0; i < joint_pos_.size(); ++i) {
+          out[i] = static_cast<float>(state.get(joint_pos_[i]) - default_joint_pos_[i]);
+        }
+        return stamp;
+      }
     case Kind::ACTIONS: {
         const auto & a = last_outputs.at("actions").data;
         std::copy(a.begin(), a.end(), out);
-        break;
+        return prev_obs_stamp_;
       }
     case Kind::MOTION_COMMAND: {
         const size_t n = joint_pos_.size();
         if (first_step_) {
           // Start the reference motion from where the robot is.
-          copy(joint_pos_, out);
-          copy(joint_vel_, out + n);
-        } else {
-          const auto & p = last_outputs.at("joint_pos").data;
-          const auto & v = last_outputs.at("joint_vel").data;
-          std::copy(p.begin(), p.end(), out);
-          std::copy(v.begin(), v.end(), out + n);
+          return std::min(copy(joint_pos_, out), copy(joint_vel_, out + n));
         }
-        break;
+        const auto & p = last_outputs.at("joint_pos").data;
+        const auto & v = last_outputs.at("joint_vel").data;
+        std::copy(p.begin(), p.end(), out);
+        std::copy(v.begin(), v.end(), out + n);
+        return prev_obs_stamp_;
       }
   }
+  return 0.0;
 }
 
 bool MjlabPreprocessor::compute(
@@ -220,11 +233,19 @@ bool MjlabPreprocessor::compute(
   }
   auto & obs = inputs.at(obs_input_).data;
   size_t offset = 0;
-  for (auto & t : terms_) {
+  double obs_stamp = 0.0;  // oldest known stamp of the terms not derived from previous outputs
+  for (size_t k = 0; k < terms_.size(); ++k) {
+    auto & t = terms_[k];
     // Drop the oldest entry, append the current value as the newest.
     std::copy(t.history.begin() + t.dim, t.history.end(), t.history.begin());
     float * newest = t.history.data() + t.history.size() - t.dim;
-    current_value(t, state, last_outputs, newest);
+    const double stamp = current_value(t, state, last_outputs, newest);
+    stamps_[k].stamp = stamp;
+    const bool derived = t.kind == Kind::ACTIONS ||
+      (t.kind == Kind::MOTION_COMMAND && !first_step_);
+    if (!derived && stamp > 0.0 && (obs_stamp <= 0.0 || stamp < obs_stamp)) {
+      obs_stamp = stamp;
+    }
     if (!history_filled_) {
       // Like mjlab's CircularBuffer: the first push after clear back-fills the whole history.
       for (size_t h = 0; h + 1 < history_length_; ++h) {
@@ -238,6 +259,7 @@ bool MjlabPreprocessor::compute(
     inputs.at("time_step").data[0] = static_cast<float>(step_);
   }
   history_filled_ = true;
+  prev_obs_stamp_ = obs_stamp;
   first_step_ = false;
   ++step_;
   return true;

@@ -52,6 +52,11 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * above does not know. History and layout apply to plugin terms as to built-in ones; the cycle
  * is skipped while a plugin term is not ready().
  *
+ * input_stamps(): one per term, in `observation_names` order. A state store term has the
+ * oldest stamp of its entries, a plugin term the stamp it returns. `actions` and the motion
+ * command fed back from the outputs derive from the previous observation, so they have its
+ * stamp (the oldest of its other terms; 0 before the first step after clear()).
+ *
  * If the model has a `time_step` input it receives the number of steps since reset(); the
  * motion command is re-seeded from the robot state after reset().
  *
@@ -70,6 +75,7 @@ public:
   bool compute(
     const policy_framework::DataStore & state, const policy_framework::TensorMap & last_outputs,
     policy_framework::TensorMap & inputs) override;
+  const policy_framework::InputStamps & input_stamps() const override {return stamps_;}
 
   /// @return Number of past observations per term in the model input. Valid after configure().
   size_t history_length() const {return history_length_;}
@@ -88,8 +94,8 @@ private:
     std::shared_ptr<policy_framework::ObservationTerm> plugin;  ///< Kind::PLUGIN only.
   };
 
-  /// Write the current value of @p term into @p out (term.dim values).
-  void current_value(
+  /// Write the current value of @p term into @p out (term.dim values). @return Its stamp.
+  double current_value(
     const Term & term, const policy_framework::DataStore & state,
     const policy_framework::TensorMap & last_outputs, float * out) const;
 
@@ -106,6 +112,8 @@ private:
   // Control-cycle state.
   std::vector<float> scratch_;
   bool history_filled_ = false;
+  policy_framework::InputStamps stamps_;
+  double prev_obs_stamp_ = 0.0;  ///< Oldest input stamp of the previous step, 0 after clear().
   bool first_step_ = true;  ///< First step since reset().
   int step_ = 0;
 };
