@@ -49,6 +49,27 @@ One cycle: sources → [state interfaces] → preprocessor → inference → pos
 [command interfaces] → executors. A preprocessor returning "not ready" (an input never
 received) skips the cycle without sending anything.
 
+### Timestamps
+
+Every value carries the time its data was produced (seconds, node clock), so the age of each
+input and the latency down to the commands can be measured:
+
+| Data | Stamp |
+|------|-------|
+| State entry from a topic source | message header stamp; receive time when the header is empty or absent (Twist) |
+| State entry from a state interface | cycle time when read (ros2_control interfaces carry no stamp) |
+| Observation term | `ObservationTerm::compute()` return value; built-in mjlab terms: oldest stamp of their entries |
+| Term fed back from previous outputs (`actions`, motion command) | stamp of the previous observation, flagged `from_previous_outputs` |
+| Observation (`PolicyPipeline::observation_stamp()`) | oldest known input stamp, feedback terms excluded |
+| Command entry | the observation stamp of the step that computed it |
+
+`Preprocessor::input_stamps()` lists one stamp per input (per term for mjlab, per entry for
+`ConcatPreprocessor`), and `PolicyPipeline::input_stamps()` returns the active policy's.
+Stamps are not published yet: this is the basis for adding timing/latency statistics later.
+Header stamps are only comparable when the publisher uses the same clock as the node (e.g.
+sim time everywhere). `MultiDOFCommand` has no header, so the executor does not forward the
+stamp.
+
 ### Policy switching
 
 `policies` is a list; the first one is active at start. Switch with
@@ -237,7 +258,9 @@ pluginlib_export_plugin_description_file(policy_framework plugins.xml)
 ```
 
 Read parameters with `policy_framework::get_parameter<T>(ctx, "param", default)` (declares
-`<ctx.name>.param` once). Register every state/command entry in `configure()`; in the cycle
+`<ctx.name>.param` once). Keep stamps flowing: a preprocessor reports `input_stamps()`, a
+postprocessor writes the `stamp` it receives on every command, a term returns the stamp of
+its value. Register every state/command entry in `configure()`; in the cycle
 only use indices. `Preprocessor::compute` returns false until its inputs are received.
 `InputSource` callbacks must not touch the store: buffer the message (e.g.
 `realtime_tools::RealtimeBuffer`) and copy it in `read()`. `policy_framework_mjlab` is a
