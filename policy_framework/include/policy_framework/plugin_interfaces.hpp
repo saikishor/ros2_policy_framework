@@ -53,6 +53,21 @@ struct ModelInfo
   TensorMap outputs;
 };
 
+/**
+ * @brief When the data of one input of a policy step was produced.
+ *
+ * Stamps are seconds on the node clock: the message header stamp for topic data (the receive
+ * time when the header is empty or the message has none), the cycle time for state
+ * interfaces (ros2_control interfaces carry no stamp). 0 means unknown (e.g. never received).
+ * They let a host measure how old each input is and the latency down to the commands.
+ */
+struct InputStamp
+{
+  std::string name;
+  double stamp = 0.0;
+};
+using InputStamps = std::vector<InputStamp>;
+
 /// What a plugin needs to configure itself.
 struct PluginContext
 {
@@ -132,6 +147,16 @@ public:
    */
   virtual bool compute(
     const DataStore & state, const TensorMap & last_outputs, TensorMap & inputs) = 0;
+  /**
+   * @return One stamp per input of the last successful compute() (e.g. per observation term
+   *         or per entry). The names and their order are fixed after configure(); only the
+   *         stamps change. Empty when the preprocessor does not report stamps.
+   */
+  virtual const InputStamps & input_stamps() const
+  {
+    static const InputStamps none;
+    return none;
+  }
 };
 
 /**

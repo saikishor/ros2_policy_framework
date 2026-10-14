@@ -21,6 +21,8 @@ namespace policy_framework
  * Parameters (under `<policy>.`):
  * - `input_tensor` (string, default `obs`)
  * - `input_entries` (string array): state entries, in order; must match the tensor size.
+ *
+ * input_stamps(): one per entry, the stamp of the entry in the state store.
  */
 class ConcatPreprocessor : public Preprocessor
 {
@@ -29,10 +31,12 @@ public:
   void configure(const PluginContext & ctx, const ModelInfo & model, DataStore & state) override;
   bool compute(
     const DataStore & state, const TensorMap & last_outputs, TensorMap & inputs) override;
+  const InputStamps & input_stamps() const override {return stamps_;}
 
 private:
   std::string tensor_;
   std::vector<size_t> indices_;
+  InputStamps stamps_;
 };
 
 /**

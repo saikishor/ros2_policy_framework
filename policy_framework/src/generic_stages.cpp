@@ -39,9 +39,10 @@ void ConcatPreprocessor::configure(
   const PluginContext & ctx, const ModelInfo & model, DataStore & state)
 {
   tensor_ = get_parameter<std::string>(ctx, "input_tensor", "obs");
-  indices_ = register_entries(
-    model.inputs, tensor_,
-    get_parameter<std::vector<std::string>>(ctx, "input_entries", {}), state);
+  const auto entries = get_parameter<std::vector<std::string>>(ctx, "input_entries", {});
+  indices_ = register_entries(model.inputs, tensor_, entries, state);
+  stamps_.clear();
+  for (const auto & e : entries) {stamps_.push_back({e, 0.0});}
 }
 
 bool ConcatPreprocessor::compute(const DataStore & state, const TensorMap &, TensorMap & inputs)
@@ -50,6 +51,7 @@ bool ConcatPreprocessor::compute(const DataStore & state, const TensorMap &, Ten
   auto & data = inputs.at(tensor_).data;
   for (size_t i = 0; i < indices_.size(); ++i) {
     data[i] = static_cast<float>(state.get(indices_[i]));
+    stamps_[i].stamp = state.stamp(indices_[i]);
   }
   return true;
 }

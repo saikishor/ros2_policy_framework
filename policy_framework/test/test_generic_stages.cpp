@@ -54,6 +54,26 @@ TEST(ConcatPreprocessor, RegistersEntriesAndConcatenatesThem)
   EXPECT_EQ(in["obs"].data, (std::vector<float>{1.0F, 2.0F, 3.0F}));
 }
 
+TEST(ConcatPreprocessor, ReportsTheStampOfEachEntry)
+{
+  const auto model = make_model();
+  DataStore state;
+  policy_framework::ConcatPreprocessor pre;
+  pre.configure(
+    make_context({{"p.input_entries", std::vector<std::string>{"a", "b", "c"}}}), model, state);
+  state.set(state.index("a"), 1.0, 10.0);
+  state.set(state.index("b"), 2.0, 11.0);
+  state.set(state.index("c"), 3.0, 12.5);
+  TensorMap in = model.inputs;
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  const auto & stamps = pre.input_stamps();
+  ASSERT_EQ(stamps.size(), 3u);
+  EXPECT_EQ(stamps[0].name, "a");
+  EXPECT_DOUBLE_EQ(stamps[0].stamp, 10.0);
+  EXPECT_EQ(stamps[2].name, "c");
+  EXPECT_DOUBLE_EQ(stamps[2].stamp, 12.5);
+}
+
 TEST(ConcatPreprocessor, RejectsSizeMismatch)
 {
   DataStore state;
