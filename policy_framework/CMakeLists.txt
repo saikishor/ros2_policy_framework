@@ -40,6 +40,7 @@ add_library(${PROJECT_NAME} SHARED
   src/topic_sources.cpp
   src/multi_dof_command_executor.cpp
   src/generic_stages.cpp
+  src/interface_executors.cpp
   src/policy_runner.cpp
   src/policy_node.cpp
   src/policy_controller.cpp
@@ -81,6 +82,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_multi_dof_command_executor ${PROJECT_NAME})
   ament_add_gtest(test_observation_term test/test_observation_term.cpp)
   target_link_libraries(test_observation_term ${PROJECT_NAME})
+  ament_add_gtest(test_interface_executors test/test_interface_executors.cpp)
+  target_link_libraries(test_interface_executors ${PROJECT_NAME})
   ament_add_gtest(test_generic_stages test/test_generic_stages.cpp)
   target_link_libraries(test_generic_stages ${PROJECT_NAME})
   foreach(test IN ITEMS test_onnx_inference test_policy_runner test_policy_controller test_policy_node)

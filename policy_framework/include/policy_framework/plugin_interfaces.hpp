@@ -5,6 +5,7 @@
 #define POLICY_FRAMEWORK__PLUGIN_INTERFACES_HPP_
 
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -225,6 +226,45 @@ public:
   virtual void configure(const PluginContext & ctx, const DataStore & commands) = 0;
   /// Send the commands. Called from the control cycle.
   virtual void write(const DataStore & commands) = 0;
+};
+
+/**
+ * @brief Turns the commands into ros2_control command interface values, inside
+ *        PolicyController (the controller's counterpart of the topic Executor, which only
+ *        runs in the standalone node).
+ *
+ * It may compute (e.g. a PD law into efforts) and runs on every controller update, also
+ * between policy steps when the policy runs at a lower rate, with the state interfaces read
+ * in that update. It does not touch loaned interfaces: it fills values that the controller
+ * writes, so it can be tested without a controller manager.
+ */
+class InterfaceExecutor
+{
+public:
+  virtual ~InterfaceExecutor() = default;
+  /**
+   * @brief Configure. @p commands already holds every entry the policies may write.
+   * @param state Register every state entry read in write(); the controller claims them as
+   *        state interfaces, read on every update.
+   * @throws std::exception on any configuration error.
+   */
+  virtual void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) = 0;
+  /// @return Full names of the command interfaces to claim. Valid after configure().
+  virtual const std::vector<std::string> & command_interfaces() const = 0;
+  /**
+   * @brief Compute the interface values. Called from the control loop on every update, once
+   *        the active policy has produced commands since the controller was activated.
+   * @param values One per command_interfaces(); NaN leaves that interface unchanged.
+   */
+  virtual void write(const DataStore & commands, const DataStore & state, std::vector<double> & values) = 0;
+  /**
+   * @brief Values written when the controller stops commanding: on deactivation and when the
+   *        policy fails. Default: NaN (leave every interface unchanged).
+   */
+  virtual void safe_values(std::vector<double> & values)
+  {
+    values.assign(values.size(), std::numeric_limits<double>::quiet_NaN());
+  }
 };
 
 }  // namespace policy_framework

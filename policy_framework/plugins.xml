@@ -23,4 +23,7 @@
   <class name="policy_framework/SplitPostprocessor" type="policy_framework::SplitPostprocessor" base_class_type="policy_framework::Postprocessor">
     <description>Writes each value of one model output to a command entry.</description>
   </class>
+  <class name="policy_framework/PdEffortExecutor" type="policy_framework::PdEffortExecutor" base_class_type="policy_framework::InterfaceExecutor">
+    <description>Controller-side joint PD law writing effort command interfaces.</description>
+  </class>
 </library>

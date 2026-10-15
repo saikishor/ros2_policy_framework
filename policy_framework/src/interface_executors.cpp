@@ -1,0 +1,107 @@
+// Copyright 2026 PAL Robotics S.L.
+// SPDX-License-Identifier: Apache-2.0
+
+#include "policy_framework/interface_executors.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include "pluginlib/class_list_macros.hpp"
+
+namespace policy_framework
+{
+
+namespace
+{
+
+const std::string kPosition = "/position";
+
+bool ends_with(const std::string & s, const std::string & suffix)
+{
+  return s.size() > suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+/// Value of a received, finite entry.
+std::optional<double> valid(const DataStore & store, size_t i)
+{
+  if (!store.received(i)) {return std::nullopt;}
+  const double v = store.get(i);
+  return std::isfinite(v) ? std::optional<double>(v) : std::nullopt;
+}
+
+}  // namespace
+
+void PdEffortExecutor::configure(
+  const PluginContext & ctx, const DataStore & commands, DataStore & state)
+{
+  auto names = get_parameter<std::vector<std::string>>(ctx, "joints", {});
+  if (names.empty()) {
+    for (const auto & n : commands.names()) {
+      if (ends_with(n, kPosition)) {names.push_back(n.substr(0, n.size() - kPosition.size()));}
+    }
+  }
+  const auto effort = get_parameter<std::string>(ctx, "effort_interface", "effort");
+  const auto kp = get_parameter<std::vector<double>>(ctx, "stiffness", {});
+  const auto kd = get_parameter<std::vector<double>>(ctx, "damping", {});
+  const auto limits = get_parameter<std::vector<double>>(ctx, "effort_limits", {});
+  auto check_size = [&](const std::vector<double> & v, const std::string & what) {
+      if (!v.empty() && v.size() != names.size()) {
+        throw std::runtime_error(
+                ctx.name + ": " + what + " has " + std::to_string(v.size()) + " values for " +
+                std::to_string(names.size()) + " joints");
+      }
+    };
+  check_size(kp, "stiffness");
+  check_size(kd, "damping");
+  check_size(limits, "effort_limits");
+
+  joints_.clear();
+  interfaces_.clear();
+  for (size_t i = 0; i < names.size(); ++i) {
+    const auto & j = names[i];
+    const auto ref_pos = commands.find(j + kPosition);
+    if (!ref_pos) {throw std::runtime_error(ctx.name + ": no command entry " + j + kPosition);}
+    Joint joint{*ref_pos, state.add(j + "/position"), state.add(j + "/velocity"),
+      commands.find(j + "/velocity"), commands.find(j + "/stiffness"),
+      commands.find(j + "/damping")};
+    if ((!joint.kp_entry && kp.empty()) || (!joint.kd_entry && kd.empty())) {
+      throw std::runtime_error(
+              ctx.name + ": no gains for " + j +
+              " (neither stiffness/damping command entries nor parameters)");
+    }
+    joint.kp = kp.empty() ? 0.0 : kp[i];
+    joint.kd = kd.empty() ? 0.0 : kd[i];
+    joint.limit = limits.empty() ? 0.0 : limits[i];
+    joints_.push_back(joint);
+    interfaces_.push_back(j + "/" + effort);
+  }
+}
+
+void PdEffortExecutor::write(
+  const DataStore & commands, const DataStore & state, std::vector<double> & values)
+{
+  for (size_t i = 0; i < joints_.size(); ++i) {
+    const auto & j = joints_[i];
+    const auto ref = valid(commands, j.ref_pos);
+    const auto q = valid(state, j.q);
+    const auto dq = valid(state, j.dq);
+    const auto ref_vel = j.ref_vel ? valid(commands, *j.ref_vel) : std::optional<double>(0.0);
+    const auto kp = j.kp_entry ? valid(commands, *j.kp_entry) : std::optional<double>(j.kp);
+    const auto kd = j.kd_entry ? valid(commands, *j.kd_entry) : std::optional<double>(j.kd);
+    if (!ref || !q || !dq || !ref_vel || !kp || !kd) {
+      values[i] = std::numeric_limits<double>::quiet_NaN();
+      continue;
+    }
+    double u = *kp * (*ref - *q) + *kd * (*ref_vel - *dq);
+    if (j.limit > 0.0) {u = std::clamp(u, -j.limit, j.limit);}
+    values[i] = u;
+  }
+}
+
+}  // namespace policy_framework
+
+PLUGINLIB_EXPORT_CLASS(policy_framework::PdEffortExecutor, policy_framework::InterfaceExecutor)
