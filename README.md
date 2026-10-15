@@ -212,6 +212,23 @@ loco:
 Topic terms need no input source and claim no state interface. Keep data that also exists as
 state interfaces (joints, IMU) in the state store, so the controller reads it in real time.
 
+Fixed-size float data such as a height scan works as a term: the term returns its size from
+parameters (only the total `obs` size is checked against the model, so validate it in
+`configure_term()`) and copies the values in `compute()`. Do not do non-real-time work in
+`compute()` (e.g. a TF lookup) in a synchronous controller: publish the sampled scan from
+another node, or use `is_async: true`.
+
+**Limitation: camera images are not supported as model inputs yet.**
+- Terms only write into the single flat `observation_input` tensor; a separate image input
+  (e.g. `image [1,3,H,W]`) cannot be filled by `MjlabPreprocessor`.
+- Tensors are float32 only, so models taking `uint8` images cannot be fed.
+- Term history is term-major and shifted by copy every cycle, which neither matches stacked
+  image layouts (`[T,C,H,W]`) nor scales to image sizes.
+- Image decoding/resizing does not belong in the synchronous control loop.
+
+Planned options: let a term target its own model input (`<policy>.terms.<term>.input`) with
+its own layout and optional history, and add a tensor dtype when a `uint8` model is needed.
+
 `MjlabPostprocessor` writes `<joint>/position = action_scale · action + default_joint_pos`
 (and `<joint>/velocity = 0`) for the metadata joints minus `excluded_joints`, and with
 `gains_controller` pushes the policy's `joint_stiffness`/`joint_damping` as
