@@ -102,6 +102,35 @@ void PdEffortExecutor::write(
   }
 }
 
+void ReferenceInterfaceExecutor::configure(
+  const PluginContext & ctx, const DataStore & commands, DataStore &)
+{
+  const auto prefix = get_parameter<std::string>(ctx, "prefix", "");
+  const auto kinds = get_parameter<std::vector<std::string>>(
+    ctx, "interfaces", {"position", "velocity"});
+  entries_.clear();
+  interfaces_.clear();
+  for (size_t i = 0; i < commands.size(); ++i) {
+    const auto & name = commands.names()[i];
+    const bool selected = std::any_of(
+      kinds.begin(), kinds.end(), [&](const std::string & k) {return ends_with(name, "/" + k);});
+    if (!selected) {continue;}
+    entries_.push_back(i);
+    interfaces_.push_back(prefix.empty() ? name : prefix + "/" + name);
+  }
+}
+
+void ReferenceInterfaceExecutor::write(
+  const DataStore & commands, const DataStore &, std::vector<double> & values)
+{
+  for (size_t i = 0; i < entries_.size(); ++i) {
+    values[i] = commands.received(entries_[i]) ? commands.get(entries_[i]) :
+      std::numeric_limits<double>::quiet_NaN();
+  }
+}
+
 }  // namespace policy_framework
 
 PLUGINLIB_EXPORT_CLASS(policy_framework::PdEffortExecutor, policy_framework::InterfaceExecutor)
+PLUGINLIB_EXPORT_CLASS(
+  policy_framework::ReferenceInterfaceExecutor, policy_framework::InterfaceExecutor)

@@ -57,6 +57,30 @@ private:
   std::vector<std::string> interfaces_;
 };
 
+/**
+ * @brief Copies command entries to command interfaces `<prefix>/<entry>`, e.g. the reference
+ *        interfaces of a chained pid_controller (`<pid>/<joint>/position`).
+ *
+ * Parameters (under `<name>.`):
+ * - `prefix` (default empty: the entry name is the interface name)
+ * - `interfaces` (string array, default `[position, velocity]`): only entries
+ *   `<joint>/<interface>` with one of these interfaces are written.
+ *
+ * Entries the policy never wrote are left unchanged; safe_values() leaves everything
+ * unchanged (the chained controller keeps holding the last reference).
+ */
+class ReferenceInterfaceExecutor : public InterfaceExecutor
+{
+public:
+  void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) override;
+  const std::vector<std::string> & command_interfaces() const override {return interfaces_;}
+  void write(const DataStore & commands, const DataStore & state, std::vector<double> & values) override;
+
+private:
+  std::vector<size_t> entries_;
+  std::vector<std::string> interfaces_;
+};
+
 }  // namespace policy_framework
 
 #endif  // POLICY_FRAMEWORK__INTERFACE_EXECUTORS_HPP_

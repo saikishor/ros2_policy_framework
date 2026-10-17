@@ -144,6 +144,31 @@ TEST_F(PdEffortExecutorTest, RejectsMissingGainsAndSizeMismatch)
       commands, state), std::runtime_error);
 }
 
+TEST(ReferenceInterfaceExecutor, WritesReceivedCommandsToPrefixedInterfaces)
+{
+  DataStore commands;
+  DataStore state;
+  for (const auto * n : {"a/position", "a/velocity", "a/stiffness", "b/position"}) {
+    commands.add(n);
+  }
+  policy_framework::ReferenceInterfaceExecutor ref;
+  ref.configure(make_context({{"pd.prefix", "pid"}}), commands, state);
+  // Default interfaces: position and velocity (e.g. pid_controller reference interfaces).
+  EXPECT_EQ(
+    ref.command_interfaces(), (StringArray{"pid/a/position", "pid/a/velocity", "pid/b/position"}));
+  EXPECT_EQ(state.size(), 0u);
+
+  Doubles values(3, 0.0);
+  set(commands, "a/position", 1.5);
+  set(commands, "b/position", -0.5);
+  ref.write(commands, state, values);
+  EXPECT_DOUBLE_EQ(values[0], 1.5);
+  EXPECT_TRUE(std::isnan(values[1]));  // a/velocity never written: left unchanged
+  EXPECT_DOUBLE_EQ(values[2], -0.5);
+  ref.safe_values(values);
+  EXPECT_TRUE(std::isnan(values[0]));  // the chained controller keeps its last reference
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

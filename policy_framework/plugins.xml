@@ -26,4 +26,7 @@
   <class name="policy_framework/PdEffortExecutor" type="policy_framework::PdEffortExecutor" base_class_type="policy_framework::InterfaceExecutor">
     <description>Controller-side joint PD law writing effort command interfaces.</description>
   </class>
+  <class name="policy_framework/ReferenceInterfaceExecutor" type="policy_framework::ReferenceInterfaceExecutor" base_class_type="policy_framework::InterfaceExecutor">
+    <description>Controller-side copy of the commands to prefixed (e.g. chained reference) interfaces.</description>
+  </class>
 </library>
