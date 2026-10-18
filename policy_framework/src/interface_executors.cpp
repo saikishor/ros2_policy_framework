@@ -61,6 +61,7 @@ void PdEffortExecutor::configure(
 
   joints_.clear();
   interfaces_.clear();
+  feedback_.clear();
   for (size_t i = 0; i < names.size(); ++i) {
     const auto & j = names[i];
     const auto ref_pos = commands.find(j + kPosition);
@@ -78,6 +79,8 @@ void PdEffortExecutor::configure(
     joint.limit = limits.empty() ? 0.0 : limits[i];
     joints_.push_back(joint);
     interfaces_.push_back(j + "/" + effort);
+    feedback_.push_back(j + "/position");
+    feedback_.push_back(j + "/velocity");
   }
 }
 

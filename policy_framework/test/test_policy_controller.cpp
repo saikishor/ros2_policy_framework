@@ -48,8 +48,12 @@ protected:
       {"walk.model_path", std::string(TEST_MODELS_DIR) + "/affine.onnx"},
       {"walk.postprocessor", "policy_framework/SplitPostprocessor"},
       {"walk.output_entries", StringArray{"j1/position", "j2/position"}},
-      {"command_interface_prefix", "pid"},
     };
+    if (with_reference_executor) {
+      params.push_back({"executors", StringArray{"ref"}});
+      params.push_back({"ref.type", "policy_framework/ReferenceInterfaceExecutor"});
+      params.push_back({"ref.prefix", "pid"});
+    }
     params.insert(params.end(), extra.begin(), extra.end());
     controller_interface::ControllerInterfaceParams p;
     p.controller_name = "policy_controller";
@@ -96,6 +100,7 @@ protected:
     return controller.update(rclcpp::Time(0, 0, RCL_ROS_TIME), rclcpp::Duration(0, 20000000));
   }
 
+  bool with_reference_executor = true;
   policy_framework::PolicyController controller;
   std::vector<StateInterface::SharedPtr> states;
   std::vector<CommandInterface::SharedPtr> commands;
@@ -141,12 +146,75 @@ TEST_F(PolicyControllerTest, UpdateRunsPolicyFromStateToCommandInterfaces)
   EXPECT_DOUBLE_EQ(command("pid/j2/position"), 6.5);
 }
 
-TEST_F(PolicyControllerTest, WithoutCommandInterfacesNothingIsClaimed)
+TEST_F(PolicyControllerTest, WithoutExecutorsNoCommandInterfaceIsClaimed)
 {
-  init({{"use_command_interfaces", false}});
+  with_reference_executor = false;
+  init();
   ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
   EXPECT_EQ(
     controller.command_interface_configuration().type, interface_configuration_type::NONE);
+}
+
+TEST_F(PolicyControllerTest, PdEffortExecutorComputesEffortAndZeroesItOnDeactivation)
+{
+  with_reference_executor = false;
+  init({
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{1.0, 1.0}}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  EXPECT_EQ(
+    controller.state_interface_configuration().names,
+    (StringArray{"j1/position", "j2/position", "j3/position", "j1/velocity", "j2/velocity"}));
+  EXPECT_EQ(
+    controller.command_interface_configuration().names, (StringArray{"j1/effort", "j2/effort"}));
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  set_state("j1/velocity", 0.5);
+
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  // References 4.5 and 6.5 (see UpdateRunsPolicyFromStateToCommandInterfaces).
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0) + 1.0 * (0.0 - 0.5));
+  EXPECT_DOUBLE_EQ(command("j2/effort"), 10.0 * (6.5 - 2.0));
+
+  ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+  EXPECT_DOUBLE_EQ(command("j2/effort"), 0.0);
+}
+
+TEST_F(PolicyControllerTest, TopicExecutorsAreRejected)
+{
+  with_reference_executor = false;
+  init({
+    {"executors", StringArray{"pub"}},
+    {"pub.type", "policy_framework/MultiDofCommandExecutor"}});
+  EXPECT_EQ(controller.configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
+}
+
+TEST_F(PolicyControllerTest, ExecutorFeedbackMustComeFromStateInterfaces)
+{
+  with_reference_executor = false;
+  init({
+    {"sources", StringArray{"js"}},
+    {"js.type", "policy_framework/JointStateSource"},  // provides every joint
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{1.0, 1.0}}});
+  EXPECT_EQ(controller.configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
+}
+
+TEST_F(PolicyControllerTest, TwoExecutorsCannotClaimTheSameInterface)
+{
+  init({
+    {"executors", StringArray{"ref", "ref2"}},
+    {"ref2.type", "policy_framework/ReferenceInterfaceExecutor"},
+    {"ref2.prefix", "pid"}});
+  EXPECT_EQ(controller.configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
 }
 
 int main(int argc, char ** argv)

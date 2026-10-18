@@ -43,6 +43,8 @@ public:
   /// @throws std::runtime_error without gains for a joint, or on array size mismatch.
   void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) override;
   const std::vector<std::string> & command_interfaces() const override {return interfaces_;}
+  /// Joint positions and velocities: the PD feedback.
+  std::vector<std::string> state_entries() const override {return feedback_;}
   void write(const DataStore & commands, const DataStore & state, std::vector<double> & values) override;
   void safe_values(std::vector<double> & values) override {values.assign(values.size(), 0.0);}
 
@@ -55,6 +57,7 @@ private:
   };
   std::vector<Joint> joints_;
   std::vector<std::string> interfaces_;
+  std::vector<std::string> feedback_;
 };
 
 /**

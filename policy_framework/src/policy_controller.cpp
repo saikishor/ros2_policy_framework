@@ -3,7 +3,10 @@
 
 #include "policy_framework/policy_controller.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <exception>
+#include <stdexcept>
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,28 +18,67 @@ namespace policy_framework
 
 PolicyController::CallbackReturn PolicyController::on_init()
 {
-  auto_declare<std::string>("command_interface_prefix", "");
-  auto_declare<bool>("use_command_interfaces", true);
   return CallbackReturn::SUCCESS;
+}
+
+void PolicyController::load_executors()
+{
+  const auto node = get_node();
+  executors_.clear();
+  executor_loader_ = std::make_unique<pluginlib::ClassLoader<InterfaceExecutor>>(
+    "policy_framework", "policy_framework::InterfaceExecutor");
+  if (!node->has_parameter("executors")) {
+    node->declare_parameter("executors", std::vector<std::string>{});
+  }
+  const auto param = node->get_parameter("executors");
+  const auto names = param.get_type() == rclcpp::ParameterType::PARAMETER_NOT_SET ?
+    std::vector<std::string>{} : param.as_string_array();
+  for (const auto & name : names) {
+    const auto type = get_parameter<std::string>({node, name}, "type", "");
+    if (!executor_loader_->isClassAvailable(type)) {
+      throw std::runtime_error(
+              "Executor '" + name + "' (" + type + ") is not an InterfaceExecutor plugin. Topic "
+              "executors (e.g. MultiDofCommandExecutor) only run in policy_node.");
+    }
+    auto executor = executor_loader_->createSharedInstance(type);
+    executor->configure({node, name}, runner_->commands(), runner_->state());
+    executors_.push_back(executor);
+    RCLCPP_INFO(node->get_logger(), "Executor '%s' (%s)", name.c_str(), type.c_str());
+  }
 }
 
 PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lifecycle::State &)
 {
-  command_prefix_ = get_node()->get_parameter("command_interface_prefix").as_string();
-  use_command_interfaces_ = get_node()->get_parameter("use_command_interfaces").as_bool();
+  executors_.clear();
   runner_ = std::make_unique<PolicyRunner>();
   try {
-    runner_->configure(get_node());
+    runner_->configure(get_node(), false);
+    load_executors();
+    state_names_ = runner_->unprovided_state();
+    command_names_.clear();
+    for (const auto & e : executors_) {
+      for (const auto & name : e->state_entries()) {
+        if (std::find(state_names_.begin(), state_names_.end(), name) == state_names_.end()) {
+          throw std::runtime_error(
+                  "State entry '" + name + "' is needed on every update by an executor and "
+                  "must come from a state interface, but an input source provides it");
+        }
+      }
+      for (const auto & name : e->command_interfaces()) {
+        if (std::find(command_names_.begin(), command_names_.end(), name) !=
+          command_names_.end())
+        {
+          throw std::runtime_error("Command interface '" + name + "' claimed twice");
+        }
+        command_names_.push_back(name);
+      }
+    }
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_node()->get_logger(), "Configuration failed: %s", e.what());
     return CallbackReturn::ERROR;
   }
-  state_names_ = runner_->unprovided_state();
-  command_names_.clear();
-  if (use_command_interfaces_) {
-    for (const auto & name : runner_->commands().names()) {
-      command_names_.push_back(command_prefix_.empty() ? name : command_prefix_ + "/" + name);
-    }
+  if (executors_.empty()) {
+    RCLCPP_WARN(get_node()->get_logger(), "No executors: the commands are not sent anywhere");
   }
   RCLCPP_INFO(
     get_node()->get_logger(), "Claiming %zu state and %zu command interfaces",
@@ -69,13 +111,50 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
   for (const auto & si : state_interfaces_) {
     state_idx_.push_back(runner_->state().index(si.get_name()));
   }
-  command_idx_.clear();
-  const auto prefix_len = command_prefix_.empty() ? 0 : command_prefix_.size() + 1;
-  for (const auto & ci : command_interfaces_) {
-    command_idx_.push_back(runner_->commands().index(ci.get_name().substr(prefix_len)));
+  values_.clear();
+  loaned_command_.clear();
+  for (const auto & e : executors_) {
+    std::vector<size_t> loaned;
+    for (const auto & name : e->command_interfaces()) {
+      size_t i = 0;
+      while (i < command_interfaces_.size() && command_interfaces_[i].get_name() != name) {++i;}
+      if (i == command_interfaces_.size()) {
+        RCLCPP_ERROR(get_node()->get_logger(), "Command interface '%s' not loaned", name.c_str());
+        return CallbackReturn::ERROR;
+      }
+      loaned.push_back(i);
+    }
+    values_.emplace_back(loaned.size(), 0.0);
+    loaned_command_.push_back(std::move(loaned));
   }
+  policy_ready_ = false;
   runner_->pipeline().restart();
   return CallbackReturn::SUCCESS;
+}
+
+PolicyController::CallbackReturn PolicyController::on_deactivate(const rclcpp_lifecycle::State &)
+{
+  write_safe_values();
+  return CallbackReturn::SUCCESS;
+}
+
+void PolicyController::apply_values()
+{
+  for (size_t k = 0; k < executors_.size(); ++k) {
+    for (size_t i = 0; i < values_[k].size(); ++i) {
+      if (!std::isnan(values_[k][i])) {
+        (void)command_interfaces_[loaned_command_[k][i]].set_value(values_[k][i]);
+      }
+    }
+  }
+}
+
+void PolicyController::write_safe_values()
+{
+  for (size_t k = 0; k < executors_.size() && k < values_.size(); ++k) {
+    executors_[k]->safe_values(values_[k]);
+  }
+  apply_values();
 }
 
 controller_interface::return_type PolicyController::update(
@@ -93,18 +172,17 @@ controller_interface::return_type PolicyController::update(
 
   const auto status = runner_->step();
   if (status == PolicyPipeline::Status::ERROR) {
+    write_safe_values();
     return controller_interface::return_type::ERROR;
   }
-  if (status != PolicyPipeline::Status::OK) {
-    return controller_interface::return_type::OK;
+  if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
+  // Before the first commands since activation, the command store may still hold the previous
+  // activation's commands: send nothing.
+  if (!policy_ready_) {return controller_interface::return_type::OK;}
+  for (size_t k = 0; k < executors_.size(); ++k) {
+    executors_[k]->write(runner_->commands(), state, values_[k]);
   }
-  const auto & commands = runner_->commands();
-  for (size_t i = 0; i < command_interfaces_.size(); ++i) {
-    if (commands.received(command_idx_[i])) {
-      (void)command_interfaces_[i].set_value(commands.get(command_idx_[i]));
-    }
-  }
-  runner_->write_executors();
+  apply_values();
   return controller_interface::return_type::OK;
 }
 

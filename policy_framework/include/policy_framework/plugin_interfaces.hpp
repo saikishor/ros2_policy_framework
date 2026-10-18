@@ -252,6 +252,11 @@ public:
   /// @return Full names of the command interfaces to claim. Valid after configure().
   virtual const std::vector<std::string> & command_interfaces() const = 0;
   /**
+   * @return State entries read in write() that must be fresh on every update (e.g. joint
+   *         feedback of a PD law); configuration fails if an input source provides one.
+   */
+  virtual std::vector<std::string> state_entries() const {return {};}
+  /**
    * @brief Compute the interface values. Called from the control loop on every update, once
    *        the active policy has produced commands since the controller was activated.
    * @param values One per command_interfaces(); NaN leaves that interface unchanged.

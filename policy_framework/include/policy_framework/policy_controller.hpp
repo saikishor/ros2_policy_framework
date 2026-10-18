@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "controller_interface/controller_interface.hpp"
+#include "pluginlib/class_loader.hpp"
+#include "policy_framework/plugin_interfaces.hpp"
 #include "policy_framework/policy_runner.hpp"
 
 namespace policy_framework
@@ -17,20 +19,24 @@ namespace policy_framework
 /**
  * @brief ros2_control controller running the policies of a PolicyRunner.
  *
- * Inputs: every state entry required by the policies that no input source (topic) provides is
- * claimed as a state interface of the same name (e.g. `joint1/position`,
- * `imu/orientation.x`). So inputs can come from topics only, state interfaces only, or a mix.
+ * Inputs: every state entry required by the policies or the executors that no input source
+ * (topic) provides is claimed as a state interface of the same name (e.g. `joint1/position`,
+ * `imu/orientation.x`). So policy inputs can come from topics only, state interfaces only, or
+ * a mix. Entries an executor needs on every update (state_entries(), e.g. PD feedback) must
+ * come from state interfaces.
  *
- * Outputs: with `use_command_interfaces` (default true) every command entry is claimed as the
- * command interface `<command_interface_prefix>/<entry>` (prefix default empty), e.g.
- * `rl_impedance_controller/joint1/position` to chain into a pid_controller. Executors
- * (topics) can be used in addition or instead.
+ * Outputs: `executors` are InterfaceExecutor plugins (each needs `<name>.type`) that turn the
+ * commands into command interface values, e.g. policy_framework/PdEffortExecutor (PD law into
+ * efforts) or policy_framework/ReferenceInterfaceExecutor (chain into a pid_controller). Topic
+ * Executors only run in the standalone policy_node and are rejected here.
  *
- * Only entries a policy actually wrote are sent to the command interfaces.
+ * Timing: one policy step per update(), so `update_rate` must be the policy rate. Executors
+ * run in the same update(). Synchronous by default; with the standard parameter
+ * `is_async: true` update() (inference and executors) runs in its own thread.
  *
- * Timing: one policy step per update(), so `update_rate` must be the policy rate. Synchronous
- * by default; set the standard controller parameter `is_async: true` to run update() (hence
- * inference) in its own thread instead of the controller manager's real-time loop.
+ * Safety: executors run only once the active policy produced commands since activation. On
+ * deactivation and when the policy fails, every executor's safe_values() are written (zero
+ * effort for PdEffortExecutor).
  *
  * On activation the first policy restarts from scratch. Policies are switched with the
  * `~/switch_policy` service.
@@ -43,18 +49,29 @@ public:
   controller_interface::InterfaceConfiguration state_interface_configuration() const override;
   CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
   CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
   controller_interface::return_type update(
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
 private:
+  /// Load the `executors` parameter as InterfaceExecutor plugins. @throws on any error.
+  void load_executors();
+  /// Write the executors' safe values.
+  void write_safe_values();
+  /// Write values[k] of executor k to its loaned interfaces (NaN: leave unchanged).
+  void apply_values();
+
+  // Declared before the runner and executors: plugin libraries must outlive the instances.
+  std::unique_ptr<pluginlib::ClassLoader<InterfaceExecutor>> executor_loader_;
   std::unique_ptr<PolicyRunner> runner_;
+  std::vector<std::shared_ptr<InterfaceExecutor>> executors_;
   std::vector<std::string> state_names_;
-  std::vector<std::string> command_names_;  ///< Command interface names (with prefix).
-  std::string command_prefix_;
-  bool use_command_interfaces_ = true;
-  // Store index of each loaned interface, filled on activation.
-  std::vector<size_t> state_idx_;
-  std::vector<size_t> command_idx_;
+  std::vector<std::string> command_names_;  ///< Concatenation of the executors' interfaces.
+  // Filled on activation.
+  std::vector<size_t> state_idx_;           ///< Store index of each loaned state interface.
+  std::vector<std::vector<double>> values_;           ///< Per executor, one per interface.
+  std::vector<std::vector<size_t>> loaned_command_;   ///< Per executor, loaned interface index.
+  bool policy_ready_ = false;  ///< The policy produced commands since activation.
 };
 
 }  // namespace policy_framework

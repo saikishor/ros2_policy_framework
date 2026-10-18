@@ -41,9 +41,12 @@ class PolicyRunner
 public:
   /**
    * @brief Load and configure every plugin, and create the `~/switch_policy` service.
+   * @param load_executors Load the `executors` as topic Executor plugins. The controller
+   *        passes false and loads them itself as InterfaceExecutor plugins.
    * @throws std::exception on any configuration error (missing parameter, plugin, model...).
    */
-  void configure(const rclcpp_lifecycle::LifecycleNode::SharedPtr & node);
+  void configure(
+    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, bool load_executors = true);
 
   /// @return State entries required by the policies that no input source provides.
   std::vector<std::string> unprovided_state() const;

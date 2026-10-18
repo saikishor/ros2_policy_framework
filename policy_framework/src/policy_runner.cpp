@@ -41,7 +41,8 @@ std::unique_ptr<pluginlib::ClassLoader<T>> make_loader(const std::string & base)
 
 }  // namespace
 
-void PolicyRunner::configure(const rclcpp_lifecycle::LifecycleNode::SharedPtr & node)
+void PolicyRunner::configure(
+  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, bool load_executors)
 {
   logger_ = node->get_logger();
   const auto logger = node->get_logger();
@@ -90,7 +91,9 @@ void PolicyRunner::configure(const rclcpp_lifecycle::LifecycleNode::SharedPtr & 
     pipeline_->add_policy(std::move(p));
   }
 
-  for (const auto & name : param<std::vector<std::string>>(node, "executors", {})) {
+  const auto executors = load_executors ?
+    param<std::vector<std::string>>(node, "executors", {}) : std::vector<std::string>{};
+  for (const auto & name : executors) {
     const auto type = required_string(node, name + ".type");
     auto executor = executor_loader_->createSharedInstance(type);
     executor->configure({node, name}, commands_);
