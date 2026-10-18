@@ -127,6 +127,7 @@ void MjlabPostprocessor::configure(
   const auto pos_iface = get_parameter<std::string>(ctx, "position_interface", "position");
   const auto vel_iface = get_parameter<std::string>(ctx, "velocity_interface", "velocity");
   const auto gains_controller = get_parameter<std::string>(ctx, "gains_controller", "");
+  const auto gains_as_commands = get_parameter<bool>(ctx, "gains_as_commands", false);
 
   std::vector<std::string> actuated;
   offset_.clear();
@@ -153,6 +154,25 @@ void MjlabPostprocessor::configure(
     position_idx_.push_back(commands.add(j + "/" + pos_iface));
     if (!vel_iface.empty()) {velocity_idx_.push_back(commands.add(j + "/" + vel_iface));}
   }
+  const auto stiffness = md.count("joint_stiffness") ?
+    parse_doubles(md.at("joint_stiffness")) : std::vector<double>{};
+  const auto damping = md.count("joint_damping") ?
+    parse_doubles(md.at("joint_damping")) : std::vector<double>{};
+  gain_idx_.clear();
+  gain_values_.clear();
+  if (gains_as_commands) {
+    if (stiffness.size() != actuated.size() || damping.size() != actuated.size()) {
+      throw std::runtime_error(
+              "gains_as_commands: expected one joint_stiffness and joint_damping per actuated "
+              "joint (" + std::to_string(actuated.size()) + ") in the model metadata");
+    }
+    for (size_t i = 0; i < actuated.size(); ++i) {
+      gain_idx_.push_back(commands.add(actuated[i] + "/stiffness"));
+      gain_values_.push_back(stiffness[i]);
+      gain_idx_.push_back(commands.add(actuated[i] + "/damping"));
+      gain_values_.push_back(damping[i]);
+    }
+  }
 
   if (gains_sender_) {gains_sender_->cancel(&gains_request_);}
   gains_sender_.reset();
@@ -160,10 +180,6 @@ void MjlabPostprocessor::configure(
   if (gains_controller.empty()) {
     return;
   }
-  const auto stiffness = md.count("joint_stiffness") ?
-    parse_doubles(md.at("joint_stiffness")) : std::vector<double>{};
-  const auto damping = md.count("joint_damping") ?
-    parse_doubles(md.at("joint_damping")) : std::vector<double>{};
   try {
     gains_request_.gains = make_gain_parameters(actuated, stiffness, damping);
   } catch (const std::invalid_argument & e) {
@@ -193,6 +209,7 @@ bool MjlabPostprocessor::compute(
     commands.set(position_idx_[i], scale_[i] * a[i] + offset_[i], stamp);
   }
   for (const auto i : velocity_idx_) {commands.set(i, 0.0, stamp);}
+  for (size_t i = 0; i < gain_idx_.size(); ++i) {commands.set(gain_idx_[i], gain_values_[i], stamp);}
   return true;
 }
 

@@ -47,9 +47,15 @@ std::vector<rclcpp::Parameter> make_gain_parameters(
  * policies are switched faster than that, only the gains of the latest activated policy are
  * sent.
  *
+ * With `gains_as_commands` the same gains are also written as command entries
+ * `<joint>/stiffness` and `<joint>/damping` on every step, for a PD law in the controller
+ * (policy_framework/PdEffortExecutor): gains then follow policy switches with no parameter
+ * service involved. Missing metadata gains are then a configuration error.
+ *
  * Parameters (under `<policy>.`): `excluded_joints` (string array, default empty),
  * `position_interface` (default `position`), `velocity_interface` (default `velocity`),
- * `gains_controller` (default empty: gains are not sent).
+ * `gains_controller` (default empty: gains are not sent), `gains_as_commands` (default
+ * false).
  */
 class MjlabPostprocessor : public policy_framework::Postprocessor
 {
@@ -71,6 +77,8 @@ private:
   std::vector<double> scale_, offset_;
   std::vector<size_t> position_idx_;
   std::vector<size_t> velocity_idx_;
+  std::vector<size_t> gain_idx_;       ///< stiffness, damping entries per actuated joint.
+  std::vector<double> gain_values_;
 
   rclcpp::Logger logger_{rclcpp::get_logger("MjlabPostprocessor")};
   GainsRequest gains_request_;

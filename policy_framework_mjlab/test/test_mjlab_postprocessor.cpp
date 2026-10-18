@@ -68,6 +68,32 @@ TEST(MjlabPostprocessor, ScalesAndOffsetsActionsOfActuatedJoints)
   EXPECT_DOUBLE_EQ(commands.get(commands.index("c/velocity")), 0.0);
 }
 
+TEST(MjlabPostprocessor, GainsCanBeWrittenAsCommandsForAControllerSidePdLaw)
+{
+  const auto m = model();
+  DataStore commands;
+  MjlabPostprocessor post;
+  post.configure(make_context({{"p.gains_as_commands", true}}), m, commands);
+  for (const auto * n : {"a/stiffness", "a/damping", "c/stiffness", "c/damping"}) {
+    EXPECT_TRUE(commands.find(n).has_value()) << n;
+  }
+  auto out = m.outputs;
+  ASSERT_TRUE(post.compute(out, 7.5, commands));
+  EXPECT_DOUBLE_EQ(commands.get(commands.index("a/stiffness")), 10.0);
+  EXPECT_DOUBLE_EQ(commands.get(commands.index("c/stiffness")), 30.0);
+  EXPECT_DOUBLE_EQ(commands.get(commands.index("c/damping")), 3.0);
+  EXPECT_DOUBLE_EQ(commands.stamp(commands.index("a/damping")), 7.5);
+
+  // A PD law cannot run without gains: missing metadata gains are a configuration error.
+  auto no_gains = model();
+  no_gains.metadata.erase("joint_stiffness");
+  DataStore other;
+  MjlabPostprocessor post2;
+  EXPECT_THROW(
+    post2.configure(make_context({{"p.gains_as_commands", true}}), no_gains, other),
+    std::runtime_error);
+}
+
 TEST(MjlabPostprocessor, VelocityReferenceCanBeDisabled)
 {
   DataStore commands;
