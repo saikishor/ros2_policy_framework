@@ -1,8 +1,12 @@
 # ros2_control controller: joint and IMU states from state interfaces (cmd_vel: see the loco term),
-# commands chained into the reference interfaces of rl_impedance_controller (pid_controller).
+# commands chained into the reference interfaces of rl_impedance_controller (pid_controller),
+# which closes the joint impedance loop at 1 kHz.
 policy_controller:
   ros__parameters:
     type: policy_framework/PolicyController
     update_rate: 50  # one policy step per update: the policy rate
     is_async: @IS_ASYNC@
-    command_interface_prefix: rl_impedance_controller
+    executors: [reference]
+    reference:
+      type: policy_framework/ReferenceInterfaceExecutor
+      prefix: rl_impedance_controller

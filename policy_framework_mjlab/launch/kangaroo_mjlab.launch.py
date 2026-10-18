@@ -8,8 +8,12 @@ mode:=controller_async  policy_controller with is_async: true (own thread)
 
 robot_type:=lower_body | full_body_4dof selects the models and the impedance configuration.
 
-In every mode rl_impedance_controller (pid_controller) closes the joint impedance loop at
-1 kHz; in the controller modes the policy is chained into its reference interfaces.
+controller_output (controller modes):
+  reference  rl_impedance_controller (pid_controller) closes the joint impedance loop at 1 kHz;
+             the policy controller is chained into its reference interfaces (as in node mode,
+             where the reference is published).
+  effort     the policy controller itself runs the PD law at 1 kHz (policy at 50 Hz) and writes
+             the joint effort interfaces; no pid_controller. Synchronous only.
 Switch to the imitation policy with:
   ros2 service call /<policy_node|policy_controller>/switch_policy \
     policy_framework/srv/SwitchPolicy "{policy_name: imitation}"
@@ -82,6 +86,11 @@ def launch_setup(context):
             models_dir, robot_type, 'imitation', arg('imitation_model') or imitation),
         'IMITATION_FRAMES': int(arg('imitation_frames') or frames),
     })
+    output = arg('controller_output')
+    if output not in ('reference', 'effort'):
+        raise ValueError(f"controller_output must be reference or effort, got '{output}'")
+    if output == 'effort' and mode != 'controller':
+        raise ValueError('controller_output:=effort requires mode:=controller (synchronous)')
     # Inactive: load and configure only, e.g. to be activated later by a supervisor.
     activation = ['--unload-on-kill'] if arg('activate_impedance_controller') == 'True' \
         else ['--inactive']
@@ -103,6 +112,15 @@ def launch_setup(context):
             ),
         ]
 
+    if output == 'effort':
+        return [
+            Node(
+                package='controller_manager', executable='spawner', output='screen',
+                arguments=['policy_controller', '--param-file', policies, '--param-file',
+                           os.path.join(config, 'kangaroo_policy_controller_effort.yaml')]
+                + activation,
+            ),
+        ]
     controller = render(os.path.join(config, 'kangaroo_policy_controller.yaml'), {
         'IS_ASYNC': 'true' if mode == 'controller_async' else 'false'})
     return [
@@ -130,6 +148,10 @@ def generate_launch_description():
                               description='Imitation policy version (default per robot_type)'),
         DeclareLaunchArgument('imitation_frames', default_value='',
                               description='Imitation steps before returning (default per robot_type)'),
+        DeclareLaunchArgument('controller_output', default_value='reference',
+                              choices=['reference', 'effort'],
+                              description='Controller modes: reference (chain into '
+                              'rl_impedance_controller) or effort (PD in the policy controller)'),
         DeclareLaunchArgument('activate_impedance_controller', default_value='True',
                               choices=['True', 'False'],
                               description='False: load and configure the controllers inactive'),

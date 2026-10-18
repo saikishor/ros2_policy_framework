@@ -1,0 +1,19 @@
+# ros2_control controller computing the joint impedance itself: the policy runs at 50 Hz and
+# PdEffortExecutor writes effort = kp (q_ref - q) + kd (dq_ref - dq) to the joint effort
+# interfaces at 1 kHz, with the gains of the active policy. No pid_controller is needed.
+policy_controller:
+  ros__parameters:
+    type: policy_framework/PolicyController
+    update_rate: 1000
+    policy_rate: 50.0
+    is_async: false  # the PD law must run in the real-time loop
+    executors: [pd]
+    pd:
+      type: policy_framework/PdEffortExecutor
+    # Gains go to the PD law as commands instead of to rl_impedance_controller parameters.
+    loco:
+      gains_controller: ""
+      gains_as_commands: true
+    imitation:
+      gains_controller: ""
+      gains_as_commands: true
