@@ -18,6 +18,7 @@ namespace policy_framework
 
 PolicyController::CallbackReturn PolicyController::on_init()
 {
+  auto_declare<double>("policy_rate", 0.0);
   return CallbackReturn::SUCCESS;
 }
 
@@ -51,6 +52,24 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
 {
   executors_.clear();
   runner_ = std::make_unique<PolicyRunner>();
+  const double policy_rate = get_node()->get_parameter("policy_rate").as_double();
+  const double update_rate = static_cast<double>(get_update_rate());
+  decimation_ = 1;
+  if (policy_rate > 0.0) {
+    const auto n = static_cast<unsigned int>(std::lround(update_rate / policy_rate));
+    if (update_rate <= 0.0 || n < 1 || std::abs(n * policy_rate - update_rate) > 1e-6) {
+      RCLCPP_ERROR(
+        get_node()->get_logger(), "policy_rate %.3f must divide the update_rate %.0f",
+        policy_rate, update_rate);
+      return CallbackReturn::ERROR;
+    }
+    decimation_ = n;
+  }
+  if (decimation_ > 1 && is_async()) {
+    RCLCPP_WARN(
+      get_node()->get_logger(), "is_async with policy_rate: executors (e.g. the PD law) also run "
+      "in the asynchronous thread; prefer is_async: false");
+  }
   try {
     runner_->configure(get_node(), false);
     load_executors();
@@ -81,8 +100,8 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
     RCLCPP_WARN(get_node()->get_logger(), "No executors: the commands are not sent anywhere");
   }
   RCLCPP_INFO(
-    get_node()->get_logger(), "Claiming %zu state and %zu command interfaces",
-    state_names_.size(), command_names_.size());
+    get_node()->get_logger(), "Claiming %zu state and %zu command interfaces; policy step "
+    "every %u update(s)", state_names_.size(), command_names_.size(), decimation_);
   return CallbackReturn::SUCCESS;
 }
 
@@ -128,6 +147,7 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
     loaned_command_.push_back(std::move(loaned));
   }
   policy_ready_ = false;
+  updates_ = 0;
   runner_->pipeline().restart();
   return CallbackReturn::SUCCESS;
 }
@@ -162,7 +182,6 @@ controller_interface::return_type PolicyController::update(
 {
   // Node clock (not the update time) so that it compares with the topic receive times.
   const double now = get_node()->now().seconds();
-  runner_->read_sources(now);
   auto & state = runner_->state();
   for (size_t i = 0; i < state_interfaces_.size(); ++i) {
     // get_optional() fails only when the interface is locked by the writer (async mode): keep
@@ -170,12 +189,17 @@ controller_interface::return_type PolicyController::update(
     if (const auto v = state_interfaces_[i].get_optional()) {state.set(state_idx_[i], *v, now);}
   }
 
-  const auto status = runner_->step();
-  if (status == PolicyPipeline::Status::ERROR) {
-    write_safe_values();
-    return controller_interface::return_type::ERROR;
+  // The policy steps every decimation_ updates (starting with the first); executors run on
+  // every update with the fresh state.
+  if (updates_++ % decimation_ == 0) {
+    runner_->read_sources(now);
+    const auto status = runner_->step();
+    if (status == PolicyPipeline::Status::ERROR) {
+      write_safe_values();
+      return controller_interface::return_type::ERROR;
+    }
+    if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
   }
-  if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
   // Before the first commands since activation, the command store may still hold the previous
   // activation's commands: send nothing.
   if (!policy_ready_) {return controller_interface::return_type::OK;}

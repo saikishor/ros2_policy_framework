@@ -39,7 +39,7 @@ InterfaceDescription describe(const std::string & full_name)
 class PolicyControllerTest : public ::testing::Test
 {
 protected:
-  void init(std::vector<rclcpp::Parameter> extra = {})
+  void init(std::vector<rclcpp::Parameter> extra = {}, unsigned int update_rate = 50)
   {
     std::vector<rclcpp::Parameter> params = {
       {"policies", StringArray{"walk"}},
@@ -57,8 +57,8 @@ protected:
     params.insert(params.end(), extra.begin(), extra.end());
     controller_interface::ControllerInterfaceParams p;
     p.controller_name = "policy_controller";
-    p.update_rate = 50;
-    p.controller_manager_update_rate = 50;
+    p.update_rate = update_rate;
+    p.controller_manager_update_rate = update_rate;
     p.node_options.parameter_overrides(params);
     ASSERT_EQ(controller.init(p), controller_interface::return_type::OK);
   }
@@ -184,6 +184,38 @@ TEST_F(PolicyControllerTest, PdEffortExecutorComputesEffortAndZeroesItOnDeactiva
   ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
   EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
   EXPECT_DOUBLE_EQ(command("j2/effort"), 0.0);
+}
+
+TEST_F(PolicyControllerTest, PolicyRunsAtPolicyRateAndExecutorsOnEveryUpdate)
+{
+  with_reference_executor = false;
+  init({
+    {"policy_rate", 50.0},
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{0.0, 0.0}}}, 100);
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);  // policy step: j1 ref 4.5
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+
+  set_state("j1/position", 2.0);  // a policy step would move the j1 reference
+  ASSERT_EQ(update(), controller_interface::return_type::OK);  // no policy step, PD only
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 2.0));
+
+  ASSERT_EQ(update(), controller_interface::return_type::OK);  // policy step again
+  EXPECT_NE(command("j1/effort"), 10.0 * (4.5 - 2.0));
+}
+
+TEST_F(PolicyControllerTest, PolicyRateMustDivideTheUpdateRate)
+{
+  init({{"policy_rate", 30.0}}, 100);
+  EXPECT_EQ(controller.configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
 }
 
 TEST_F(PolicyControllerTest, TopicExecutorsAreRejected)

@@ -30,9 +30,12 @@ namespace policy_framework
  * efforts) or policy_framework/ReferenceInterfaceExecutor (chain into a pid_controller). Topic
  * Executors only run in the standalone policy_node and are rejected here.
  *
- * Timing: one policy step per update(), so `update_rate` must be the policy rate. Executors
- * run in the same update(). Synchronous by default; with the standard parameter
- * `is_async: true` update() (inference and executors) runs in its own thread.
+ * Timing: `policy_rate` (Hz, default 0 = every update) runs the policy every
+ * update_rate / policy_rate updates (must be an integer), while the executors run on every
+ * update. E.g. update_rate 1000 and policy_rate 50 for a PD law at 1 kHz with a 50 Hz policy;
+ * without executors needing more, update_rate = policy rate. Synchronous by default; with the
+ * standard parameter `is_async: true` update() (inference and executors) runs in its own
+ * thread, which suits a reference executor but not a PD law.
  *
  * Safety: executors run only once the active policy produced commands since activation. On
  * deactivation and when the policy fails, every executor's safe_values() are written (zero
@@ -72,6 +75,8 @@ private:
   std::vector<std::vector<double>> values_;           ///< Per executor, one per interface.
   std::vector<std::vector<size_t>> loaned_command_;   ///< Per executor, loaned interface index.
   bool policy_ready_ = false;  ///< The policy produced commands since activation.
+  unsigned int decimation_ = 1;  ///< Updates per policy step.
+  uint64_t updates_ = 0;         ///< Updates since activation.
 };
 
 }  // namespace policy_framework
