@@ -15,7 +15,7 @@ and several policies can be loaded at once and **switched at runtime**.
 
 | Package | Content |
 |---------|---------|
-| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, concat/split stages), `SwitchPolicy` service |
+| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages), `SwitchPolicy` service |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab policies (observation terms with history, action scaling, per-policy PID gains), the `TwistCommandTerm` observation term and the Kangaroo deployment config/launch |
 
 ## Architecture
@@ -23,9 +23,10 @@ and several policies can be loaded at once and **switched at runtime**.
 ```
                  shared by all policies                 one per policy                 shared
  ┌──────────────────────────────────┐   ┌────────────────────────────────────────┐   ┌─────────────────────────┐
- │ InputSource plugins (topics)  ─┐ │   │ Preprocessor → Inference → Postprocessor│   │ command interfaces      │
- │ state interfaces (controller) ─┴─┼──▶│   state ──▶ TensorMap ──▶ TensorMap ──▶  ├──▶│  (controller)           │
- │            state DataStore       │   │                             commands   │   │ Executor plugins (topics)│
+ │ InputSource plugins (topics)  ─┐ │   │ Preprocessor → Inference → Postprocessor│   │ node: Executor plugins  │
+ │ state interfaces (controller) ─┴─┼──▶│   state ──▶ TensorMap ──▶ TensorMap ──▶  ├──▶│  (topics)               │
+ │            state DataStore       │   │                             commands   │   │ controller: Interface-  │
+ │                                  │   │                                        │   │  Executor plugins       │
  └──────────────────────────────────┘   └────────────────────────────────────────┘   └─────────────────────────┘
 ```
 
@@ -43,10 +44,14 @@ and several policies can be loaded at once and **switched at runtime**.
   zero-copy binding to the pipeline buffers). Tensors are named float32 arrays
   (`TensorMap`), so the other stages do not depend on the inference backend.
 - **Postprocessor** turns model outputs into named commands (`<joint>/position`, ...).
-- **Executors / command interfaces** send the commands.
+- **Executors** send the commands. In the standalone node they are `Executor` plugins that
+  publish topics. In the controller they are `InterfaceExecutor` plugins that compute command
+  interface values, e.g. a joint PD law into efforts (`PdEffortExecutor`) or a copy into the
+  reference interfaces of a chained controller (`ReferenceInterfaceExecutor`). Each host
+  rejects the other kind.
 
 One cycle: sources → [state interfaces] → preprocessor → inference → postprocessor →
-[command interfaces] → executors. A preprocessor returning "not ready" (an input never
+executors. A preprocessor returning "not ready" (an input never
 received) skips the cycle without sending anything.
 
 ### Timestamps
@@ -101,9 +106,10 @@ ros2 run policy_framework policy_node --ros-args --params-file my_policies.yaml
 
 A lifecycle node that configures and activates itself (`autostart: true`, default). All
 policy inputs must come from input sources; configuration fails listing the inputs no source
-provides. Commands leave through executors. On a crash it prints a stack
-trace (`backward_ros`; the controller manager's `ros2_control_node` links it too). `update_rate` (Hz, default 50) is the policy rate;
-the timer follows `/clock` with `use_sim_time`.
+provides. Commands leave through topic executors (e.g. `MultiDofCommandExecutor`). On a crash
+it prints a stack trace (`backward_ros`; the controller manager's `ros2_control_node` links it
+too). `update_rate` (Hz, default 50) is the policy rate; the timer follows `/clock` with
+`use_sim_time`.
 
 ### ros2_control controller
 
@@ -115,26 +121,45 @@ controller_manager:
 
 policy_controller:
   ros__parameters:
-    update_rate: 50          # = policy rate: one policy step per update
-    is_async: false          # true: update() (inference) runs in its own thread
-    command_interface_prefix: rl_impedance_controller   # chain into a pid_controller
-    use_command_interfaces: true
-    sources: []              # topic sources; anything else the policies need is claimed as state interface
+    update_rate: 1000        # controller rate: the executors (PD law) run on every update
+    policy_rate: 50.0        # policy step every update_rate / policy_rate updates (0: every update)
+    is_async: false          # true: update() (inference and executors) runs in its own thread
+    sources: []              # topic sources; anything else needed is claimed as state interface
+    executors: [pd]          # InterfaceExecutor plugins
+    pd:
+      type: policy_framework/PdEffortExecutor   # effort = kp (q_ref - q) + kd (dq_ref - dq)
     # ... policies as below
 ```
 
-- **Inputs**: every state entry a policy needs that no input source provides is claimed as
-  the state interface of the same name. Topics only, state interfaces only or a mix all work.
-- **Outputs**: with `use_command_interfaces` every command entry `e` is claimed as command
-  interface `<command_interface_prefix>/e` (no prefix when empty). Executors can be added to
-  publish as well, or instead (`use_command_interfaces: false`). Only entries a policy wrote
-  are sent.
-- **Sync / async**: standard ros2_control `is_async`. In async mode the controller manager
-  runs `update()` in a separate thread at `update_rate`; the command interfaces hold the last
-  command in between.
-- On activation the first policy restarts from scratch. A failing stage (e.g. inference)
-  makes `update()` return `ERROR`; a policy still waiting for inputs returns `OK` and
-  sends nothing.
+or, chaining into a pid_controller that closes the loop:
+
+```yaml
+    update_rate: 50
+    executors: [reference]
+    reference:
+      type: policy_framework/ReferenceInterfaceExecutor
+      prefix: rl_impedance_controller   # writes rl_impedance_controller/<joint>/position|velocity
+```
+
+- **Inputs**: every state entry a policy or an executor needs that no input source provides is
+  claimed as the state interface of the same name. Topics only, state interfaces only or a mix
+  all work for policy inputs; the feedback of an executor (e.g. PD joint positions/velocities)
+  must come from state interfaces, read on every update (configuration fails otherwise).
+- **Outputs**: each executor claims its command interfaces (`PdEffortExecutor`:
+  `<joint>/effort`; `ReferenceInterfaceExecutor`: `<prefix>/<entry>`). Two executors cannot
+  claim the same interface. Topic executors are rejected: they only run in the node.
+- **Rates**: with `policy_rate` the policy steps every `update_rate / policy_rate` updates
+  (must be an integer) and the executors run on every update, e.g. a 1 kHz PD law with a
+  50 Hz policy. Without it, one policy step per update: `update_rate` is the policy rate.
+- **Sync / async**: standard ros2_control `is_async`: `update()`, inference and executors
+  included, runs in a separate thread at `update_rate`. Suited to a reference executor (the
+  chained controller keeps the loop closed); a PD law belongs in the synchronous loop.
+- **Safety**: executors run only once the active policy produced commands since activation.
+  On deactivation and when a stage fails (`update()` then returns `ERROR`) each executor
+  writes its safe values: zero effort for `PdEffortExecutor`, nothing for
+  `ReferenceInterfaceExecutor` (the chained controller holds the last reference). A policy
+  still waiting for inputs returns `OK` and sends nothing.
+- On activation the first policy restarts from scratch.
 
 ### Parameters
 
@@ -146,7 +171,8 @@ policy_controller:
 | `<policy>.inference` | Plugin class, default `policy_framework/OnnxInference` |
 | `<policy>.max_steps`, `<policy>.interruptible` | Switching behaviour, see above |
 | `<policy>.<plugin param>` | Parameters of the policy's plugins |
-| `executors` | Executor names; each needs `<executor>.type` |
+| `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
+| `policy_rate` | Controller only: policy rate in Hz (default 0 = every update) |
 
 ### Plugins
 
@@ -157,11 +183,13 @@ policy_controller:
 | `policy_framework/ImuSource` | InputSource | `topic`, `sensor_name` → `<sensor>/orientation.*`, `angular_velocity.*`, `linear_acceleration.*` |
 | `policy_framework/TwistSource` | InputSource | `topic`, `timeout` (1.0 s) → `<name>/linear.*`, `angular.*`; zero when absent or stale |
 | `policy_framework/OdometrySource` | InputSource | `topic` → `<name>/position.*`, `orientation.*`, `linear.*`, `angular.*` |
-| `policy_framework/MultiDofCommandExecutor` | Executor | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`) |
+| `policy_framework/MultiDofCommandExecutor` | Executor (node) | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`) |
+| `policy_framework/PdEffortExecutor` | InterfaceExecutor (controller) | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy does not write `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, empty = none) |
+| `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor (controller) | `prefix`, `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>` |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
 | `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type` (term plugin, see below) |
-| `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface`, `velocity_interface`, `gains_controller` |
+| `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface`, `velocity_interface`, `gains_controller`, `gains_as_commands` (false) |
 | `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm | `topic` (`cmd_vel`), `timeout` (1.0 s) → linear.x, linear.y, angular.z of a Twist; zero when absent or stale |
 
 Source and executor `topic` parameters default to `~/<name>`.
@@ -233,7 +261,9 @@ its own layout and optional history, and add a tensor dtype when a `uint8` model
 (and `<joint>/velocity = 0`) for the metadata joints minus `excluded_joints`, and with
 `gains_controller` pushes the policy's `joint_stiffness`/`joint_damping` as
 `gains.<joint>.p/.d` parameters of that pid_controller each time the policy is activated
-(only the latest activated policy's gains when switching quickly).
+(only the latest activated policy's gains when switching quickly). With `gains_as_commands`
+it writes them as `<joint>/stiffness` and `<joint>/damping` commands on every step instead, for
+`PdEffortExecutor`: the gains then follow policy switches immediately.
 
 ### Kangaroo
 
@@ -242,6 +272,8 @@ its own layout and optional history, and add a tensor dtype when a `uint8` model
 ros2 launch kangaroo_mujoco kangaroo_mujoco.launch.py arm_type:=no-arm moveit:=False
 # policies: mode:=controller (default) | controller_async | node (add use_sim_time:=true)
 ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py mode:=controller
+# or the PD law in the policy controller itself (no pid_controller)
+ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py mode:=controller controller_output:=effort
 # walk, jump
 ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.6}}"
 ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: imitation}"
@@ -250,6 +282,7 @@ ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPo
 | Launch argument | Default |
 |-----------------|---------|
 | `mode` | `controller` (`controller_async`, `node`) |
+| `controller_output` | `reference` (chain into `rl_impedance_controller`); `effort` (PD in the policy controller at 1 kHz, policy at 50 Hz; `mode:=controller` only) |
 | `robot_type` | `lower_body` (`full_body_4dof`) |
 | `models_dir` | `models` of `pal_policy_deployer` when installed |
 | `loco_model`, `imitation_model`, `imitation_frames` | per robot type: `v315`, `v719`, 147 (lower body); `v265`, `v30`, 300 (4dof) |
@@ -261,7 +294,8 @@ controller plugin. In node mode the launch shuts down (unloading `rl_impedance_c
 when the policy node exits.
 
 Configuration files in `policy_framework_mjlab/config`: `kangaroo_policies.yaml` (policies,
-shared by node and controller), `kangaroo_policy_controller.yaml`, `kangaroo_policy_node.yaml`,
+shared by node and controller), `kangaroo_policy_controller.yaml` (reference),
+`kangaroo_policy_controller_effort.yaml` (effort), `kangaroo_policy_node.yaml`,
 `kangaroo_<robot_type>_impedance.yaml` (pid_controller).
 
 ## Writing plugins

@@ -23,8 +23,9 @@
  *   InputSource(s) --> state DataStore --> Preprocessor --> TensorMap --> Inference
  *     --> TensorMap --> Postprocessor --> command DataStore --> Executor(s)
  *
- * Input sources and executors are the transport (topics, or state/command interfaces when
- * running inside the controller) and are shared by all policies. Preprocessor, inference and
+ * Input sources and executors are the transport and are shared by all policies: in the
+ * standalone node, topic Executors; in the controller, InterfaceExecutors writing command
+ * interfaces (state interfaces are read by the controller itself). Preprocessor, inference and
  * postprocessor are owned by one policy and do not see ROS transport, so the same policy runs
  * unchanged in the standalone node and in the controller. The exception is a topic
  * observation term (observation_term.hpp), for data that only exists on a topic.
