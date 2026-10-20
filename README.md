@@ -272,8 +272,6 @@ it writes them as `<joint>/stiffness` and `<joint>/damping` commands on every st
 ros2 launch kangaroo_mujoco kangaroo_mujoco.launch.py arm_type:=no-arm moveit:=False
 # policies: mode:=controller (default) | controller_async | node (add use_sim_time:=true)
 ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py mode:=controller
-# or the PD law in the policy controller itself (no pid_controller)
-ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py mode:=controller controller_output:=effort
 # walk, jump
 ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.6}}"
 ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: imitation}"
@@ -282,21 +280,27 @@ ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPo
 | Launch argument | Default |
 |-----------------|---------|
 | `mode` | `controller` (`controller_async`, `node`) |
-| `controller_output` | `reference` (chain into `rl_impedance_controller`); `effort` (PD in the policy controller at 1 kHz, policy at 50 Hz; `mode:=controller` only) |
 | `robot_type` | `lower_body` (`full_body_4dof`) |
 | `models_dir` | `models` of `pal_policy_deployer` when installed |
 | `loco_model`, `imitation_model`, `imitation_frames` | per robot type: `v315`, `v719`, 147 (lower body); `v265`, `v30`, 300 (4dof) |
 | `activate_impedance_controller` | `True`; `False` loads and configures the controllers inactive |
 | `use_sim_time` | `false` (node mode only) |
 
+- **Node mode**: `policy_node` publishes the reference (`MultiDofCommandExecutor`) to
+  `rl_impedance_controller` (pid_controller), which closes the joint impedance loop at 1 kHz.
+- **Controller modes**: `policy_controller` runs the policy at 50 Hz and the PD law
+  (`PdEffortExecutor`) at 1 kHz into the joint effort interfaces, with the gains of the active
+  policy (`gains_as_commands`); no pid_controller. `controller_async` runs both in the
+  asynchronous thread (the controller warns: the synchronous mode is preferred for a PD law).
+
 The controller manager must be started with this workspace sourced so that it finds the
 controller plugin. In node mode the launch shuts down (unloading `rl_impedance_controller`)
 when the policy node exits.
 
 Configuration files in `policy_framework_mjlab/config`: `kangaroo_policies.yaml` (policies,
-shared by node and controller), `kangaroo_policy_controller.yaml` (reference),
-`kangaroo_policy_controller_effort.yaml` (effort), `kangaroo_policy_node.yaml`,
-`kangaroo_<robot_type>_impedance.yaml` (pid_controller).
+shared by node and controller), `kangaroo_policy_controller.yaml` (PD effort controller),
+`kangaroo_policy_node.yaml`, `kangaroo_<robot_type>_impedance.yaml` (pid_controller, node
+mode).
 
 ## Writing plugins
 
