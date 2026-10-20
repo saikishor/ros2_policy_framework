@@ -24,6 +24,7 @@ find_package(ament_cmake REQUIRED)
 find_package(backward_ros REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(onnxruntime_vendor REQUIRED)
+find_package(generate_parameter_library REQUIRED)
 foreach(dep IN ITEMS ${THIS_PACKAGE_DEPENDS})
   find_package(${dep} REQUIRED)
 endforeach()
@@ -33,6 +34,13 @@ rosidl_generate_interfaces(${PROJECT_NAME}_interfaces
   LIBRARY_NAME ${PROJECT_NAME}
 )
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces rosidl_typesupport_cpp)
+
+# Parameter declaration and validation, generated from params/*.yaml (header-only targets).
+set(PARAMETER_LIBRARIES)
+foreach(params IN ITEMS policy_runner policy_node policy_controller)
+  generate_parameter_library(${params}_parameters params/${params}_parameters.yaml)
+  list(APPEND PARAMETER_LIBRARIES ${params}_parameters)
+endforeach()
 
 add_library(${PROJECT_NAME} SHARED
   src/policy_pipeline.cpp
@@ -54,7 +62,7 @@ ament_target_dependencies(${PROJECT_NAME} PUBLIC ${THIS_PACKAGE_DEPENDS})
 # ONNX Runtime is an implementation detail: it does not appear in the public headers.
 target_link_libraries(${PROJECT_NAME}
   PUBLIC "${cpp_typesupport_target}"
-  PRIVATE onnxruntime::onnxruntime)
+  PRIVATE onnxruntime::onnxruntime ${PARAMETER_LIBRARIES})
 
 add_executable(policy_node src/policy_node_main.cpp)
 target_link_libraries(policy_node ${PROJECT_NAME})

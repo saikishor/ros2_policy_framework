@@ -1,0 +1,13 @@
+policy_node:
+  update_rate:
+    type: double
+    default_value: 50.0
+    description: "Policy rate in Hz (one policy step per timer tick); the timer follows /clock with use_sim_time."
+    read_only: true
+    validation:
+      gt<>: [0.0]
+  autostart:
+    type: bool
+    default_value: true
+    description: "Configure and activate the lifecycle node on startup."
+    read_only: true

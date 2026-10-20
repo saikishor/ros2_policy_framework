@@ -1,0 +1,8 @@
+policy_controller:
+  policy_rate:
+    type: double
+    default_value: 0.0
+    description: "Policy rate in Hz; the policy steps every update_rate / policy_rate updates (an integer) while the executors run on every update. 0: every update."
+    read_only: true
+    validation:
+      gt_eq<>: [0.0]

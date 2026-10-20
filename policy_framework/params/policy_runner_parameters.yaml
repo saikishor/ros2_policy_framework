@@ -1,0 +1,68 @@
+policy_runner:
+  sources:
+    type: string_array
+    default_value: []
+    description: "Input source names; each needs <source>.type."
+    read_only: true
+    validation:
+      unique<>: null
+  __map_sources:
+    type:
+      type: string
+      description: "InputSource plugin class of the source."
+      read_only: true
+      validation:
+        not_empty<>: null
+  policies:
+    type: string_array
+    description: "Policy names; the first one is active at start and is the one max_steps returns to."
+    read_only: true
+    validation:
+      not_empty<>: null
+      unique<>: null
+  __map_policies:
+    preprocessor:
+      type: string
+      description: "Preprocessor plugin class."
+      read_only: true
+      validation:
+        not_empty<>: null
+    inference:
+      type: string
+      default_value: "policy_framework/OnnxInference"
+      description: "Inference plugin class."
+      read_only: true
+      validation:
+        not_empty<>: null
+    postprocessor:
+      type: string
+      description: "Postprocessor plugin class."
+      read_only: true
+      validation:
+        not_empty<>: null
+    max_steps:
+      type: int
+      default_value: 0
+      description: "> 0: return to the first policy after this many steps (e.g. a motion length)."
+      read_only: true
+      validation:
+        gt_eq<>: [0]
+    interruptible:
+      type: bool
+      default_value: true
+      description: "false: switch requests are rejected while this policy is active."
+      read_only: true
+  executors:
+    type: string_array
+    default_value: []
+    description: "Executor names; each needs <executor>.type: a topic Executor in policy_node, an InterfaceExecutor in PolicyController."
+    read_only: true
+    validation:
+      unique<>: null
+  __map_executors:
+    type:
+      type: string
+      description: "Executor plugin class."
+      read_only: true
+      validation:
+        not_empty<>: null

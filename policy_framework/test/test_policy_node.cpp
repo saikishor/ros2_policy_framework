@@ -58,6 +58,16 @@ TEST(PolicyNode, ConfigureFailsWhenNoSourceProvidesAnInput)
   EXPECT_EQ(node->configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
 }
 
+TEST(PolicyNode, ConfigureFailsWithANonPositiveUpdateRate)
+{
+  auto params = node_params({"j1", "j2", "j3"});
+  params.push_back({"update_rate", 0.0});
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  auto node = std::make_shared<policy_framework::PolicyNode>(opts);
+  EXPECT_EQ(node->configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
+}
+
 TEST(PolicyNode, IsDestroyedWhenReleasedWhileActive)
 {
   // A reference cycle would keep the node, its publishers and DDS entities alive until process

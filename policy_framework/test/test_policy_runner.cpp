@@ -132,6 +132,28 @@ TEST(PolicyRunner, ConfigureFailsWithoutPolicies)
   EXPECT_THROW(runner.configure(node), std::runtime_error);
 }
 
+TEST(PolicyRunner, ConfigureRejectsInvalidPolicyParameters)
+{
+  auto params = runner_params("/unused_js");
+  params.push_back({"jump.max_steps", -1});  // overrides the earlier value
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("runner_invalid", opts);
+  policy_framework::PolicyRunner runner;
+  EXPECT_ANY_THROW(runner.configure(node));
+}
+
+TEST(PolicyRunner, ConfigureRequiresTheStagesOfEveryPolicy)
+{
+  auto params = runner_params("/unused_js");
+  params.erase(params.begin() + 4);  // walk.preprocessor
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("runner_missing", opts);
+  policy_framework::PolicyRunner runner;
+  EXPECT_ANY_THROW(runner.configure(node));
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

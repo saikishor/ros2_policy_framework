@@ -37,6 +37,7 @@ private:
 
   std::unique_ptr<PolicyRunner> runner_;
   rclcpp::TimerBase::SharedPtr timer_;
+  double update_rate_ = 50.0;  ///< Hz, from the parameters at configure.
 };
 
 }  // namespace policy_framework

@@ -9,29 +9,12 @@
 #include <string>
 #include <vector>
 
+#include "policy_runner_parameters.hpp"
+
 namespace policy_framework
 {
 namespace
 {
-
-template<typename T>
-T param(
-  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & name,
-  const T & default_value)
-{
-  if (!node->has_parameter(name)) {node->declare_parameter<T>(name, default_value);}
-  return node->get_parameter(name).get_value<T>();
-}
-
-std::string required_string(
-  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & name)
-{
-  const auto value = param<std::string>(node, name, "");
-  if (value.empty()) {
-    throw std::runtime_error("Required parameter '" + name + "' is not set");
-  }
-  return value;
-}
 
 template<typename T>
 std::unique_ptr<pluginlib::ClassLoader<T>> make_loader(const std::string & base)
@@ -58,43 +41,41 @@ void PolicyRunner::configure(
   postprocessor_loader_ = make_loader<Postprocessor>("Postprocessor");
   executor_loader_ = make_loader<Executor>("Executor");
 
-  for (const auto & name : param<std::vector<std::string>>(node, "sources", {})) {
-    const auto type = required_string(node, name + ".type");
+  // Declares and validates sources, policies, executors and their per-name parameters.
+  const auto params = policy_runner::ParamListener(node).get_params();
+  executor_types_.clear();
+  for (const auto & name : params.executors) {
+    executor_types_.emplace_back(name, params.executors_map.at(name).type);
+  }
+
+  for (const auto & name : params.sources) {
+    const auto & type = params.sources_map.at(name).type;
     auto source = source_loader_->createSharedInstance(type);
     source->configure({node, name});
     sources_.push_back(source);
     RCLCPP_INFO(logger, "Input source '%s' (%s)", name.c_str(), type.c_str());
   }
 
-  const auto policies = param<std::vector<std::string>>(node, "policies", {});
-  if (policies.empty()) {
-    throw std::runtime_error("Parameter 'policies' is empty");
-  }
-  for (const auto & name : policies) {
+  for (const auto & name : params.policies) {
     const PluginContext ctx{node, name};
+    const auto & stages = params.policies_map.at(name);
     Policy p;
     p.name = name;
-    p.inference = inference_loader_->createSharedInstance(
-      param<std::string>(node, name + ".inference", "policy_framework/OnnxInference"));
+    p.inference = inference_loader_->createSharedInstance(stages.inference);
     p.inference->configure(ctx);
-    p.preprocessor = preprocessor_loader_->createSharedInstance(
-      required_string(node, name + ".preprocessor"));
+    p.preprocessor = preprocessor_loader_->createSharedInstance(stages.preprocessor);
     p.preprocessor->configure(ctx, p.inference->model(), state_);
-    p.postprocessor = postprocessor_loader_->createSharedInstance(
-      required_string(node, name + ".postprocessor"));
+    p.postprocessor = postprocessor_loader_->createSharedInstance(stages.postprocessor);
     p.postprocessor->configure(ctx, p.inference->model(), commands_);
-    p.max_steps = static_cast<int>(param<int64_t>(node, name + ".max_steps", 0));
-    p.interruptible = param<bool>(node, name + ".interruptible", true);
+    p.max_steps = static_cast<int>(stages.max_steps);
+    p.interruptible = stages.interruptible;
     RCLCPP_INFO(
       logger, "Policy '%s': max_steps=%d interruptible=%s", name.c_str(), p.max_steps,
       p.interruptible ? "true" : "false");
     pipeline_->add_policy(std::move(p));
   }
 
-  const auto executors = load_executors ?
-    param<std::vector<std::string>>(node, "executors", {}) : std::vector<std::string>{};
-  for (const auto & name : executors) {
-    const auto type = required_string(node, name + ".type");
+  for (const auto & [name, type] : load_executors ? executor_types_ : decltype(executor_types_){}) {
     auto executor = executor_loader_->createSharedInstance(type);
     executor->configure({node, name}, commands_);
     executors_.push_back(executor);

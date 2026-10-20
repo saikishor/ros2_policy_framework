@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "pluginlib/class_loader.hpp"
@@ -60,6 +61,12 @@ public:
   /// Send commands() through every executor.
   void write_executors();
 
+  /// @return (name, plugin class) of each configured `executors` entry, loaded or not.
+  const std::vector<std::pair<std::string, std::string>> & executor_types() const
+  {
+    return executor_types_;
+  }
+
   DataStore & state() {return state_;}
   DataStore & commands() {return commands_;}
   PolicyPipeline & pipeline() {return *pipeline_;}
@@ -77,6 +84,7 @@ private:
 
   std::vector<std::shared_ptr<InputSource>> sources_;
   std::vector<std::shared_ptr<Executor>> executors_;
+  std::vector<std::pair<std::string, std::string>> executor_types_;
   // unique_ptr: the pipeline holds atomics, so it is replaced rather than reassigned.
   std::unique_ptr<PolicyPipeline> pipeline_ = std::make_unique<PolicyPipeline>();
   DataStore state_;

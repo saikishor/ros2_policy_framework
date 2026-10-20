@@ -8,13 +8,14 @@
 #include <memory>
 #include <string>
 
+#include "policy_node_parameters.hpp"
+
 namespace policy_framework
 {
 
 PolicyNode::PolicyNode(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("policy_node", options)
 {
-  declare_parameter<double>("update_rate", 50.0);
 }
 
 PolicyNode::CallbackReturn PolicyNode::on_configure(const rclcpp_lifecycle::State &)
@@ -22,6 +23,7 @@ PolicyNode::CallbackReturn PolicyNode::on_configure(const rclcpp_lifecycle::Stat
   // A fresh runner on every configure so that re-configuration reloads plugins and models.
   runner_ = std::make_unique<PolicyRunner>();
   try {
+    update_rate_ = policy_node::ParamListener(shared_from_this()).get_params().update_rate;
     runner_->configure(shared_from_this());
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_logger(), "Configuration failed: %s", e.what());
@@ -39,14 +41,9 @@ PolicyNode::CallbackReturn PolicyNode::on_configure(const rclcpp_lifecycle::Stat
 
 PolicyNode::CallbackReturn PolicyNode::on_activate(const rclcpp_lifecycle::State &)
 {
-  const double rate = get_parameter("update_rate").as_double();
-  if (rate <= 0.0) {
-    RCLCPP_ERROR(get_logger(), "update_rate must be > 0, got %f", rate);
-    return CallbackReturn::FAILURE;
-  }
   runner_->pipeline().restart();
   timer_ = rclcpp::create_timer(
-    this, get_clock(), rclcpp::Duration::from_seconds(1.0 / rate), [this]() {update();});
+    this, get_clock(), rclcpp::Duration::from_seconds(1.0 / update_rate_), [this]() {update();});
   return CallbackReturn::SUCCESS;
 }
 

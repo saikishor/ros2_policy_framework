@@ -12,13 +12,13 @@
 #include <vector>
 
 #include "pluginlib/class_list_macros.hpp"
+#include "policy_controller_parameters.hpp"
 
 namespace policy_framework
 {
 
 PolicyController::CallbackReturn PolicyController::on_init()
 {
-  auto_declare<double>("policy_rate", 0.0);
   return CallbackReturn::SUCCESS;
 }
 
@@ -28,14 +28,7 @@ void PolicyController::load_executors()
   executors_.clear();
   executor_loader_ = std::make_unique<pluginlib::ClassLoader<InterfaceExecutor>>(
     "policy_framework", "policy_framework::InterfaceExecutor");
-  if (!node->has_parameter("executors")) {
-    node->declare_parameter("executors", std::vector<std::string>{});
-  }
-  const auto param = node->get_parameter("executors");
-  const auto names = param.get_type() == rclcpp::ParameterType::PARAMETER_NOT_SET ?
-    std::vector<std::string>{} : param.as_string_array();
-  for (const auto & name : names) {
-    const auto type = get_parameter<std::string>({node, name}, "type", "");
+  for (const auto & [name, type] : runner_->executor_types()) {
     if (!executor_loader_->isClassAvailable(type)) {
       throw std::runtime_error(
               "Executor '" + name + "' (" + type + ") is not an InterfaceExecutor plugin. Topic "
@@ -52,7 +45,13 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
 {
   executors_.clear();
   runner_ = std::make_unique<PolicyRunner>();
-  const double policy_rate = get_node()->get_parameter("policy_rate").as_double();
+  double policy_rate = 0.0;
+  try {
+    policy_rate = policy_controller::ParamListener(get_node()).get_params().policy_rate;
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(get_node()->get_logger(), "Invalid parameters: %s", e.what());
+    return CallbackReturn::ERROR;
+  }
   const double update_rate = static_cast<double>(get_update_rate());
   decimation_ = 1;
   if (policy_rate > 0.0) {

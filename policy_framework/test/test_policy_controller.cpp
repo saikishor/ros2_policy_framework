@@ -212,6 +212,12 @@ TEST_F(PolicyControllerTest, PolicyRunsAtPolicyRateAndExecutorsOnEveryUpdate)
   EXPECT_NE(command("j1/effort"), 10.0 * (4.5 - 2.0));
 }
 
+TEST_F(PolicyControllerTest, NegativePolicyRateIsRejected)
+{
+  init({{"policy_rate", -50.0}});
+  EXPECT_EQ(controller.configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
+}
+
 TEST_F(PolicyControllerTest, PolicyRateMustDivideTheUpdateRate)
 {
   init({{"policy_rate", 30.0}}, 100);
