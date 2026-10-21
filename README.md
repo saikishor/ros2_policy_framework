@@ -163,6 +163,14 @@ or, chaining into a pid_controller that closes the loop:
 
 ### Parameters
 
+All parameters are declared and validated with
+[generate_parameter_library](https://github.com/PickNikRobotics/generate_parameter_library):
+the definitions (types, defaults, descriptions, validation) are in `params/*.yaml` of each
+package. Every parameter is read at configure time and is read-only. Invalid values (e.g. a
+negative `max_steps`, `num_threads: 0`, an empty `policies`) make configuration fail with
+the parameter name. Write floating point parameters with a decimal point (`50.0`): in the
+controller they are declared from the YAML value first.
+
 | Parameter | Description |
 |-----------|-------------|
 | `sources` | Input source names; each needs `<source>.type` |
@@ -192,7 +200,8 @@ or, chaining into a pid_controller that closes the loop:
 | `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface`, `velocity_interface`, `gains_controller`, `gains_as_commands` (false) |
 | `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm | `topic` (`cmd_vel`), `timeout` (1.0 s) → linear.x, linear.y, angular.z of a Twist; zero when absent or stale |
 
-Source and executor `topic` parameters default to `~/<name>`.
+Source and executor `topic` parameters default to `~/<name>` (an empty value also means
+that); `ImuSource.sensor_name` defaults to the source name.
 
 ## mjlab policies
 
@@ -312,8 +321,11 @@ Derive from a base class of `policy_framework/plugin_interfaces.hpp` (or `Observ
 pluginlib_export_plugin_description_file(policy_framework plugins.xml)
 ```
 
-Read parameters with `policy_framework::get_parameter<T>(ctx, "param", default)` (declares
-`<ctx.name>.param` once). Keep stamps flowing: a preprocessor reports `input_stamps()`, a
+Declare plugin parameters with generate_parameter_library, instantiating the generated
+listener with the plugin's prefix: `my_plugin::ParamListener(ctx.node, ctx.name).get_params()`
+reads `<ctx.name>.<param>` (parameters are declared once, so several policies can share a
+plugin type). `policy_framework::get_parameter<T>(ctx, "param", default)` remains for
+parameters whose names are only known at runtime (e.g. `terms.<term>.type`). Keep stamps flowing: a preprocessor reports `input_stamps()`, a
 postprocessor writes the `stamp` it receives on every command, a term returns the stamp of
 its value. Register every state/command entry in `configure()`; in the cycle
 only use indices. `Preprocessor::compute` returns false until its inputs are received.
