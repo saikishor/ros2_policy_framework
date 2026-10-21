@@ -1,0 +1,6 @@
+twist_command_term:
+  timeout:
+    type: double
+    default_value: 1.0
+    description: "Seconds after which the last command is replaced by zero; <= 0 disables it."
+    read_only: true

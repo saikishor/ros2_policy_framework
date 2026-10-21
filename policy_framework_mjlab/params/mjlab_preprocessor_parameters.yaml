@@ -1,0 +1,29 @@
+mjlab_preprocessor:
+  imu_name:
+    type: string
+    default_value: "imu"
+    description: "Prefix of the IMU entries <imu_name>/orientation.*, angular_velocity.*, linear_acceleration.*."
+    read_only: true
+    validation:
+      not_empty<>: null
+  velocity_command_name:
+    type: string
+    default_value: "cmd_vel"
+    description: "Prefix of the twist command entries of the built-in velocity command term."
+    read_only: true
+    validation:
+      not_empty<>: null
+  odometry_name:
+    type: string
+    default_value: "odom"
+    description: "Prefix of the odometry entries <odometry_name>/linear.* (base_lin_vel)."
+    read_only: true
+    validation:
+      not_empty<>: null
+  observation_input:
+    type: string
+    default_value: "obs"
+    description: "Model input receiving the observation."
+    read_only: true
+    validation:
+      not_empty<>: null

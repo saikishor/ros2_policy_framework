@@ -4,6 +4,7 @@
 #include "policy_framework_mjlab/twist_command_term.hpp"
 
 #include "pluginlib/class_list_macros.hpp"
+#include "twist_command_term_parameters.hpp"
 
 namespace policy_framework_mjlab
 {
@@ -11,7 +12,7 @@ namespace policy_framework_mjlab
 size_t TwistCommandTerm::configure_term(
   const policy_framework::PluginContext & ctx, const policy_framework::ModelInfo &)
 {
-  timeout_ = policy_framework::get_parameter<double>(ctx, "timeout", 1.0);
+  timeout_ = twist_command_term::ParamListener(ctx.node, ctx.name).get_params().timeout;
   return 3;
 }
 

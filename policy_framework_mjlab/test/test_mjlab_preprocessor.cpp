@@ -298,6 +298,13 @@ TEST(MjlabPreprocessor, TermPluginProvidesATermUnknownToThePreprocessor)
   EXPECT_EQ(pre.history_length(), 2U);
 }
 
+TEST(MjlabPreprocessor, RejectsAnEmptyObservationInput)
+{
+  DataStore state;
+  MjlabPreprocessor pre;
+  EXPECT_ANY_THROW(pre.configure(make_context({{"p.observation_input", ""}}), twist_model(1), state));
+}
+
 TEST(ProjectedGravity, RotatesWorldGravityIntoBodyFrame)
 {
   float g[3];

@@ -13,11 +13,11 @@
 #include <string>
 #include <vector>
 
+#include "mjlab_postprocessor_parameters.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework_mjlab/metadata.hpp"
 
 using policy_framework::DataStore;
-using policy_framework::get_parameter;
 
 namespace policy_framework_mjlab
 {
@@ -123,11 +123,12 @@ void MjlabPostprocessor::configure(
   const auto joints = split(require(md, "joint_names"));
   const auto defaults = parse_doubles(require(md, "default_joint_pos"));
   scale_ = parse_doubles(require(md, "action_scale"));
-  const auto excluded = get_parameter<std::vector<std::string>>(ctx, "excluded_joints", {});
-  const auto pos_iface = get_parameter<std::string>(ctx, "position_interface", "position");
-  const auto vel_iface = get_parameter<std::string>(ctx, "velocity_interface", "velocity");
-  const auto gains_controller = get_parameter<std::string>(ctx, "gains_controller", "");
-  const auto gains_as_commands = get_parameter<bool>(ctx, "gains_as_commands", false);
+  const auto params = mjlab_postprocessor::ParamListener(ctx.node, ctx.name).get_params();
+  const auto & excluded = params.excluded_joints;
+  const auto & pos_iface = params.position_interface;
+  const auto & vel_iface = params.velocity_interface;
+  const auto & gains_controller = params.gains_controller;
+  const auto gains_as_commands = params.gains_as_commands;
 
   std::vector<std::string> actuated;
   offset_.clear();

@@ -1,0 +1,30 @@
+mjlab_postprocessor:
+  excluded_joints:
+    type: string_array
+    default_value: []
+    description: "Metadata joints the policy does not actuate (e.g. passive joints of a closed chain)."
+    read_only: true
+    validation:
+      unique<>: null
+  position_interface:
+    type: string
+    default_value: "position"
+    description: "Command entries <joint>/<position_interface> receive action_scale * action + default_joint_pos."
+    read_only: true
+    validation:
+      not_empty<>: null
+  velocity_interface:
+    type: string
+    default_value: "velocity"
+    description: "Command entries <joint>/<velocity_interface> receive 0; empty: not written."
+    read_only: true
+  gains_controller:
+    type: string
+    default_value: ""
+    description: "pid_controller whose gains.<joint>.p/.d parameters receive the policy gains on activation; empty: not sent."
+    read_only: true
+  gains_as_commands:
+    type: bool
+    default_value: false
+    description: "Write the policy gains as <joint>/stiffness and <joint>/damping commands on every step (for PdEffortExecutor)."
+    read_only: true

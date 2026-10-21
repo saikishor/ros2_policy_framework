@@ -94,6 +94,21 @@ TEST(MjlabPostprocessor, GainsCanBeWrittenAsCommandsForAControllerSidePdLaw)
     std::runtime_error);
 }
 
+TEST(MjlabPostprocessor, RejectsInvalidParameters)
+{
+  DataStore commands;
+  MjlabPostprocessor post;
+  EXPECT_ANY_THROW(post.configure(make_context({{"p.position_interface", ""}}), model(), commands));
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({{"p.excluded_joints", StringArray{"passive", "passive"}}});
+  DataStore other;
+  MjlabPostprocessor post2;
+  EXPECT_ANY_THROW(
+    post2.configure(
+      {std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_mjlab_post_dup", opts), "p"},
+      model(), other));
+}
+
 TEST(MjlabPostprocessor, VelocityReferenceCanBeDisabled)
 {
   DataStore commands;

@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "mjlab_preprocessor_parameters.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework_mjlab/metadata.hpp"
 
@@ -47,10 +48,11 @@ void MjlabPreprocessor::configure(
   const auto cmd_it = md.find("command_names");
   const bool motion = cmd_it != md.end() && cmd_it->second == "motion";
 
-  const auto imu = get_parameter<std::string>(ctx, "imu_name", "imu");
-  const auto cmd = get_parameter<std::string>(ctx, "velocity_command_name", "cmd_vel");
-  const auto odom = get_parameter<std::string>(ctx, "odometry_name", "odom");
-  obs_input_ = get_parameter<std::string>(ctx, "observation_input", "obs");
+  const auto params = mjlab_preprocessor::ParamListener(ctx.node, ctx.name).get_params();
+  const auto & imu = params.imu_name;
+  const auto & cmd = params.velocity_command_name;
+  const auto & odom = params.odometry_name;
+  obs_input_ = params.observation_input;
 
   required_.clear();
   auto add = [&](const std::string & name) {
@@ -83,6 +85,7 @@ void MjlabPreprocessor::configure(
   size_t single_dim = 0;
   for (const auto & name : split(require(md, "observation_names"))) {
     Term t{};
+    // Not a generated parameter: the term names come from the model metadata.
     const auto plugin = get_parameter<std::string>(ctx, "terms." + name + ".type", "");
     if (!plugin.empty()) {
       if (!term_loader_) {
