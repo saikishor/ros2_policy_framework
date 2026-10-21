@@ -7,18 +7,17 @@
 #include <string>
 
 #include "pluginlib/class_list_macros.hpp"
+#include "multi_dof_command_executor_parameters.hpp"
 
 namespace policy_framework
 {
 
 void MultiDofCommandExecutor::configure(const PluginContext & ctx, const DataStore & commands)
 {
-  auto get = [&](const std::string & param, const std::string & def) {
-      return get_parameter<std::string>(ctx, param, def);
-    };
-  const auto topic = get("topic", "~/" + ctx.name);
-  const auto values_suffix = "/" + get("values_interface", "position");
-  const auto dot_iface = get("values_dot_interface", "velocity");
+  const auto params = multi_dof_command_executor::ParamListener(ctx.node, ctx.name).get_params();
+  const auto topic = params.topic.empty() ? "~/" + ctx.name : params.topic;
+  const auto values_suffix = "/" + params.values_interface;
+  const auto & dot_iface = params.values_dot_interface;
 
   msg_ = control_msgs::msg::MultiDOFCommand();
   values_idx_.clear();

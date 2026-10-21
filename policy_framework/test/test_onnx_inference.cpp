@@ -64,6 +64,16 @@ TEST(OnnxInference, RunWritesOutputsInPlace)
   EXPECT_FLOAT_EQ(out["actions"].data[0], 0.5F);
 }
 
+TEST(OnnxInference, RejectsANonPositiveThreadCount)
+{
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({{"p.model_path", kModel}, {"p.num_threads", 0}});
+  policy_framework::OnnxInference inf;
+  EXPECT_ANY_THROW(
+    inf.configure({std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_onnx_threads", opts),
+        "p"}));
+}
+
 TEST(OnnxInference, ModelPathCanBeADirectory)
 {
   OnnxInference inf;

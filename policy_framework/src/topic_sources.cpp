@@ -8,9 +8,19 @@
 #include <vector>
 
 #include "pluginlib/class_list_macros.hpp"
+#include "imu_source_parameters.hpp"
+#include "joint_state_source_parameters.hpp"
+#include "topic_parameters.hpp"
+#include "twist_source_parameters.hpp"
 
 namespace policy_framework
 {
+
+std::string topic_parameter(const PluginContext & ctx, const std::string & default_topic)
+{
+  const auto topic = topic_parameters::ParamListener(ctx.node, ctx.name).get_params().topic;
+  return topic.empty() ? default_topic : topic;
+}
 namespace
 {
 
@@ -53,7 +63,7 @@ void FieldWriter::write(DataStore & store, const double * values, double stamp)
 
 void JointStateSource::configure_source(const PluginContext & ctx)
 {
-  joints_ = get_parameter<std::vector<std::string>>(ctx, "joints", {});
+  joints_ = joint_state_source::ParamListener(ctx.node, ctx.name).get_params().joints;
 }
 
 bool JointStateSource::provides(const std::string & name) const
@@ -98,8 +108,9 @@ void JointStateSource::read(DataStore & state, double now)
 
 void ImuSource::configure_source(const PluginContext & ctx)
 {
+  const auto sensor = imu_source::ParamListener(ctx.node, ctx.name).get_params().sensor_name;
   fields_ = FieldWriter(
-    get_parameter<std::string>(ctx, "sensor_name", ctx.name),
+    sensor.empty() ? ctx.name : sensor,
     {"orientation.x", "orientation.y", "orientation.z", "orientation.w",
       "angular_velocity.x", "angular_velocity.y", "angular_velocity.z",
       "linear_acceleration.x", "linear_acceleration.y", "linear_acceleration.z"});
@@ -121,7 +132,7 @@ void ImuSource::read(DataStore & state, double now)
 
 void TwistSource::configure_source(const PluginContext & ctx)
 {
-  timeout_ = get_parameter<double>(ctx, "timeout", 1.0);
+  timeout_ = twist_source::ParamListener(ctx.node, ctx.name).get_params().timeout;
   fields_ = FieldWriter(
     ctx.name, {"linear.x", "linear.y", "linear.z", "angular.x", "angular.y", "angular.z"});
 }

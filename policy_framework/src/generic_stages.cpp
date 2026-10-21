@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "pluginlib/class_list_macros.hpp"
+#include "concat_preprocessor_parameters.hpp"
+#include "split_postprocessor_parameters.hpp"
 
 namespace policy_framework
 {
@@ -38,8 +40,9 @@ std::vector<size_t> register_entries(
 void ConcatPreprocessor::configure(
   const PluginContext & ctx, const ModelInfo & model, DataStore & state)
 {
-  tensor_ = get_parameter<std::string>(ctx, "input_tensor", "obs");
-  const auto entries = get_parameter<std::vector<std::string>>(ctx, "input_entries", {});
+  const auto params = concat_preprocessor::ParamListener(ctx.node, ctx.name).get_params();
+  tensor_ = params.input_tensor;
+  const auto & entries = params.input_entries;
   indices_ = register_entries(model.inputs, tensor_, entries, state);
   stamps_.clear();
   for (const auto & e : entries) {stamps_.push_back({e, 0.0});}
@@ -59,10 +62,9 @@ bool ConcatPreprocessor::compute(const DataStore & state, const TensorMap &, Ten
 void SplitPostprocessor::configure(
   const PluginContext & ctx, const ModelInfo & model, DataStore & commands)
 {
-  tensor_ = get_parameter<std::string>(ctx, "output_tensor", "actions");
-  indices_ = register_entries(
-    model.outputs, tensor_,
-    get_parameter<std::vector<std::string>>(ctx, "output_entries", {}), commands);
+  const auto params = split_postprocessor::ParamListener(ctx.node, ctx.name).get_params();
+  tensor_ = params.output_tensor;
+  indices_ = register_entries(model.outputs, tensor_, params.output_entries, commands);
 }
 
 bool SplitPostprocessor::compute(const TensorMap & outputs, double stamp, DataStore & commands)

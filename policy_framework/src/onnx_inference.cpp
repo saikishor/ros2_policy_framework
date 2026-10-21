@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "onnx_inference_parameters.hpp"
 #include "pluginlib/class_list_macros.hpp"
 
 namespace fs = std::filesystem;
@@ -118,8 +119,9 @@ std::string OnnxInference::resolve_model_path(const std::string & path)
 void OnnxInference::configure(const PluginContext & ctx)
 {
   logger_ = ctx.node->get_logger().get_child(ctx.name);
-  const auto model_path = resolve_model_path(get_parameter<std::string>(ctx, "model_path", ""));
-  const auto num_threads = get_parameter<int64_t>(ctx, "num_threads", 1);
+  const auto params = onnx_inference::ParamListener(ctx.node, ctx.name).get_params();
+  const auto model_path = resolve_model_path(params.model_path);
+  const auto num_threads = params.num_threads;
 
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(static_cast<int>(num_threads));

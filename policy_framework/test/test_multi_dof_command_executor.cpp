@@ -50,6 +50,17 @@ TEST(MultiDofCommandExecutor, PublishesPositionsAsValuesAndVelocitiesAsValuesDot
   EXPECT_EQ(received->values_dot, (std::vector<double>{0.1, 0.0}));
 }
 
+TEST(MultiDofCommandExecutor, RejectsAnEmptyValuesInterface)
+{
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({{"exec.values_interface", ""}});
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_multidof_empty", opts);
+  DataStore commands;
+  commands.add("j1/position");
+  policy_framework::MultiDofCommandExecutor exec;
+  EXPECT_ANY_THROW(exec.configure({node, "exec"}, commands));
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

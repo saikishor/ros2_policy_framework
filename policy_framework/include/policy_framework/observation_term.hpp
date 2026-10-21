@@ -67,7 +67,7 @@ public:
   {
     clock_ = ctx.node->get_clock();
     const auto dim = configure_term(ctx, model);
-    topic_.subscribe(ctx.node, get_parameter<std::string>(ctx, "topic", default_topic_));
+    topic_.subscribe(ctx.node, topic_parameter(ctx, default_topic_));
     return dim;
   }
 

@@ -36,7 +36,7 @@ public:
   void configure(const PluginContext & ctx) override
   {
     name_ = ctx.name;
-    const auto topic = get_parameter<std::string>(ctx, "topic", "~/" + ctx.name);
+    const auto topic = topic_parameter(ctx, "~/" + ctx.name);
     configure_source(ctx);
     topic_.subscribe(ctx.node, topic);
   }

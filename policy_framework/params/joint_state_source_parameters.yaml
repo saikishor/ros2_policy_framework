@@ -1,0 +1,8 @@
+joint_state_source:
+  joints:
+    type: string_array
+    default_value: []
+    description: "Joints this source provides; empty: any joint."
+    read_only: true
+    validation:
+      unique<>: null

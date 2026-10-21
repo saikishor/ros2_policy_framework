@@ -37,7 +37,10 @@ rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces 
 
 # Parameter declaration and validation, generated from params/*.yaml (header-only targets).
 set(PARAMETER_LIBRARIES)
-foreach(params IN ITEMS policy_runner policy_node policy_controller)
+foreach(params IN ITEMS
+    policy_runner policy_node policy_controller onnx_inference topic joint_state_source
+    imu_source twist_source multi_dof_command_executor concat_preprocessor split_postprocessor
+    pd_effort_executor reference_interface_executor)
   generate_parameter_library(${params}_parameters params/${params}_parameters.yaml)
   list(APPEND PARAMETER_LIBRARIES ${params}_parameters)
 endforeach()

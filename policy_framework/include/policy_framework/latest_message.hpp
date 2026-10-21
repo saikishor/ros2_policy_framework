@@ -13,6 +13,14 @@
 namespace policy_framework
 {
 
+struct PluginContext;
+
+/**
+ * @brief The `<ctx.name>.topic` parameter (declared and validated once), or @p default_topic
+ *        when it is empty. Shared by the topic input sources and topic observation terms.
+ */
+std::string topic_parameter(const PluginContext & ctx, const std::string & default_topic);
+
 /**
  * @brief Subscription that hands the latest message over to the control cycle, real-time safe.
  *

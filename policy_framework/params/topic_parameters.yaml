@@ -1,0 +1,6 @@
+topic_parameters:
+  topic:
+    type: string
+    default_value: ""
+    description: "Topic to subscribe to; empty: the plugin's default (~/<name> for input sources)."
+    read_only: true

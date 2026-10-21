@@ -1,0 +1,14 @@
+reference_interface_executor:
+  prefix:
+    type: string
+    default_value: ""
+    description: "Command interface <prefix>/<entry>; empty: the entry name."
+    read_only: true
+  interfaces:
+    type: string_array
+    default_value: ["position", "velocity"]
+    description: "Only entries <joint>/<interface> with one of these interfaces are written."
+    read_only: true
+    validation:
+      not_empty<>: null
+      unique<>: null

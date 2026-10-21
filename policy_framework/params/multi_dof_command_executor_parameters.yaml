@@ -1,0 +1,18 @@
+multi_dof_command_executor:
+  topic:
+    type: string
+    default_value: ""
+    description: "control_msgs/MultiDOFCommand topic; empty: ~/<name>."
+    read_only: true
+  values_interface:
+    type: string
+    default_value: "position"
+    description: "Command entries <dof>/<values_interface> become the values."
+    read_only: true
+    validation:
+      not_empty<>: null
+  values_dot_interface:
+    type: string
+    default_value: "velocity"
+    description: "Command entries <dof>/<values_dot_interface> become values_dot (0 when missing); empty: always 0."
+    read_only: true

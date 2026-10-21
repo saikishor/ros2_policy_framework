@@ -1,0 +1,6 @@
+imu_source:
+  sensor_name:
+    type: string
+    default_value: ""
+    description: "Entry prefix <sensor_name>/orientation.*, matching the IMU state interfaces; empty: the source name."
+    read_only: true

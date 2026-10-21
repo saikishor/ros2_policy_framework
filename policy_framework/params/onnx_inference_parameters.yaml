@@ -1,0 +1,14 @@
+onnx_inference:
+  model_path:
+    type: string
+    description: "ONNX model file, or a directory: its first .onnx file."
+    read_only: true
+    validation:
+      not_empty<>: null
+  num_threads:
+    type: int
+    default_value: 1
+    description: "ONNX Runtime intra-op threads."
+    read_only: true
+    validation:
+      gt<>: [0]

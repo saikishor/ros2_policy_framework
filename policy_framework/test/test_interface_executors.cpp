@@ -134,6 +134,17 @@ TEST_F(PdEffortExecutorTest, SafeValuesAreZeroEffort)
   EXPECT_EQ(values, (Doubles{0.0, 0.0}));
 }
 
+TEST_F(PdEffortExecutorTest, RejectsNegativeGainsAndLimits)
+{
+  EXPECT_ANY_THROW(
+    configure({{"pd.stiffness", Doubles{10.0, -1.0}}, {"pd.damping", Doubles{1.0, 1.0}}}));
+  PdEffortExecutor other;
+  EXPECT_ANY_THROW(
+    other.configure(
+      make_context({{"pd.stiffness", Doubles{1.0, 1.0}}, {"pd.damping", Doubles{1.0, 1.0}},
+        {"pd.effort_limits", Doubles{-5.0, 5.0}}}), commands, state));
+}
+
 TEST_F(PdEffortExecutorTest, RejectsMissingGainsAndSizeMismatch)
 {
   EXPECT_THROW(configure({}), std::runtime_error);  // no gains from the policy nor parameters

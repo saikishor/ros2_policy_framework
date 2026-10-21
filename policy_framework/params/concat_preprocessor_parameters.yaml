@@ -1,0 +1,14 @@
+concat_preprocessor:
+  input_tensor:
+    type: string
+    default_value: "obs"
+    description: "Model input to fill."
+    read_only: true
+    validation:
+      not_empty<>: null
+  input_entries:
+    type: string_array
+    description: "State entries copied in order; as many as the tensor values."
+    read_only: true
+    validation:
+      not_empty<>: null

@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "pluginlib/class_list_macros.hpp"
+#include "pd_effort_executor_parameters.hpp"
+#include "reference_interface_executor_parameters.hpp"
 
 namespace policy_framework
 {
@@ -38,16 +40,17 @@ std::optional<double> valid(const DataStore & store, size_t i)
 void PdEffortExecutor::configure(
   const PluginContext & ctx, const DataStore & commands, DataStore & state)
 {
-  auto names = get_parameter<std::vector<std::string>>(ctx, "joints", {});
+  const auto params = pd_effort_executor::ParamListener(ctx.node, ctx.name).get_params();
+  auto names = params.joints;
   if (names.empty()) {
     for (const auto & n : commands.names()) {
       if (ends_with(n, kPosition)) {names.push_back(n.substr(0, n.size() - kPosition.size()));}
     }
   }
-  const auto effort = get_parameter<std::string>(ctx, "effort_interface", "effort");
-  const auto kp = get_parameter<std::vector<double>>(ctx, "stiffness", {});
-  const auto kd = get_parameter<std::vector<double>>(ctx, "damping", {});
-  const auto limits = get_parameter<std::vector<double>>(ctx, "effort_limits", {});
+  const auto & effort = params.effort_interface;
+  const auto & kp = params.stiffness;
+  const auto & kd = params.damping;
+  const auto & limits = params.effort_limits;
   auto check_size = [&](const std::vector<double> & v, const std::string & what) {
       if (!v.empty() && v.size() != names.size()) {
         throw std::runtime_error(
@@ -108,9 +111,9 @@ void PdEffortExecutor::write(
 void ReferenceInterfaceExecutor::configure(
   const PluginContext & ctx, const DataStore & commands, DataStore &)
 {
-  const auto prefix = get_parameter<std::string>(ctx, "prefix", "");
-  const auto kinds = get_parameter<std::vector<std::string>>(
-    ctx, "interfaces", {"position", "velocity"});
+  const auto params = reference_interface_executor::ParamListener(ctx.node, ctx.name).get_params();
+  const auto & prefix = params.prefix;
+  const auto & kinds = params.interfaces;
   entries_.clear();
   interfaces_.clear();
   for (size_t i = 0; i < commands.size(); ++i) {

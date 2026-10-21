@@ -1,0 +1,14 @@
+split_postprocessor:
+  output_tensor:
+    type: string
+    default_value: "actions"
+    description: "Model output to split."
+    read_only: true
+    validation:
+      not_empty<>: null
+  output_entries:
+    type: string_array
+    description: "Command entries written in order; as many as the tensor values."
+    read_only: true
+    validation:
+      not_empty<>: null
