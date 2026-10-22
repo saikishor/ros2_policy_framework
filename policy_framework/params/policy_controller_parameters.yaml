@@ -6,3 +6,15 @@ policy_controller:
     read_only: true
     validation:
       gt_eq<>: [0.0]
+  async_inference:
+    type: bool
+    default_value: false
+    description: "Run each policy step in its own real-time thread: update() never waits for inference, applies its commands from the first update after it finished, and keeps running the executors (e.g. the PD law) on every update. Exclusive with is_async."
+    read_only: true
+  inference_thread_priority:
+    type: int
+    default_value: 40
+    description: "SCHED_FIFO priority of the inference thread with async_inference; keep it below the controller manager's (50)."
+    read_only: true
+    validation:
+      bounds<>: [0, 99]

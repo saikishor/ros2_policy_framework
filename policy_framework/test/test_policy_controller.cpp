@@ -3,7 +3,9 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <memory>
+#include <thread>
 #include <string>
 #include <utility>
 #include <vector>
@@ -215,6 +217,43 @@ TEST_F(PolicyControllerTest, PolicyRunsAtPolicyRateAndExecutorsOnEveryUpdate)
 TEST_F(PolicyControllerTest, NegativePolicyRateIsRejected)
 {
   init({{"policy_rate", -50.0}});
+  EXPECT_EQ(controller.configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
+}
+
+TEST_F(PolicyControllerTest, AsyncInferenceKeepsThePdLawInTheUpdateLoop)
+{
+  with_reference_executor = false;
+  init({
+    {"policy_rate", 50.0},
+    {"async_inference", true},
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{0.0, 0.0}}}, 100);
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+
+  // Triggers the first policy step without waiting for it: nothing to send yet.
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // The step finished: its references (j1 4.5) apply from this update, PD on the latest state.
+  set_state("j1/position", 2.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 2.0));
+
+  ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+}
+
+TEST_F(PolicyControllerTest, AsyncInferenceAndIsAsyncAreExclusive)
+{
+  init({{"async_inference", true}, {"is_async", true}});
   EXPECT_EQ(controller.configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
 }
 

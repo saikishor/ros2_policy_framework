@@ -12,6 +12,7 @@
 #include "pluginlib/class_loader.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 #include "policy_framework/policy_runner.hpp"
+#include "realtime_tools/async_function_handler.hpp"
 
 namespace policy_framework
 {
@@ -36,6 +37,13 @@ namespace policy_framework
  * without executors needing more, update_rate = policy rate. Synchronous by default; with the
  * standard parameter `is_async: true` update() (inference and executors) runs in its own
  * thread, which suits a reference executor but not a PD law.
+ *
+ * `async_inference: true` keeps update() and the executors in the real-time loop and runs only
+ * the policy step in its own thread (SCHED_FIFO `inference_thread_priority`): every policy
+ * tick the state is handed over and the step triggered; update() never waits for it, and its
+ * commands apply from the first update after it finished (until then the previous ones are
+ * held). A tick that finds the previous step still running is skipped with a warning.
+ * Exclusive with is_async.
  *
  * Safety: executors run only once the active policy produced commands since activation. On
  * deactivation and when the policy fails, every executor's safe_values() are written (zero
@@ -67,6 +75,11 @@ private:
   // Declared before the runner and executors: plugin libraries must outlive the instances.
   std::unique_ptr<pluginlib::ClassLoader<InterfaceExecutor>> executor_loader_;
   std::unique_ptr<PolicyRunner> runner_;
+  // After runner_: destroyed (thread stopped) before the runner its callback uses.
+  std::unique_ptr<realtime_tools::AsyncFunctionHandler<PolicyPipeline::Status>> inference_;
+  DataStore async_state_;     ///< Inference thread's copy of the state, filled per policy tick.
+  DataStore async_commands_;  ///< Inference thread's commands, copied out when it finished.
+  bool inference_pending_ = false;  ///< Triggered, and its result not applied yet.
   std::vector<std::shared_ptr<InterfaceExecutor>> executors_;
   std::vector<std::string> state_names_;
   std::vector<std::string> command_names_;  ///< Concatenation of the executors' interfaces.

@@ -43,13 +43,21 @@ void PolicyController::load_executors()
 
 PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lifecycle::State &)
 {
+  inference_.reset();  // stops the thread before the runner it uses is replaced
   executors_.clear();
   runner_ = std::make_unique<PolicyRunner>();
-  double policy_rate = 0.0;
+  policy_controller::Params params;
   try {
-    policy_rate = policy_controller::ParamListener(get_node()).get_params().policy_rate;
+    params = policy_controller::ParamListener(get_node()).get_params();
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_node()->get_logger(), "Invalid parameters: %s", e.what());
+    return CallbackReturn::ERROR;
+  }
+  const double policy_rate = params.policy_rate;
+  if (params.async_inference && is_async()) {
+    RCLCPP_ERROR(
+      get_node()->get_logger(), "async_inference and is_async are exclusive: async_inference "
+      "already moves inference out of the real-time loop");
     return CallbackReturn::ERROR;
   }
   const double update_rate = static_cast<double>(get_update_rate());
@@ -97,6 +105,18 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
   }
   if (executors_.empty()) {
     RCLCPP_WARN(get_node()->get_logger(), "No executors: the commands are not sent anywhere");
+  }
+  if (params.async_inference) {
+    // Allocated here, so that the control loop only copies values.
+    async_state_ = runner_->state();
+    async_commands_ = runner_->commands();
+    inference_ =
+      std::make_unique<realtime_tools::AsyncFunctionHandler<PolicyPipeline::Status>>();
+    inference_->init(
+      [this](const rclcpp::Time &, const rclcpp::Duration &) {
+        return runner_->step(async_state_, async_commands_);
+      }, static_cast<int>(params.inference_thread_priority));
+    inference_->start_thread();
   }
   RCLCPP_INFO(
     get_node()->get_logger(), "Claiming %zu state and %zu command interfaces; policy step "
@@ -147,12 +167,15 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
   }
   policy_ready_ = false;
   updates_ = 0;
+  inference_pending_ = false;
   runner_->pipeline().restart();
   return CallbackReturn::SUCCESS;
 }
 
 PolicyController::CallbackReturn PolicyController::on_deactivate(const rclcpp_lifecycle::State &)
 {
+  if (inference_) {inference_->wait_for_trigger_cycle_to_finish();}
+  inference_pending_ = false;
   write_safe_values();
   return CallbackReturn::SUCCESS;
 }
@@ -177,7 +200,7 @@ void PolicyController::write_safe_values()
 }
 
 controller_interface::return_type PolicyController::update(
-  const rclcpp::Time &, const rclcpp::Duration &)
+  const rclcpp::Time & time, const rclcpp::Duration & period)
 {
   // Node clock (not the update time) so that it compares with the topic receive times.
   const double now = get_node()->now().seconds();
@@ -188,9 +211,34 @@ controller_interface::return_type PolicyController::update(
     if (const auto v = state_interfaces_[i].get_optional()) {state.set(state_idx_[i], *v, now);}
   }
 
-  // The policy steps every decimation_ updates (starting with the first); executors run on
-  // every update with the fresh state.
-  if (updates_++ % decimation_ == 0) {
+  if (inference_) {
+    // Apply a finished step, then maybe trigger the next one; never wait for inference.
+    if (inference_pending_ && !inference_->is_trigger_cycle_in_progress()) {
+      inference_pending_ = false;
+      const auto status = inference_->get_last_return_value();
+      if (status == PolicyPipeline::Status::ERROR) {
+        write_safe_values();
+        return controller_interface::return_type::ERROR;
+      }
+      if (status == PolicyPipeline::Status::OK) {
+        runner_->commands().copy_values_from(async_commands_);
+        policy_ready_ = true;
+      }
+    }
+    if (updates_++ % decimation_ == 0) {
+      if (inference_->is_trigger_cycle_in_progress()) {
+        RCLCPP_WARN_THROTTLE(
+          get_node()->get_logger(), *get_node()->get_clock(), 1000,
+          "Inference is slower than policy_rate: skipping a policy step");
+      } else {
+        runner_->read_sources(now);
+        async_state_.copy_values_from(state);
+        inference_pending_ = inference_->trigger_async_callback(time, period).first;
+      }
+    }
+  } else if (updates_++ % decimation_ == 0) {
+    // The policy steps every decimation_ updates (starting with the first); executors run on
+    // every update with the fresh state.
     runner_->read_sources(now);
     const auto status = runner_->step();
     if (status == PolicyPipeline::Status::ERROR) {
