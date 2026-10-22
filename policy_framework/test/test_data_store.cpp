@@ -38,6 +38,21 @@ TEST(DataStore, ValuesStartUnreceivedAndTrackStamp)
   EXPECT_DOUBLE_EQ(store.stamp(i), 12.5);
 }
 
+TEST(DataStore, CopyValuesFromCopiesValuesStampsAndReceivedFlags)
+{
+  DataStore a;
+  a.add("x");
+  a.add("y");
+  DataStore b = a;  // same layout
+  a.set(0, 1.5, 7.0);
+  b.set(1, 9.0, 3.0);
+  b.copy_values_from(a);
+  EXPECT_DOUBLE_EQ(b.get(0), 1.5);
+  EXPECT_DOUBLE_EQ(b.stamp(0), 7.0);
+  EXPECT_TRUE(b.received(0));
+  EXPECT_FALSE(b.received(1));  // a never received y
+}
+
 TEST(DataStore, AllReceivedChecksEveryIndex)
 {
   DataStore store;

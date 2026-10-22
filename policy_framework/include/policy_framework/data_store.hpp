@@ -4,6 +4,7 @@
 #ifndef POLICY_FRAMEWORK__DATA_STORE_HPP_
 #define POLICY_FRAMEWORK__DATA_STORE_HPP_
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -47,6 +48,18 @@ public:
       received_.push_back(0);
     }
     return it->second;
+  }
+
+  /**
+   * @brief Copy the values, stamps and received flags of @p other, which must have the same
+   *        entries (e.g. a copy of this store). Does not allocate: real-time safe, used to hand
+   *        data between the control loop and an inference thread.
+   */
+  void copy_values_from(const DataStore & other)
+  {
+    std::copy(other.values_.begin(), other.values_.end(), values_.begin());
+    std::copy(other.stamps_.begin(), other.stamps_.end(), stamps_.begin());
+    std::copy(other.received_.begin(), other.received_.end(), received_.begin());
   }
 
   /// @return Index of @p name, or std::nullopt when it was never registered.

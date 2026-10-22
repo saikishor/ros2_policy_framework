@@ -119,11 +119,11 @@ void PolicyRunner::read_sources(double now)
   for (const auto & s : sources_) {s->read(state_, now);}
 }
 
-PolicyPipeline::Status PolicyRunner::step()
+PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & commands)
 {
   PolicyPipeline::Status status;
   try {
-    status = pipeline_->step(state_, commands_);
+    status = pipeline_->step(state, commands);
   } catch (const std::exception & e) {
     RCLCPP_ERROR(logger_, "Policy step failed: %s", e.what());
     status = PolicyPipeline::Status::ERROR;

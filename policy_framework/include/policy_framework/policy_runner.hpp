@@ -56,7 +56,12 @@ public:
   void read_sources(double now);
 
   /// Run one step of the active policy. Never throws; exceptions are reported as ERROR.
-  PolicyPipeline::Status step();
+  PolicyPipeline::Status step() {return step(state_, commands_);}
+  /**
+   * @brief The same on other stores with the layout of state() and commands() (copies of
+   *        them), e.g. owned by an inference thread. Call from one thread at a time.
+   */
+  PolicyPipeline::Status step(const DataStore & state, DataStore & commands);
 
   /// Send commands() through every executor.
   void write_executors();
