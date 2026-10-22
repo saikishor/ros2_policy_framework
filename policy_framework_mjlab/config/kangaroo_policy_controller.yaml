@@ -6,7 +6,8 @@ policy_controller:
     type: policy_framework/PolicyController
     update_rate: 1000
     policy_rate: 50.0
-    is_async: @IS_ASYNC@  # true runs the PD law in the asynchronous thread too: prefer false
+    # true: inference in its own real-time thread, the PD law stays in the control loop.
+    async_inference: @ASYNC_INFERENCE@
     executors: [pd]
     pd:
       type: policy_framework/PdEffortExecutor

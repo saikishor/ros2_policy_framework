@@ -8,7 +8,8 @@ mode:=node              standalone policy_node: topics in, MultiDOFCommand refer
 mode:=controller        policy_controller in the controller manager loop: policy at 50 Hz,
                         PD law (PdEffortExecutor) at 1 kHz into the joint effort interfaces,
                         with the gains of the active policy; no pid_controller
-mode:=controller_async  the same with is_async: true (policy and PD law in their own thread)
+mode:=controller_async  the same with async_inference: true: inference in its own real-time
+                        thread, the PD law stays in the 1 kHz control loop
 
 robot_type:=lower_body | full_body_4dof selects the models and the impedance configuration.
 Switch to the imitation policy with:
@@ -105,7 +106,7 @@ def launch_setup(context):
         ]
 
     controller = render(os.path.join(config, 'kangaroo_policy_controller.yaml'), {
-        'IS_ASYNC': 'true' if mode == 'controller_async' else 'false'})
+        'ASYNC_INFERENCE': 'true' if mode == 'controller_async' else 'false'})
     return [
         Node(
             package='controller_manager', executable='spawner', output='screen',
