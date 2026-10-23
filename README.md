@@ -123,7 +123,7 @@ policy_controller:
   ros__parameters:
     update_rate: 1000        # controller rate: the executors (PD law) run on every update
     policy_rate: 50.0        # policy step every update_rate / policy_rate updates (0: every update)
-    is_async: false          # true: update() (inference and executors) runs in its own thread
+    async_inference: true    # inference in its own RT thread, the PD law stays in this loop
     sources: []              # topic sources; anything else needed is claimed as state interface
     executors: [pd]          # InterfaceExecutor plugins
     pd:
@@ -151,9 +151,18 @@ or, chaining into a pid_controller that closes the loop:
 - **Rates**: with `policy_rate` the policy steps every `update_rate / policy_rate` updates
   (must be an integer) and the executors run on every update, e.g. a 1 kHz PD law with a
   50 Hz policy. Without it, one policy step per update: `update_rate` is the policy rate.
-- **Sync / async**: standard ros2_control `is_async`: `update()`, inference and executors
-  included, runs in a separate thread at `update_rate`. Suited to a reference executor (the
-  chained controller keeps the loop closed); a PD law belongs in the synchronous loop.
+- **Async inference** (`async_inference: true`, recommended with a PD law): only the policy
+  step runs in its own real-time thread (`SCHED_FIFO`, `inference_thread_priority`, default
+  40, below the controller manager's 50). On each policy tick `update()` hands over a copy of
+  the state and triggers the step without waiting; the commands apply from the first update
+  after the step finished, the previous ones are held until then, and the executors keep
+  running on every update with the fresh state. A tick that finds the previous step still
+  running is skipped with a warning (inference slower than `policy_rate`). Without real-time
+  permissions the thread runs with the default scheduler (a warning is logged).
+- **is_async**: the standard ros2_control option moves the whole `update()` (inference and
+  executors) to a separate thread at `update_rate`. Suited to a reference executor (the
+  chained controller keeps the loop closed), not to a PD law. Exclusive with
+  `async_inference`.
 - **Safety**: executors run only once the active policy produced commands since activation.
   On deactivation and when a stage fails (`update()` then returns `ERROR`) each executor
   writes its safe values: zero effort for `PdEffortExecutor`, nothing for
@@ -181,6 +190,7 @@ controller they are declared from the YAML value first.
 | `<policy>.<plugin param>` | Parameters of the policy's plugins |
 | `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
 | `policy_rate` | Controller only: policy rate in Hz (default 0 = every update) |
+| `async_inference`, `inference_thread_priority` | Controller only: policy step in its own real-time thread (default false), its `SCHED_FIFO` priority (default 40) |
 
 ### Plugins
 
@@ -299,8 +309,9 @@ ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPo
   `rl_impedance_controller` (pid_controller), which closes the joint impedance loop at 1 kHz.
 - **Controller modes**: `policy_controller` runs the policy at 50 Hz and the PD law
   (`PdEffortExecutor`) at 1 kHz into the joint effort interfaces, with the gains of the active
-  policy (`gains_as_commands`); no pid_controller. `controller_async` runs both in the
-  asynchronous thread (the controller warns: the synchronous mode is preferred for a PD law).
+  policy (`gains_as_commands`); no pid_controller. `controller_async` sets
+  `async_inference: true`: inference in its own real-time thread, the PD law in the 1 kHz
+  loop.
 
 The controller manager must be started with this workspace sourced so that it finds the
 controller plugin. In node mode the launch shuts down (unloading `rl_impedance_controller`)
