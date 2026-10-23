@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <optional>
 #include <stdexcept>
 #include <memory>
 #include <string>
@@ -112,10 +113,14 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
     async_commands_ = runner_->commands();
     inference_ =
       std::make_unique<realtime_tools::AsyncFunctionHandler<PolicyPipeline::Status>>();
+    realtime_tools::AsyncFunctionHandlerParams async_params;
+    async_params.thread_priority = static_cast<int>(params.inference_thread_priority);
+    async_params.logger = get_node()->get_logger();  // e.g. its SCHED_FIFO warning
+    async_params.wait_until_initial_trigger = false;
     inference_->init(
       [this](const rclcpp::Time &, const rclcpp::Duration &) {
         return runner_->step(async_state_, async_commands_);
-      }, static_cast<int>(params.inference_thread_priority));
+      }, async_params);
     inference_->start_thread();
   }
   RCLCPP_INFO(
@@ -211,42 +216,44 @@ controller_interface::return_type PolicyController::update(
     if (const auto v = state_interfaces_[i].get_optional()) {state.set(state_idx_[i], *v, now);}
   }
 
-  if (inference_) {
-    // Apply a finished step, then maybe trigger the next one; never wait for inference.
+  // The policy steps every decimation_ updates (starting with the first); executors run on
+  // every update with the fresh state.
+  const bool policy_tick = updates_++ % decimation_ == 0;
+  std::optional<PolicyPipeline::Status> status;  // of a step whose result arrived now
+  if (!inference_) {
+    if (policy_tick) {
+      runner_->read_sources(now);
+      status = runner_->step();
+    }
+  } else {
+    // Collect a finished step, then maybe trigger the next one; never wait for inference.
     if (inference_pending_ && !inference_->is_trigger_cycle_in_progress()) {
       inference_pending_ = false;
-      const auto status = inference_->get_last_return_value();
-      if (status == PolicyPipeline::Status::ERROR) {
-        write_safe_values();
-        return controller_interface::return_type::ERROR;
-      }
+      status = inference_->get_last_return_value();
       if (status == PolicyPipeline::Status::OK) {
         runner_->commands().copy_values_from(async_commands_);
-        policy_ready_ = true;
       }
     }
-    if (updates_++ % decimation_ == 0) {
-      if (inference_->is_trigger_cycle_in_progress()) {
+    if (policy_tick) {
+      bool triggered = false;
+      if (!inference_->is_trigger_cycle_in_progress()) {
+        runner_->read_sources(now);
+        async_state_.copy_values_from(state);
+        triggered = inference_->trigger_async_callback(time, period).first;
+        inference_pending_ = triggered;
+      }
+      if (!triggered) {
         RCLCPP_WARN_THROTTLE(
           get_node()->get_logger(), *get_node()->get_clock(), 1000,
           "Inference is slower than policy_rate: skipping a policy step");
-      } else {
-        runner_->read_sources(now);
-        async_state_.copy_values_from(state);
-        inference_pending_ = inference_->trigger_async_callback(time, period).first;
       }
     }
-  } else if (updates_++ % decimation_ == 0) {
-    // The policy steps every decimation_ updates (starting with the first); executors run on
-    // every update with the fresh state.
-    runner_->read_sources(now);
-    const auto status = runner_->step();
-    if (status == PolicyPipeline::Status::ERROR) {
-      write_safe_values();
-      return controller_interface::return_type::ERROR;
-    }
-    if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
   }
+  if (status == PolicyPipeline::Status::ERROR) {
+    write_safe_values();
+    return controller_interface::return_type::ERROR;
+  }
+  if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
   // Before the first commands since activation, the command store may still hold the previous
   // activation's commands: send nothing.
   if (!policy_ready_) {return controller_interface::return_type::OK;}
