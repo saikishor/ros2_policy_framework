@@ -94,7 +94,8 @@ void MjlabPreprocessor::configure(
       }
       t.kind = Kind::PLUGIN;
       t.plugin = term_loader_->createSharedInstance(plugin);
-      t.dim = t.plugin->configure({ctx.node, ctx.name + ".terms." + name}, model, state);
+      t.dim = t.plugin->configure(
+        {ctx.node, ctx.name + ".terms." + name, ctx.kinematics}, model, state);
       if (t.dim == 0) {
         throw std::runtime_error("Observation term plugin '" + name + "' has size 0");
       }
