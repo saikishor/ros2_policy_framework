@@ -10,6 +10,7 @@ set(THIS_PACKAGE_DEPENDS
   controller_interface
   geometry_msgs
   hardware_interface
+  kinematics_interface
   lifecycle_msgs
   nav_msgs
   pluginlib
@@ -17,6 +18,7 @@ set(THIS_PACKAGE_DEPENDS
   rclcpp_lifecycle
   realtime_tools
   sensor_msgs
+  urdf
 )
 
 find_package(ament_cmake REQUIRED)
@@ -40,13 +42,14 @@ set(PARAMETER_LIBRARIES)
 foreach(params IN ITEMS
     policy_runner policy_node policy_controller onnx_inference topic joint_state_source
     imu_source twist_source multi_dof_command_executor concat_preprocessor split_postprocessor
-    pd_effort_executor reference_interface_executor)
+    pd_effort_executor reference_interface_executor kinematics)
   generate_parameter_library(${params}_parameters params/${params}_parameters.yaml)
   list(APPEND PARAMETER_LIBRARIES ${params}_parameters)
 endforeach()
 
 add_library(${PROJECT_NAME} SHARED
   src/policy_pipeline.cpp
+  src/kinematics.cpp
   src/onnx_inference.cpp
   src/topic_sources.cpp
   src/multi_dof_command_executor.cpp
@@ -95,6 +98,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_observation_term ${PROJECT_NAME})
   ament_add_gtest(test_interface_executors test/test_interface_executors.cpp)
   target_link_libraries(test_interface_executors ${PROJECT_NAME})
+  ament_add_gtest(test_kinematics test/test_kinematics.cpp)
+  target_link_libraries(test_kinematics ${PROJECT_NAME})
+  target_compile_definitions(test_kinematics PRIVATE
+    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/two_joints.urdf")
   ament_add_gtest(test_generic_stages test/test_generic_stages.cpp)
   target_link_libraries(test_generic_stages ${PROJECT_NAME})
   foreach(test IN ITEMS test_onnx_inference test_policy_runner test_policy_controller test_policy_node)
