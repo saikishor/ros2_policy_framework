@@ -4,7 +4,9 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -49,7 +51,8 @@ std::vector<rclcpp::Parameter> runner_params(const std::string & topic)
 class PolicyRunnerTest : public ::testing::Test
 {
 protected:
-  void configure(const std::vector<rclcpp::Parameter> & params)
+  void configure(
+    const std::vector<rclcpp::Parameter> & params, const std::string & robot_description = "")
   {
     rclcpp::NodeOptions opts;
     opts.parameter_overrides(params);
@@ -57,7 +60,7 @@ protected:
     helper = std::make_shared<rclcpp::Node>("helper");
     exec.add_node(node->get_node_base_interface());
     exec.add_node(helper);
-    runner.configure(node);
+    runner.configure(node, true, robot_description);
   }
 
   void spin_for(std::chrono::milliseconds d)
@@ -123,6 +126,37 @@ TEST_F(PolicyRunnerTest, ReportsStateEntriesNoSourceProvides)
   params.push_back({"js.joints", StringArray{"j1", "j2"}});
   configure(params);
   EXPECT_EQ(runner.unprovided_state(), StringArray{"j3/position"});
+}
+
+TEST_F(PolicyRunnerTest, UpdatesTheKinematicsFromTheStateOfEveryStep)
+{
+  auto params = runner_params("/runner_js3");
+  params.push_back({"kinematics.plugin_name", "kinematics_interface_kdl/KinematicsInterfaceKDL"});
+  params.push_back({"kinematics.base", "base_link"});
+  params.push_back({"kinematics.tip", "imu_link"});
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  configure(params, urdf.str());
+  auto kin = runner.kinematics();
+  ASSERT_NE(kin, nullptr);
+  const auto imu = kin->frame("imu_link");
+
+  // A step on another store (e.g. an inference thread's copy) updates from that store.
+  auto state = runner.state();
+  auto commands = runner.commands();
+  for (const auto * j : {"j1/position", "j2/position", "j3/position"}) {
+    state.set(state.index(j), 0.0, 1.0);
+  }
+  runner.step(state, commands);
+  ASSERT_TRUE(kin->ready());
+  EXPECT_NEAR(kin->transform(imu).translation().x(), 1.0, 1e-9);
+}
+
+TEST_F(PolicyRunnerTest, HasNoKinematicsByDefault)
+{
+  configure(runner_params("/runner_js4"));
+  EXPECT_EQ(runner.kinematics(), nullptr);
 }
 
 TEST(PolicyRunner, ConfigureFailsWithoutPolicies)

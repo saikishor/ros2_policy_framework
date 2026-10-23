@@ -25,13 +25,15 @@ std::unique_ptr<pluginlib::ClassLoader<T>> make_loader(const std::string & base)
 }  // namespace
 
 void PolicyRunner::configure(
-  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, bool load_executors)
+  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, bool load_executors,
+  const std::string & robot_description)
 {
   logger_ = node->get_logger();
   const auto logger = node->get_logger();
   // Reconfiguration starts from scratch: drop plugins before their loaders.
   sources_.clear();
   executors_.clear();
+  kinematics_.reset();
   pipeline_ = std::make_unique<PolicyPipeline>();
   state_ = DataStore();
   commands_ = DataStore();
@@ -48,6 +50,12 @@ void PolicyRunner::configure(
     executor_types_.emplace_back(name, params.executors_map.at(name).type);
   }
 
+  // Before the policies: their plugins request frames while configuring.
+  kinematics_ = Kinematics::create(node, robot_description, state_);
+  if (kinematics_) {
+    RCLCPP_INFO(logger, "Kinematics over %zu joints", kinematics_->joint_names().size());
+  }
+
   for (const auto & name : params.sources) {
     const auto & type = params.sources_map.at(name).type;
     auto source = source_loader_->createSharedInstance(type);
@@ -57,7 +65,7 @@ void PolicyRunner::configure(
   }
 
   for (const auto & name : params.policies) {
-    const PluginContext ctx{node, name};
+    const PluginContext ctx{node, name, kinematics_};
     const auto & stages = params.policies_map.at(name);
     Policy p;
     p.name = name;
@@ -123,6 +131,7 @@ PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & c
 {
   PolicyPipeline::Status status;
   try {
+    if (kinematics_) {kinematics_->update(state);}
     status = pipeline_->step(state, commands);
   } catch (const std::exception & e) {
     RCLCPP_ERROR(logger_, "Policy step failed: %s", e.what());

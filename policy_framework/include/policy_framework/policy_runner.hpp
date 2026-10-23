@@ -11,6 +11,7 @@
 
 #include "pluginlib/class_loader.hpp"
 #include "policy_framework/data_store.hpp"
+#include "policy_framework/kinematics.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 #include "policy_framework/policy_pipeline.hpp"
 #include "policy_framework/srv/switch_policy.hpp"
@@ -33,6 +34,8 @@ namespace policy_framework
  *   - `<policy>.interruptible` (bool, default true)
  *   plus the parameters of each of its plugins, also under `<policy>.`.
  * - `executors` (string array): executor names; each needs `<executor>.type` (plugin class).
+ * - `kinematics.*`: optional Kinematics model (see Kinematics), handed to the policies' plugins
+ *   in PluginContext::kinematics and updated at the start of every step().
  *
  * A cycle is read_sources() → [host reads state interfaces] → step() → [host writes command
  * interfaces] → write_executors() (only after a successful step()).
@@ -44,10 +47,12 @@ public:
    * @brief Load and configure every plugin, and create the `~/switch_policy` service.
    * @param load_executors Load the `executors` as topic Executor plugins. The controller
    *        passes false and loads them itself as InterfaceExecutor plugins.
+   * @param robot_description URDF of the robot; required only by the kinematics.
    * @throws std::exception on any configuration error (missing parameter, plugin, model...).
    */
   void configure(
-    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, bool load_executors = true);
+    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, bool load_executors = true,
+    const std::string & robot_description = "");
 
   /// @return State entries required by the policies that no input source provides.
   std::vector<std::string> unprovided_state() const;
@@ -72,6 +77,9 @@ public:
     return executor_types_;
   }
 
+  /// @return The kinematics model, null when `kinematics.plugin_name` is empty.
+  const std::shared_ptr<Kinematics> & kinematics() const {return kinematics_;}
+
   DataStore & state() {return state_;}
   DataStore & commands() {return commands_;}
   PolicyPipeline & pipeline() {return *pipeline_;}
@@ -87,6 +95,7 @@ private:
   std::unique_ptr<pluginlib::ClassLoader<Postprocessor>> postprocessor_loader_;
   std::unique_ptr<pluginlib::ClassLoader<Executor>> executor_loader_;
 
+  std::shared_ptr<Kinematics> kinematics_;
   std::vector<std::shared_ptr<InputSource>> sources_;
   std::vector<std::shared_ptr<Executor>> executors_;
   std::vector<std::pair<std::string, std::string>> executor_types_;

@@ -107,7 +107,8 @@ if(BUILD_TESTING)
   foreach(test IN ITEMS test_onnx_inference test_policy_runner test_policy_controller test_policy_node)
     ament_add_gtest(${test} test/${test}.cpp)
     target_link_libraries(${test} ${PROJECT_NAME})
-    target_compile_definitions(${test} PRIVATE TEST_MODELS_DIR="${TEST_MODELS_DIR}")
+    target_compile_definitions(${test} PRIVATE TEST_MODELS_DIR="${TEST_MODELS_DIR}"
+      TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/two_joints.urdf")
   endforeach()
 endif()
 
