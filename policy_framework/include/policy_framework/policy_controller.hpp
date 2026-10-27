@@ -26,6 +26,9 @@ namespace policy_framework
  * a mix. Entries an executor needs on every update (state_entries(), e.g. PD feedback) must
  * come from state interfaces.
  *
+ * Kinematics (`kinematics.*`, see Kinematics) uses the controller manager's robot description;
+ * its joint positions and IMU orientation are claimed like any other input.
+ *
  * Outputs: `executors` are InterfaceExecutor plugins (each needs `<name>.type`) that turn the
  * commands into command interface values, e.g. policy_framework/PdEffortExecutor (PD law into
  * efforts) or policy_framework/ReferenceInterfaceExecutor (chain into a pid_controller). Topic

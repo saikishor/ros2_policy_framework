@@ -4,7 +4,9 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <thread>
 #include <string>
 #include <utility>
@@ -41,7 +43,9 @@ InterfaceDescription describe(const std::string & full_name)
 class PolicyControllerTest : public ::testing::Test
 {
 protected:
-  void init(std::vector<rclcpp::Parameter> extra = {}, unsigned int update_rate = 50)
+  void init(
+    std::vector<rclcpp::Parameter> extra = {}, unsigned int update_rate = 50,
+    const std::string & robot_description = "")
   {
     std::vector<rclcpp::Parameter> params = {
       {"policies", StringArray{"walk"}},
@@ -62,6 +66,7 @@ protected:
     p.update_rate = update_rate;
     p.controller_manager_update_rate = update_rate;
     p.node_options.parameter_overrides(params);
+    p.robot_description = robot_description;
     ASSERT_EQ(controller.init(p), controller_interface::return_type::OK);
   }
 
@@ -119,6 +124,22 @@ TEST_F(PolicyControllerTest, ClaimsUnprovidedInputsAsStateInterfacesAndCommandsW
   EXPECT_EQ(state_cfg.names, (StringArray{"j1/position", "j2/position", "j3/position"}));
   const auto cmd_cfg = controller.command_interface_configuration();
   EXPECT_EQ(cmd_cfg.names, (StringArray{"pid/j1/position", "pid/j2/position"}));
+}
+
+TEST_F(PolicyControllerTest, ClaimsTheKinematicsInputsFromTheRobotDescription)
+{
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  init({
+      {"kinematics.plugin_name", "kinematics_interface_kdl/KinematicsInterfaceKDL"},
+      {"kinematics.base", "base_link"}, {"kinematics.tip", "imu_link"},
+      {"kinematics.imu_sensor", "imu"}, {"kinematics.imu_link", "imu_link"}}, 50, urdf.str());
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  EXPECT_EQ(
+    controller.state_interface_configuration().names,
+    (StringArray{"j1/position", "j2/position", "imu/orientation.x", "imu/orientation.y",
+      "imu/orientation.z", "imu/orientation.w", "j3/position"}));
 }
 
 TEST_F(PolicyControllerTest, InputsProvidedByTopicSourcesAreNotClaimed)

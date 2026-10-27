@@ -79,7 +79,7 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
       "in the asynchronous thread; prefer is_async: false");
   }
   try {
-    runner_->configure(get_node(), false);
+    runner_->configure(get_node(), false, get_robot_description());
     load_executors();
     state_names_ = runner_->unprovided_state();
     command_names_.clear();
