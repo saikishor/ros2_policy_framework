@@ -11,3 +11,8 @@ policy_node:
     default_value: true
     description: "Configure and activate the lifecycle node on startup."
     read_only: true
+  robot_description:
+    type: string
+    default_value: ""
+    description: "URDF of the robot, needed only by the kinematics (kinematics.plugin_name)."
+    read_only: true

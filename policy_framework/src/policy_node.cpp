@@ -23,8 +23,9 @@ PolicyNode::CallbackReturn PolicyNode::on_configure(const rclcpp_lifecycle::Stat
   // A fresh runner on every configure so that re-configuration reloads plugins and models.
   runner_ = std::make_unique<PolicyRunner>();
   try {
-    update_rate_ = policy_node::ParamListener(shared_from_this()).get_params().update_rate;
-    runner_->configure(shared_from_this());
+    const auto params = policy_node::ParamListener(shared_from_this()).get_params();
+    update_rate_ = params.update_rate;
+    runner_->configure(shared_from_this(), true, params.robot_description);
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_logger(), "Configuration failed: %s", e.what());
     return CallbackReturn::FAILURE;
