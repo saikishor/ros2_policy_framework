@@ -22,8 +22,15 @@ pluginlib_export_plugin_description_file(policy_framework plugins.xml)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  # Test-only term plugin (installed and registered only with BUILD_TESTING).
+  add_library(frame_position_term SHARED test/frame_position_term.cpp)
+  target_link_libraries(frame_position_term ${PROJECT_NAME})
+  install(TARGETS frame_position_term DESTINATION lib)
+  pluginlib_export_plugin_description_file(policy_framework test/test_plugins.xml)
   ament_add_gtest(test_mjlab_preprocessor test/test_mjlab_preprocessor.cpp)
   target_link_libraries(test_mjlab_preprocessor ${PROJECT_NAME})
+  target_compile_definitions(test_mjlab_preprocessor PRIVATE
+    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/../policy_framework/test/urdf/two_joints.urdf")
   ament_add_gtest(test_mjlab_postprocessor test/test_mjlab_postprocessor.cpp)
   target_link_libraries(test_mjlab_postprocessor ${PROJECT_NAME})
   ament_add_gtest(test_twist_command_term test/test_twist_command_term.cpp)

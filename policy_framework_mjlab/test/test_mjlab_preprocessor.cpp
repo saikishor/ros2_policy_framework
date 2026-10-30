@@ -4,11 +4,14 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include "policy_framework_mjlab/mjlab_preprocessor.hpp"
+#include "policy_framework/kinematics.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using policy_framework::DataStore;
@@ -296,6 +299,33 @@ TEST(MjlabPreprocessor, TermPluginProvidesATermUnknownToThePreprocessor)
     make_context({{"p.terms.my_velocity.type", "policy_framework_mjlab/TwistCommandTerm"}}),
     model, state);
   EXPECT_EQ(pre.history_length(), 2U);
+}
+
+TEST(MjlabPreprocessor, TermPluginsReadTheRunnerKinematics)
+{
+  ModelInfo model;
+  model.metadata = {{"joint_names", "j1,j2"}, {"default_joint_pos", "0,0"},
+    {"observation_names", "imu_pos"}, {"action_scale", "1.0"}};
+  model.inputs["obs"] = zeros(3);
+  model.outputs["actions"] = zeros(1);
+  auto ctx = make_context({{"p.terms.imu_pos.type", "policy_framework_mjlab_test/FramePositionTerm"},
+      {"kinematics.plugin_name", "kinematics_interface_kdl/KinematicsInterfaceKDL"},
+      {"kinematics.base", "base_link"}, {"kinematics.tip", "imu_link"}});
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  DataStore state;
+  ctx.kinematics = policy_framework::Kinematics::create(ctx.node, urdf.str(), state);
+  MjlabPreprocessor pre;
+  pre.configure(ctx, model, state);
+
+  state.set(state.index("j1/position"), 0.0, 1.0);
+  state.set(state.index("j2/position"), 0.0, 1.0);
+  ctx.kinematics->update(state);
+  TensorMap in = model.inputs;
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  // imu_link at (1, 0, 1) with both joints at zero.
+  EXPECT_EQ(in["obs"].data, (Floats{1.0F, 0.0F, 1.0F}));
 }
 
 TEST(MjlabPreprocessor, RejectsAnEmptyObservationInput)
