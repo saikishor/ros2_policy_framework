@@ -100,7 +100,7 @@ loads anything in the control loop.
 
 A runner can hold one kinematic model of a chain of the robot, built from the robot
 description with a [kinematics_interface](https://github.com/ros-controls/kinematics_interface)
-plugin (`kinematics_interface_kdl` for now; a Pinocchio plugin is a parameter change). It is
+plugin (`kinematics_interface_kdl`). It is
 updated once at the start of every policy step from the state store, and every policy plugin
 (and observation term) reads it through `PluginContext::kinematics`, so terms never compute
 or update kinematics themselves:
@@ -123,6 +123,10 @@ In a plugin: `frame("pelvis")` in `configure()` (throws if the link is not on th
 `transform(f)` (pose in `base`) or `world_orientation(f)` during the step; check
 `kinematics->ready()` (all joints and IMU received) in `ready()` and use `stamp()` (oldest
 input) as the stamp. `ctx.kinematics` is null when `kinematics.plugin_name` is empty.
+
+The wrapper fills the plugin's joint vector with the chain's movable joints from `base` to
+`tip`, the KDL plugin's convention. Another plugin (e.g. `kinematics_interface_pinocchio`) must
+be checked to use the same joint vector before switching `plugin_name`.
 
 Limits: one chain per runner (the KDL plugin models a single base→tip chain, and only its
 links are available); orientation only, no base position or linear velocity (that needs a

@@ -15,8 +15,10 @@ namespace
 {
 
 /**
- * @return Movable joints from @p base to @p tip, in the order of a kinematics_interface joint
+ * @return Movable joints from @p base to @p tip, in the order of kinematics_interface_kdl's joint
  *         vector (base to tip; fixed, floating and planar joints are not part of it).
+ *         ponytail: assumes the KDL convention; check it before using another plugin (e.g.
+ *         Pinocchio), a different order would pass silently.
  */
 std::vector<std::string> chain_joints(
   const std::string & robot_description, const std::string & base, const std::string & tip)
