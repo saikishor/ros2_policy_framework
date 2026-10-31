@@ -11,8 +11,8 @@
 #include <vector>
 
 #include "pluginlib/class_list_macros.hpp"
-#include "pd_effort_executor_parameters.hpp"
-#include "reference_interface_executor_parameters.hpp"
+#include "policy_framework/pd_effort_executor_parameters.hpp"
+#include "policy_framework/reference_interface_executor_parameters.hpp"
 
 namespace policy_framework
 {

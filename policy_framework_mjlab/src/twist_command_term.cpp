@@ -4,7 +4,7 @@
 #include "policy_framework_mjlab/twist_command_term.hpp"
 
 #include "pluginlib/class_list_macros.hpp"
-#include "twist_command_term_parameters.hpp"
+#include "policy_framework_mjlab/twist_command_term_parameters.hpp"
 
 namespace policy_framework_mjlab
 {

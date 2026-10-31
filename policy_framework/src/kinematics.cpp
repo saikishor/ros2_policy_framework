@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include "kinematics_parameters.hpp"
+#include "policy_framework/kinematics_parameters.hpp"
 #include "urdf/model.h"
 
 namespace policy_framework

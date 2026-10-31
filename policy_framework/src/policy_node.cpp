@@ -8,7 +8,7 @@
 #include <memory>
 #include <string>
 
-#include "policy_node_parameters.hpp"
+#include "policy_framework/policy_node_parameters.hpp"
 
 namespace policy_framework
 {

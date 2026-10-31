@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "policy_runner_parameters.hpp"
+#include "policy_framework/policy_runner_parameters.hpp"
 
 namespace policy_framework
 {

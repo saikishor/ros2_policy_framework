@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "pluginlib/class_list_macros.hpp"
-#include "policy_controller_parameters.hpp"
+#include "policy_framework/policy_controller_parameters.hpp"
 
 namespace policy_framework
 {

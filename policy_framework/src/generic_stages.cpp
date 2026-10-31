@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "pluginlib/class_list_macros.hpp"
-#include "concat_preprocessor_parameters.hpp"
-#include "split_postprocessor_parameters.hpp"
+#include "policy_framework/concat_preprocessor_parameters.hpp"
+#include "policy_framework/split_postprocessor_parameters.hpp"
 
 namespace policy_framework
 {

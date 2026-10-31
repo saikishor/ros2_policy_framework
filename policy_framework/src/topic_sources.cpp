@@ -8,10 +8,10 @@
 #include <vector>
 
 #include "pluginlib/class_list_macros.hpp"
-#include "imu_source_parameters.hpp"
-#include "joint_state_source_parameters.hpp"
-#include "topic_parameters.hpp"
-#include "twist_source_parameters.hpp"
+#include "policy_framework/imu_source_parameters.hpp"
+#include "policy_framework/joint_state_source_parameters.hpp"
+#include "policy_framework/topic_parameters.hpp"
+#include "policy_framework/twist_source_parameters.hpp"
 
 namespace policy_framework
 {

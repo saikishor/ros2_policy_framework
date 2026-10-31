@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#include "mjlab_postprocessor_parameters.hpp"
+#include "policy_framework_mjlab/mjlab_postprocessor_parameters.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework_mjlab/metadata.hpp"
 

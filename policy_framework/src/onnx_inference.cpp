@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#include "onnx_inference_parameters.hpp"
+#include "policy_framework/onnx_inference_parameters.hpp"
 #include "pluginlib/class_list_macros.hpp"
 
 namespace fs = std::filesystem;

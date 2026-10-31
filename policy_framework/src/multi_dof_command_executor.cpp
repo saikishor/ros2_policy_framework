@@ -7,7 +7,7 @@
 #include <string>
 
 #include "pluginlib/class_list_macros.hpp"
-#include "multi_dof_command_executor_parameters.hpp"
+#include "policy_framework/multi_dof_command_executor_parameters.hpp"
 
 namespace policy_framework
 {
