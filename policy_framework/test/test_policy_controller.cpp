@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <memory>
@@ -131,15 +132,13 @@ TEST_F(PolicyControllerTest, ClaimsTheKinematicsInputsFromTheRobotDescription)
   std::ifstream f(TEST_URDF);
   std::stringstream urdf;
   urdf << f.rdbuf();
-  init({
-      {"kinematics.plugin_name", "kinematics_interface_kdl/KinematicsInterfaceKDL"},
-      {"kinematics.base", "base_link"}, {"kinematics.tip", "imu_link"},
-      {"kinematics.imu_sensor", "imu"}, {"kinematics.imu_link", "imu_link"}}, 50, urdf.str());
+  init({{"kinematics.enabled", true}}, 50, urdf.str());
   ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  auto names = controller.state_interface_configuration().names;
+  std::sort(names.begin(), names.end());
   EXPECT_EQ(
-    controller.state_interface_configuration().names,
-    (StringArray{"j1/position", "j2/position", "imu/orientation.x", "imu/orientation.y",
-      "imu/orientation.z", "imu/orientation.w", "j3/position"}));
+    names, (StringArray{"j1/position", "j1/velocity", "j2/position", "j2/velocity",
+      "j3/position", "j3/velocity"}));
 }
 
 TEST_F(PolicyControllerTest, InputsProvidedByTopicSourcesAreNotClaimed)

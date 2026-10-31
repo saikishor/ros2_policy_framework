@@ -34,8 +34,9 @@ namespace policy_framework
  *   - `<policy>.interruptible` (bool, default true)
  *   plus the parameters of each of its plugins, also under `<policy>.`.
  * - `executors` (string array): executor names; each needs `<executor>.type` (plugin class).
- * - `kinematics.*`: optional Kinematics model (see Kinematics), handed to the policies' plugins
- *   in PluginContext::kinematics and updated at the start of every step().
+ * - `kinematics.enabled`, `kinematics.joints`: optional whole-body Kinematics model, handed to
+ *   the policies' plugins in PluginContext::kinematics and updated by read_sources() from the
+ *   `<joint>/position` and `<joint>/velocity` state entries (registered here).
  *
  * A cycle is read_sources() → [host reads state interfaces] → step() → [host writes command
  * interfaces] → write_executors() (only after a successful step()).
@@ -57,7 +58,12 @@ public:
   /// @return State entries required by the policies that no input source provides.
   std::vector<std::string> unprovided_state() const;
 
-  /// Copy the latest data of every input source into state(). @p now in seconds.
+  /**
+   * @brief Copy the latest data of every input source into state() (@p now in seconds), then
+   *        update the kinematics from state() once all its joints were received. Hosts call it
+   *        once per policy step, right before handing the state to step(), so the kinematics
+   *        matches the step's state.
+   */
   void read_sources(double now);
 
   /// Run one step of the active policy. Never throws; exceptions are reported as ERROR.
@@ -77,7 +83,7 @@ public:
     return executor_types_;
   }
 
-  /// @return The kinematics model, null when `kinematics.plugin_name` is empty.
+  /// @return The kinematics model, null unless `kinematics.enabled`.
   const std::shared_ptr<Kinematics> & kinematics() const {return kinematics_;}
 
   DataStore & state() {return state_;}
@@ -85,6 +91,11 @@ public:
   PolicyPipeline & pipeline() {return *pipeline_;}
 
 private:
+  /// Create kinematics_ and register its state entries when `kinematics.enabled`.
+  void configure_kinematics(
+    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node,
+    const std::string & robot_description);
+
   // Not the node itself: PolicyNode owns its runner, a node pointer here would be a cycle.
   rclcpp::Logger logger_ = rclcpp::get_logger("policy_runner");
   // Loaders must outlive the plugin instances created from them (declared first, destroyed
@@ -96,6 +107,12 @@ private:
   std::unique_ptr<pluginlib::ClassLoader<Executor>> executor_loader_;
 
   std::shared_ptr<Kinematics> kinematics_;
+  // State indices and buffers of the kinematics joints, in kinematics_->joint_names() order.
+  std::vector<size_t> kinematics_position_idx_;
+  std::vector<size_t> kinematics_velocity_idx_;
+  Eigen::VectorXd kinematics_q_;
+  Eigen::VectorXd kinematics_v_;
+  bool kinematics_skipped_ = false;  ///< The last update was skipped (logged once).
   std::vector<std::shared_ptr<InputSource>> sources_;
   std::vector<std::shared_ptr<Executor>> executors_;
   std::vector<std::pair<std::string, std::string>> executor_types_;

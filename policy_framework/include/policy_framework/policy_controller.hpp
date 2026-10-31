@@ -27,7 +27,7 @@ namespace policy_framework
  * come from state interfaces.
  *
  * Kinematics (`kinematics.*`, see Kinematics) uses the controller manager's robot description;
- * its joint positions and IMU orientation are claimed like any other input.
+ * its joint positions and velocities are claimed like any other input.
  *
  * Outputs: `executors` are InterfaceExecutor plugins (each needs `<name>.type`) that turn the
  * commands into command interface values, e.g. policy_framework/PdEffortExecutor (PD law into

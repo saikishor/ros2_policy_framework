@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "policy_framework/kinematics_parameters.hpp"
 #include "policy_framework/policy_runner_parameters.hpp"
 
 namespace policy_framework
@@ -50,11 +51,8 @@ void PolicyRunner::configure(
     executor_types_.emplace_back(name, params.executors_map.at(name).type);
   }
 
-  // Before the policies: their plugins request frames while configuring.
-  kinematics_ = Kinematics::create(node, robot_description, state_);
-  if (kinematics_) {
-    RCLCPP_INFO(logger, "Kinematics over %zu joints", kinematics_->joint_names().size());
-  }
+  // Before the policies: their plugins look frames up while configuring.
+  configure_kinematics(node, robot_description);
 
   for (const auto & name : params.sources) {
     const auto & type = params.sources_map.at(name).type;
@@ -122,16 +120,60 @@ std::vector<std::string> PolicyRunner::unprovided_state() const
   return missing;
 }
 
+void PolicyRunner::configure_kinematics(
+  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & robot_description)
+{
+  kinematics_position_idx_.clear();
+  kinematics_velocity_idx_.clear();
+  const auto params = kinematics::ParamListener(node, "kinematics").get_params();
+  if (!params.enabled) {return;}
+  if (robot_description.empty()) {
+    throw std::runtime_error("kinematics.enabled needs a robot description");
+  }
+  kinematics_ = std::make_shared<Kinematics>(robot_description, params.joints);
+  for (const auto & j : kinematics_->joint_names()) {
+    kinematics_position_idx_.push_back(state_.add(j + "/position"));
+    kinematics_velocity_idx_.push_back(state_.add(j + "/velocity"));
+  }
+  const auto n = static_cast<Eigen::Index>(kinematics_->joint_names().size());
+  kinematics_q_ = Eigen::VectorXd::Zero(n);
+  kinematics_v_ = Eigen::VectorXd::Zero(n);
+  kinematics_skipped_ = false;
+  RCLCPP_INFO(logger_, "Kinematics over %ld joints", static_cast<long>(n));
+}
+
 void PolicyRunner::read_sources(double now)
 {
   for (const auto & s : sources_) {s->read(state_, now);}
+  if (!kinematics_ || !state_.all_received(kinematics_position_idx_) ||
+    !state_.all_received(kinematics_velocity_idx_))
+  {
+    return;
+  }
+  double stamp = 0.0;
+  for (size_t j = 0; j < kinematics_position_idx_.size(); ++j) {
+    const auto p = kinematics_position_idx_[j];
+    const auto v = kinematics_velocity_idx_[j];
+    kinematics_q_[static_cast<Eigen::Index>(j)] = state_.get(p);
+    kinematics_v_[static_cast<Eigen::Index>(j)] = state_.get(v);
+    for (const auto i : {p, v}) {
+      if (stamp <= 0.0 || state_.stamp(i) < stamp) {stamp = state_.stamp(i);}
+    }
+  }
+  const bool skipped = !kinematics_->update(kinematics_q_, kinematics_v_, stamp);
+  // ponytail: logs from the control cycle on transitions only (rare), like step().
+  if (skipped && !kinematics_skipped_) {
+    RCLCPP_WARN(
+      logger_, "Kinematics update skipped: a reader held the lock; this step uses the "
+      "previous joint state");
+  }
+  kinematics_skipped_ = skipped;
 }
 
 PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & commands)
 {
   PolicyPipeline::Status status;
   try {
-    if (kinematics_) {kinematics_->update(state);}
     status = pipeline_->step(state, commands);
   } catch (const std::exception & e) {
     RCLCPP_ERROR(logger_, "Policy step failed: %s", e.what());

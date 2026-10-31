@@ -128,12 +128,11 @@ TEST_F(PolicyRunnerTest, ReportsStateEntriesNoSourceProvides)
   EXPECT_EQ(runner.unprovided_state(), StringArray{"j3/position"});
 }
 
-TEST_F(PolicyRunnerTest, UpdatesTheKinematicsFromTheStateOfEveryStep)
+TEST_F(PolicyRunnerTest, ReadSourcesUpdatesTheKinematicsOnceEveryJointWasReceived)
 {
   auto params = runner_params("/runner_js3");
-  params.push_back({"kinematics.plugin_name", "kinematics_interface_kdl/KinematicsInterfaceKDL"});
-  params.push_back({"kinematics.base", "base_link"});
-  params.push_back({"kinematics.tip", "imu_link"});
+  params.push_back({"kinematics.enabled", true});
+  params.push_back({"kinematics.joints", StringArray{"j1", "j2"}});
   std::ifstream f(TEST_URDF);
   std::stringstream urdf;
   urdf << f.rdbuf();
@@ -142,14 +141,16 @@ TEST_F(PolicyRunnerTest, UpdatesTheKinematicsFromTheStateOfEveryStep)
   ASSERT_NE(kin, nullptr);
   const auto imu = kin->frame("imu_link");
 
-  // A step on another store (e.g. an inference thread's copy) updates from that store.
-  auto state = runner.state();
-  auto commands = runner.commands();
-  for (const auto * j : {"j1/position", "j2/position", "j3/position"}) {
-    state.set(state.index(j), 0.0, 1.0);
+  auto & state = runner.state();
+  for (const auto * j : {"j1/position", "j2/position", "j1/velocity"}) {
+    state.set(state.index(j), 0.0, 2.0);
   }
-  runner.step(state, commands);
+  runner.read_sources(0.0);
+  EXPECT_FALSE(kin->ready());  // j2/velocity missing
+  state.set(state.index("j2/velocity"), 0.0, 3.0);
+  runner.read_sources(0.0);
   ASSERT_TRUE(kin->ready());
+  EXPECT_DOUBLE_EQ(kin->stamp(), 2.0);  // oldest input
   EXPECT_NEAR(kin->transform(imu).translation().x(), 1.0, 1e-9);
 }
 

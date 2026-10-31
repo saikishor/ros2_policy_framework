@@ -1,5 +1,6 @@
 <?xml version="1.0"?>
-<!-- base_link -j1 (z)-> link1 -j2 (y, 1 m along x)-> link2 -fixed (1 m up, yaw 90 deg)-> imu_link.
+<!-- base_link -j1 (z)-> link1 -j2 (y, 1 m along x)-> link2 -fixed (1 m up, yaw 90 deg)-> imu_link,
+     and base_link -j3 (x, continuous, 2 m along y)-> side_link.
      Asymmetric on purpose: swapping the joint values gives a different transform. -->
 <robot name="two_joints">
   <link name="base_link"/>
@@ -25,9 +26,11 @@
     <child link="imu_link"/>
     <origin xyz="0 0 1" rpy="0 0 1.5707963267948966"/>
   </joint>
-  <!-- Not on the base_link -> imu_link chain. -->
-  <joint name="side_joint" type="fixed">
+  <!-- Side branch with a continuous joint (cos/sin in Pinocchio's configuration). -->
+  <joint name="j3" type="continuous">
     <parent link="base_link"/>
     <child link="side_link"/>
+    <origin xyz="0 2 0"/>
+    <axis xyz="1 0 0"/>
   </joint>
 </robot>

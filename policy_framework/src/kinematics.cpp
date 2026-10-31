@@ -3,140 +3,168 @@
 
 #include "policy_framework/kinematics.hpp"
 
-#include <algorithm>
 #include <stdexcept>
 
-#include "policy_framework/kinematics_parameters.hpp"
-#include "urdf/model.h"
+#include "pinocchio/algorithm/frames.hpp"
+#include "pinocchio/algorithm/joint-configuration.hpp"
+#include "pinocchio/algorithm/kinematics.hpp"
+#include "pinocchio/algorithm/model.hpp"
+#include "pinocchio/parsers/urdf.hpp"
 
 namespace policy_framework
 {
+
+struct Kinematics::Model
+{
+  pinocchio::Model model;
+  pinocchio::Data data;
+  std::vector<std::string> joint_names;
+  /// Per exposed joint: start in Pinocchio's q and v, and whether q holds (cos, sin).
+  std::vector<Eigen::Index> idx_q;
+  std::vector<Eigen::Index> idx_v;
+  std::vector<bool> unbounded;
+  Eigen::VectorXd q;  ///< Pinocchio configuration (nq)
+  Eigen::VectorXd v;  ///< Pinocchio velocity (nv)
+  bool ready = false;
+  double stamp = 0.0;
+};
+
 namespace
 {
 
-/**
- * @return Movable joints from @p base to @p tip, in the order of kinematics_interface_kdl's joint
- *         vector (base to tip; fixed, floating and planar joints are not part of it).
- *         ponytail: assumes the KDL convention; check it before using another plugin (e.g.
- *         Pinocchio), a different order would pass silently.
- */
-std::vector<std::string> chain_joints(
-  const std::string & robot_description, const std::string & base, const std::string & tip)
+using Lock = std::lock_guard<realtime_tools::prio_inherit_recursive_mutex>;
+
+Eigen::Isometry3d to_isometry(const pinocchio::SE3 & t)
 {
-  urdf::Model model;
-  if (!model.initString(robot_description)) {
-    throw std::runtime_error("Kinematics: cannot parse the robot description");
-  }
-  auto link = model.getLink(tip);
-  if (!link) {throw std::runtime_error("Kinematics: unknown tip link '" + tip + "'");}
-  std::vector<std::string> joints;
-  while (link->name != base) {
-    const auto joint = link->parent_joint;
-    if (!joint) {
-      throw std::runtime_error(
-              "Kinematics: base '" + base + "' is not an ancestor of tip '" + tip + "'");
-    }
-    if (joint->type == urdf::Joint::REVOLUTE || joint->type == urdf::Joint::CONTINUOUS ||
-      joint->type == urdf::Joint::PRISMATIC)
-    {
-      joints.push_back(joint->name);
-    }
-    link = model.getLink(joint->parent_link_name);
-  }
-  std::reverse(joints.begin(), joints.end());
-  return joints;
+  Eigen::Isometry3d out = Eigen::Isometry3d::Identity();
+  out.linear() = t.rotation();
+  out.translation() = t.translation();
+  return out;
 }
 
 }  // namespace
 
-std::shared_ptr<Kinematics> Kinematics::create(
-  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node,
-  const std::string & robot_description, DataStore & state)
+Kinematics::Kinematics(const std::string & robot_description, const std::vector<std::string> & joints)
+: model_(std::make_unique<Model>())
 {
-  const auto params = kinematics::ParamListener(node, "kinematics").get_params();
-  if (params.plugin_name.empty()) {return nullptr;}
-  if (robot_description.empty()) {
-    throw std::runtime_error("Kinematics: '" + params.plugin_name + "' needs a robot description");
+  if (robot_description.empty()) {throw std::runtime_error("Kinematics: empty robot description");}
+  pinocchio::Model full;
+  try {
+    pinocchio::urdf::buildModelFromXML(robot_description, full);
+  } catch (const std::exception & e) {
+    throw std::runtime_error(std::string("Kinematics: cannot parse the robot description: ") + e.what());
   }
-  if (params.base.empty() || params.tip.empty()) {
-    throw std::runtime_error("Kinematics: kinematics.base and kinematics.tip are required");
-  }
-  if (params.imu_sensor.empty() != params.imu_link.empty()) {
-    throw std::runtime_error("Kinematics: set both kinematics.imu_sensor and imu_link, or none");
-  }
-
-  std::shared_ptr<Kinematics> kin(new Kinematics());
-  kin->joint_names_ = chain_joints(robot_description, params.base, params.tip);
-  kin->loader_ = std::make_unique<pluginlib::ClassLoader<kinematics_interface::KinematicsInterface>>(
-    "kinematics_interface", "kinematics_interface::KinematicsInterface");
-  kin->plugin_ = kin->loader_->createSharedInstance(params.plugin_name);
-  // The plugin reads kinematics.base / tip / alpha, declared above by the ParamListener.
-  if (!kin->plugin_->initialize(
-      robot_description, node->get_node_parameters_interface(), "kinematics"))
-  {
-    throw std::runtime_error("Kinematics: '" + params.plugin_name + "' failed to initialize");
-  }
-  kin->q_ = Eigen::VectorXd::Zero(static_cast<Eigen::Index>(kin->joint_names_.size()));
-  for (const auto & j : kin->joint_names_) {kin->joint_idx_.push_back(state.add(j + "/position"));}
-  if (!params.imu_sensor.empty()) {
-    kin->imu_frame_ = kin->frame(params.imu_link);
-    for (const auto * c : {"x", "y", "z", "w"}) {
-      kin->imu_idx_.push_back(state.add(params.imu_sensor + "/orientation." + c));
+  auto & m = *model_;
+  if (joints.empty()) {
+    m.model = full;
+  } else {
+    for (const auto & j : joints) {
+      if (!full.existJointName(j)) {throw std::runtime_error("Kinematics: unknown joint '" + j + "'");}
     }
+    std::vector<pinocchio::JointIndex> locked;
+    for (pinocchio::JointIndex j = 1; j < static_cast<pinocchio::JointIndex>(full.njoints); ++j) {
+      if (std::find(joints.begin(), joints.end(), full.names[j]) == joints.end()) {
+        locked.push_back(j);
+      }
+    }
+    // Locked at the neutral configuration: zero angle / displacement.
+    m.model = pinocchio::buildReducedModel(full, locked, pinocchio::neutral(full));
   }
-  return kin;
+  for (pinocchio::JointIndex j = 1; j < static_cast<pinocchio::JointIndex>(m.model.njoints); ++j) {
+    const int nq = m.model.nqs[j];
+    if (m.model.nvs[j] != 1 || (nq != 1 && nq != 2)) {
+      throw std::runtime_error(
+              "Kinematics: joint '" + m.model.names[j] +
+              "' is not revolute, continuous or prismatic: leave it out of the joints");
+    }
+    m.joint_names.push_back(m.model.names[j]);
+    m.idx_q.push_back(m.model.idx_qs[j]);
+    m.idx_v.push_back(m.model.idx_vs[j]);
+    m.unbounded.push_back(nq == 2);  // continuous joint: (cos, sin)
+  }
+  m.data = pinocchio::Data(m.model);
+  m.q = pinocchio::neutral(m.model);
+  m.v = Eigen::VectorXd::Zero(m.model.nv);
 }
 
-Kinematics::~Kinematics()
+Kinematics::~Kinematics() = default;
+
+const std::vector<std::string> & Kinematics::joint_names() const {return model_->joint_names;}
+
+size_t Kinematics::frame(const std::string & link) const
 {
-  plugin_.reset();  // before loader_ unloads its library
+  // Links only (BODY frames), so that a joint of the same name cannot match.
+  if (!model_->model.existFrame(link, pinocchio::BODY)) {
+    throw std::runtime_error("Kinematics: unknown link '" + link + "'");
+  }
+  return model_->model.getFrameId(link, pinocchio::BODY);
 }
 
-size_t Kinematics::frame(const std::string & link)
+bool Kinematics::update(const Eigen::VectorXd & q, const Eigen::VectorXd & v, double stamp)
 {
-  const auto it = std::find(links_.begin(), links_.end(), link);
-  if (it != links_.end()) {return static_cast<size_t>(it - links_.begin());}
-  Eigen::Isometry3d t;
-  if (!plugin_->calculate_link_transform(q_, link, t)) {
-    throw std::runtime_error("Kinematics: link '" + link + "' is not on the chain");
+  auto & m = *model_;
+  const auto n = static_cast<Eigen::Index>(m.joint_names.size());
+  if (q.size() != n || v.size() != n) {
+    throw std::invalid_argument("Kinematics::update: q and v need one value per joint_names()");
   }
-  links_.push_back(link);
-  transforms_.push_back(t);
-  return links_.size() - 1;
+  std::unique_lock<realtime_tools::prio_inherit_recursive_mutex> lock(mutex_, std::try_to_lock);
+  if (!lock.owns_lock()) {return false;}
+  for (Eigen::Index i = 0; i < n; ++i) {
+    const auto j = static_cast<size_t>(i);
+    if (m.unbounded[j]) {
+      m.q[m.idx_q[j]] = std::cos(q[i]);
+      m.q[m.idx_q[j] + 1] = std::sin(q[i]);
+    } else {
+      m.q[m.idx_q[j]] = q[i];
+    }
+    m.v[m.idx_v[j]] = v[i];
+  }
+  pinocchio::forwardKinematics(m.model, m.data, m.q, m.v);
+  pinocchio::updateFramePlacements(m.model, m.data);
+  m.ready = true;
+  m.stamp = stamp;
+  return true;
 }
 
-void Kinematics::update(const DataStore & state)
+bool Kinematics::ready() const
 {
-  ready_ = state.all_received(joint_idx_) && state.all_received(imu_idx_);
-  if (!ready_) {return;}
-  stamp_ = 0.0;
-  const auto track_stamp = [&](size_t i) {
-      if (stamp_ <= 0.0 || state.stamp(i) < stamp_) {stamp_ = state.stamp(i);}
-    };
-  for (size_t j = 0; j < joint_idx_.size(); ++j) {
-    q_[static_cast<Eigen::Index>(j)] = state.get(joint_idx_[j]);
-    track_stamp(joint_idx_[j]);
-  }
-  for (size_t f = 0; f < links_.size(); ++f) {
-    ready_ = plugin_->calculate_link_transform(q_, links_[f], transforms_[f]) && ready_;
-  }
-  if (!imu_idx_.empty()) {
-    imu_orientation_ = Eigen::Quaterniond(
-      state.get(imu_idx_[3]), state.get(imu_idx_[0]), state.get(imu_idx_[1]),
-      state.get(imu_idx_[2])).normalized();
-    track_stamp(imu_idx_[0]);
-  }
+  Lock lock(mutex_);
+  return model_->ready;
 }
 
-Eigen::Quaterniond Kinematics::world_orientation(size_t frame) const
+double Kinematics::stamp() const
 {
-  if (imu_idx_.empty()) {
-    throw std::logic_error("Kinematics: world_orientation() needs kinematics.imu_sensor");
-  }
-  // R_world_frame = R_world_imu * R_base_imu^T * R_base_frame
-  return imu_orientation_ *
-         Eigen::Quaterniond(transforms_[imu_frame_].linear()).conjugate() *
-         Eigen::Quaterniond(transforms_[frame].linear());
+  Lock lock(mutex_);
+  return model_->stamp;
+}
+
+Eigen::Isometry3d Kinematics::transform(size_t frame) const
+{
+  Lock lock(mutex_);
+  return to_isometry(model_->data.oMf[frame]);
+}
+
+Eigen::Isometry3d Kinematics::transform(size_t frame, size_t reference) const
+{
+  Lock lock(mutex_);
+  return to_isometry(model_->data.oMf[reference].actInv(model_->data.oMf[frame]));
+}
+
+Eigen::Matrix<double, 6, 1> Kinematics::velocity(size_t frame, Reference reference) const
+{
+  Lock lock(mutex_);
+  return pinocchio::getFrameVelocity(
+    model_->model, model_->data, frame,
+    reference == Reference::LOCAL ? pinocchio::LOCAL : pinocchio::LOCAL_WORLD_ALIGNED).toVector();
+}
+
+Eigen::Quaterniond Kinematics::world_orientation(
+  size_t frame, size_t imu_frame, const Eigen::Quaterniond & imu) const
+{
+  Lock lock(mutex_);
+  const auto & o = model_->data.oMf;
+  // R_world_frame = R_world_imu * R_root_imu^T * R_root_frame
+  return imu * Eigen::Quaterniond(o[imu_frame].rotation().transpose() * o[frame].rotation());
 }
 
 }  // namespace policy_framework

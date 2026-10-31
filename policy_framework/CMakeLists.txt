@@ -10,7 +10,6 @@ set(THIS_PACKAGE_DEPENDS
   controller_interface
   geometry_msgs
   hardware_interface
-  kinematics_interface
   lifecycle_msgs
   nav_msgs
   pluginlib
@@ -18,7 +17,6 @@ set(THIS_PACKAGE_DEPENDS
   rclcpp_lifecycle
   realtime_tools
   sensor_msgs
-  urdf
 )
 
 find_package(ament_cmake REQUIRED)
@@ -27,6 +25,7 @@ find_package(backward_ros REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(onnxruntime_vendor REQUIRED)
 find_package(generate_parameter_library REQUIRED)
+find_package(Eigen3 REQUIRED)
 foreach(dep IN ITEMS ${THIS_PACKAGE_DEPENDS})
   find_package(${dep} REQUIRED)
 endforeach()
@@ -36,6 +35,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}_interfaces
   LIBRARY_NAME ${PROJECT_NAME}
 )
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces rosidl_typesupport_cpp)
+# After rosidl_generate_interfaces: Pinocchio's config (through eigenpy) sets up Python in a way
+# that makes rosidl's PythonInterp lookup fail on a fresh configure.
+find_package(pinocchio REQUIRED)
 
 # Parameter declaration and validation, generated from params/*.yaml (header-only targets).
 set(PARAMETER_LIBRARIES)
@@ -65,10 +67,11 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 ament_target_dependencies(${PROJECT_NAME} PUBLIC ${THIS_PACKAGE_DEPENDS})
-# ONNX Runtime is an implementation detail: it does not appear in the public headers.
+# ONNX Runtime and Pinocchio are implementation details: they do not appear in the public
+# headers.
 target_link_libraries(${PROJECT_NAME}
-  PUBLIC "${cpp_typesupport_target}"
-  PRIVATE onnxruntime::onnxruntime ${PARAMETER_LIBRARIES})
+  PUBLIC "${cpp_typesupport_target}" Eigen3::Eigen
+  PRIVATE onnxruntime::onnxruntime pinocchio::pinocchio ${PARAMETER_LIBRARIES})
 
 add_executable(policy_node src/policy_node_main.cpp)
 target_link_libraries(policy_node ${PROJECT_NAME})
@@ -101,17 +104,17 @@ if(BUILD_TESTING)
   ament_add_gtest(test_kinematics test/test_kinematics.cpp)
   target_link_libraries(test_kinematics ${PROJECT_NAME})
   target_compile_definitions(test_kinematics PRIVATE
-    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/two_joints.urdf")
+    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
   ament_add_gtest(test_generic_stages test/test_generic_stages.cpp)
   target_link_libraries(test_generic_stages ${PROJECT_NAME})
   foreach(test IN ITEMS test_onnx_inference test_policy_runner test_policy_controller test_policy_node)
     ament_add_gtest(${test} test/${test}.cpp)
     target_link_libraries(${test} ${PROJECT_NAME})
     target_compile_definitions(${test} PRIVATE TEST_MODELS_DIR="${TEST_MODELS_DIR}"
-      TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/two_joints.urdf")
+      TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
   endforeach()
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(rosidl_default_runtime ${THIS_PACKAGE_DEPENDS})
+ament_export_dependencies(rosidl_default_runtime Eigen3 ${THIS_PACKAGE_DEPENDS})
 ament_package()

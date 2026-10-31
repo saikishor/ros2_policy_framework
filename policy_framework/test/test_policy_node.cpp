@@ -77,9 +77,7 @@ TEST(PolicyNode, KinematicsUsesTheRobotDescriptionParameter)
   urdf << f.rdbuf();
   auto params = node_params({"j1", "j2", "j3"});
   params.push_back({"robot_description", urdf.str()});
-  params.push_back({"kinematics.plugin_name", "kinematics_interface_kdl/KinematicsInterfaceKDL"});
-  params.push_back({"kinematics.base", "base_link"});
-  params.push_back({"kinematics.tip", "imu_link"});
+  params.push_back({"kinematics.enabled", true});
   rclcpp::NodeOptions opts;
   opts.parameter_overrides(params);
   auto node = std::make_shared<policy_framework::PolicyNode>(opts);

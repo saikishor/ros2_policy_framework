@@ -1,31 +1,13 @@
 kinematics:
-  plugin_name:
-    type: string
-    default_value: ""
-    description: "kinematics_interface plugin class (e.g. kinematics_interface_kdl/KinematicsInterfaceKDL); empty disables kinematics."
+  enabled:
+    type: bool
+    default_value: false
+    description: "Build the whole-body kinematic model from the robot description, updated in every read_sources() from <joint>/position and <joint>/velocity."
     read_only: true
-  base:
-    type: string
-    default_value: ""
-    description: "Root link of the chain; transforms are expressed in it. Required with plugin_name."
+  joints:
+    type: string_array
+    default_value: []
+    description: "Joints updated from the state; the other movable joints are locked at zero. Empty: every movable joint of the robot description."
     read_only: true
-  tip:
-    type: string
-    default_value: ""
-    description: "Last link of the chain; base must be its ancestor. Required with plugin_name."
-    read_only: true
-  alpha:
-    type: double
-    default_value: 0.000005
-    description: "Damping of the plugin's Jacobian inverse."
-    read_only: true
-  imu_sensor:
-    type: string
-    default_value: ""
-    description: "State prefix of the IMU orientation in the world, <imu_sensor>/orientation.{x,y,z,w}; enables world orientations, with imu_link."
-    read_only: true
-  imu_link:
-    type: string
-    default_value: ""
-    description: "Link of the IMU frame, on the chain."
-    read_only: true
+    validation:
+      unique<>: null

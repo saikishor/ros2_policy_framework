@@ -5,99 +5,104 @@
 #define POLICY_FRAMEWORK__KINEMATICS_HPP_
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
 #include <Eigen/Geometry>
 
-#include "kinematics_interface/kinematics_interface.hpp"
-#include "pluginlib/class_loader.hpp"
-#include "policy_framework/data_store.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "realtime_tools/mutex.hpp"
 
 namespace policy_framework
 {
 
 /**
- * @brief Kinematic model of one chain of the robot, shared by every plugin of a runner and
- *        updated once per policy step from the state store, so observation terms only read it.
+ * @brief Kinematic model of the whole robot (fixed base at the URDF root link), computed with
+ *        Pinocchio.
  *
- * Wraps a kinematics_interface plugin (e.g. kinematics_interface_kdl/KinematicsInterfaceKDL).
- * Parameters, under `kinematics.`:
- * - `plugin_name`: plugin class; empty (default) disables kinematics.
- * - `base`, `tip`: the chain; `base` must be an ancestor of `tip` in the URDF.
- * - `alpha`: damping of the plugin's Jacobian inverse.
- * - `imu_sensor`, `imu_link` (optional, together): state prefix of the IMU orientation
- *   (`<imu_sensor>/orientation.{x,y,z,w}`, its orientation in the world) and the link of the IMU
- *   frame, on the chain. Enables world_orientation().
- *
- * It registers `<joint>/position` of every movable chain joint (and the IMU orientation) in the
- * state store, so a controller claims them as state interfaces.
- *
- * Usage: plugins call frame() while configuring; the runner calls update() at the start of every
- * step; plugins read transform() / world_orientation() during the step. Not thread-safe: use it
- * only from the thread running the policy step (not from interface executors).
+ * One thread (the control loop) writes the joint positions and velocities with update(), which
+ * computes the forward kinematics of every frame; any thread reads transforms and velocities.
+ * Both sides share a priority-inheritance recursive mutex (realtime_tools):
+ * - update() only try_lock()s: it never waits, and returns false (update skipped, the previous
+ *   state kept) while a reader holds the lock;
+ * - readers lock (blocking) for the time of a copy only, never for the forward kinematics; a
+ *   reader in the control loop thus waits at most for one update().
+ * Readers return copies. Use with_lock() for several values from the same update.
  */
 class Kinematics
 {
 public:
-  /**
-   * @brief Load and initialize the plugin from the `kinematics.` parameters of @p node.
-   * @param robot_description URDF of the robot.
-   * @param state Store in which the chain joint positions (and IMU orientation) are registered.
-   * @return null when `kinematics.plugin_name` is empty.
-   * @throws std::runtime_error on an invalid configuration (no URDF, unknown links, a plugin
-   *         that fails to load or initialize, an IMU link outside the chain).
-   */
-  static std::shared_ptr<Kinematics> create(
-    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node,
-    const std::string & robot_description, DataStore & state);
+  /// Frame in which velocity() expresses a frame's velocity.
+  enum class Reference
+  {
+    LOCAL,        ///< The frame's own axes.
+    ROOT_ALIGNED  ///< At the frame's origin, with the axes of the root link.
+  };
 
+  /**
+   * @brief Build the model from @p robot_description.
+   * @param joints Joints given to update(); every other movable joint is locked at zero (e.g.
+   *        joints with no state interface). Empty: every movable joint.
+   * @throws std::runtime_error on an unparsable URDF, an unknown joint, or a selected joint
+   *         that is not revolute, continuous or prismatic.
+   */
+  explicit Kinematics(
+    const std::string & robot_description, const std::vector<std::string> & joints = {});
   ~Kinematics();
+  Kinematics(const Kinematics &) = delete;
+  Kinematics & operator=(const Kinematics &) = delete;
+
+  /// @return The joints of update()'s vectors, in their order (the model's order).
+  const std::vector<std::string> & joint_names() const;
 
   /**
-   * @brief Request the transform of @p link, computed from now on in every update(). Call while
-   *        configuring (allocates). Idempotent.
-   * @return Handle for transform() and world_orientation().
-   * @throws std::runtime_error when @p link is not on the chain.
+   * @return Index of the link @p link for the readers. Not real-time (string lookup): call it
+   *         while configuring.
+   * @throws std::runtime_error when the URDF has no such link.
    */
-  size_t frame(const std::string & link);
+  size_t frame(const std::string & link) const;
 
-  /// Recompute the requested frames from @p state (no allocation). Called by the runner.
-  void update(const DataStore & state);
-
-  /// @return true when the last update() had every input (joints, IMU) received.
-  bool ready() const {return ready_;}
-  /// @return Oldest stamp of the inputs of the last update() (seconds).
-  double stamp() const {return stamp_;}
-
-  /// @return Pose of the frame in the `base` frame, as of the last update().
-  const Eigen::Isometry3d & transform(size_t frame) const {return transforms_[frame];}
   /**
-   * @return Orientation of the frame in the world, from the IMU orientation and the chain.
-   * @throws std::logic_error when no IMU is configured.
+   * @brief Set the joint state and compute the forward kinematics (positions and velocities of
+   *        every frame). Real-time safe: no allocation, never blocks.
+   * @param q Positions (rad, m), in joint_names() order.
+   * @param v Velocities, in joint_names() order.
+   * @param stamp Time of the state (seconds), returned by stamp().
+   * @return false when a reader holds the lock: nothing changed.
+   * @throws std::invalid_argument when a size differs from joint_names().
    */
-  Eigen::Quaterniond world_orientation(size_t frame) const;
+  bool update(const Eigen::VectorXd & q, const Eigen::VectorXd & v, double stamp);
 
-  /// @return Movable chain joints, in the order of the plugin's joint vector.
-  const std::vector<std::string> & joint_names() const {return joint_names_;}
+  /// @return true once an update() succeeded.
+  bool ready() const;
+  /// @return Stamp of the last successful update().
+  double stamp() const;
+
+  /// @return Pose of @p frame in the root link.
+  Eigen::Isometry3d transform(size_t frame) const;
+  /// @return Pose of @p frame in @p reference.
+  Eigen::Isometry3d transform(size_t frame, size_t reference) const;
+  /// @return Spatial velocity of @p frame: linear (m/s) then angular (rad/s).
+  Eigen::Matrix<double, 6, 1> velocity(size_t frame, Reference reference) const;
+  /**
+   * @return Orientation in the world of @p frame, given the measured orientation @p imu of the
+   *         IMU frame @p imu_frame in the world.
+   */
+  Eigen::Quaterniond world_orientation(
+    size_t frame, size_t imu_frame, const Eigen::Quaterniond & imu) const;
+
+  /// Call @p f(*this) under the lock: its reads all come from the same update().
+  template<typename F>
+  void with_lock(F && f) const
+  {
+    std::lock_guard<realtime_tools::prio_inherit_recursive_mutex> lock(mutex_);
+    f(*this);
+  }
 
 private:
-  Kinematics() = default;
-
-  // Loader before the plugin: the library must outlive the instance.
-  std::unique_ptr<pluginlib::ClassLoader<kinematics_interface::KinematicsInterface>> loader_;
-  std::shared_ptr<kinematics_interface::KinematicsInterface> plugin_;
-  std::vector<std::string> joint_names_;
-  std::vector<size_t> joint_idx_;
-  std::vector<size_t> imu_idx_;  ///< orientation x, y, z, w; empty without IMU.
-  size_t imu_frame_ = 0;
-  Eigen::VectorXd q_;
-  std::vector<std::string> links_;
-  std::vector<Eigen::Isometry3d, Eigen::aligned_allocator<Eigen::Isometry3d>> transforms_;
-  Eigen::Quaterniond imu_orientation_ = Eigen::Quaterniond::Identity();
-  bool ready_ = false;
-  double stamp_ = 0.0;
+  struct Model;  // Pinocchio, kept out of this header
+  std::unique_ptr<Model> model_;
+  mutable realtime_tools::prio_inherit_recursive_mutex mutex_;
 };
 
 }  // namespace policy_framework

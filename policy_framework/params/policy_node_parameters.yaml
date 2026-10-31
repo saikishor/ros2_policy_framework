@@ -14,5 +14,5 @@ policy_node:
   robot_description:
     type: string
     default_value: ""
-    description: "URDF of the robot, needed only by the kinematics (kinematics.plugin_name)."
+    description: "URDF of the robot, needed only by the kinematics (kinematics.enabled)."
     read_only: true
