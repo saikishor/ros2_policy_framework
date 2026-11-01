@@ -30,7 +30,7 @@ if(BUILD_TESTING)
   ament_add_gtest(test_mjlab_preprocessor test/test_mjlab_preprocessor.cpp)
   target_link_libraries(test_mjlab_preprocessor ${PROJECT_NAME})
   target_compile_definitions(test_mjlab_preprocessor PRIVATE
-    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/../policy_framework/test/urdf/two_joints.urdf")
+    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/../policy_framework/test/urdf/test_robot.urdf")
   ament_add_gtest(test_mjlab_postprocessor test/test_mjlab_postprocessor.cpp)
   target_link_libraries(test_mjlab_postprocessor ${PROJECT_NAME})
   ament_add_gtest(test_twist_command_term test/test_twist_command_term.cpp)

@@ -308,20 +308,17 @@ TEST(MjlabPreprocessor, TermPluginsReadTheRunnerKinematics)
     {"observation_names", "imu_pos"}, {"action_scale", "1.0"}};
   model.inputs["obs"] = zeros(3);
   model.outputs["actions"] = zeros(1);
-  auto ctx = make_context({{"p.terms.imu_pos.type", "policy_framework_mjlab_test/FramePositionTerm"},
-      {"kinematics.plugin_name", "kinematics_interface_kdl/KinematicsInterfaceKDL"},
-      {"kinematics.base", "base_link"}, {"kinematics.tip", "imu_link"}});
+  auto ctx = make_context({{"p.terms.imu_pos.type", "policy_framework_mjlab_test/FramePositionTerm"}});
   std::ifstream f(TEST_URDF);
   std::stringstream urdf;
   urdf << f.rdbuf();
   DataStore state;
-  ctx.kinematics = policy_framework::Kinematics::create(ctx.node, urdf.str(), state);
+  ctx.kinematics = std::make_shared<policy_framework::Kinematics>(urdf.str());
   MjlabPreprocessor pre;
   pre.configure(ctx, model, state);
 
-  state.set(state.index("j1/position"), 0.0, 1.0);
-  state.set(state.index("j2/position"), 0.0, 1.0);
-  ctx.kinematics->update(state);
+  const Eigen::VectorXd zero = Eigen::VectorXd::Zero(3);
+  ASSERT_TRUE(ctx.kinematics->update(zero, zero, 1.0));
   TensorMap in = model.inputs;
   ASSERT_TRUE(pre.compute(state, model.outputs, in));
   // imu_link at (1, 0, 1) with both joints at zero.
