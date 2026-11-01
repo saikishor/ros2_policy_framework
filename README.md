@@ -98,40 +98,49 @@ loads anything in the control loop.
 
 ### Kinematics
 
-A runner can hold one kinematic model of a chain of the robot, built from the robot
-description with a [kinematics_interface](https://github.com/ros-controls/kinematics_interface)
-plugin (`kinematics_interface_kdl`). It is
-updated once at the start of every policy step from the state store, and every policy plugin
-(and observation term) reads it through `PluginContext::kinematics`, so terms never compute
-or update kinematics themselves:
+A runner can hold a kinematic model of the whole robot (fixed base at the URDF root link),
+built from the robot description with [Pinocchio](https://github.com/stack-of-tasks/pinocchio).
+`read_sources()` updates it from the joint positions and velocities right before every policy
+step, and every policy plugin (and observation term) reads it through
+`PluginContext::kinematics`, so terms never compute or update kinematics themselves:
 
 ```yaml
 kinematics:
-  plugin_name: kinematics_interface_kdl/KinematicsInterfaceKDL
-  base: base_link            # transforms are expressed in it
-  tip: torso_imu_link        # base must be an ancestor of tip
-  imu_sensor: torso_imu_sensor   # optional: <imu_sensor>/orientation.* (IMU orientation in the world)
-  imu_link: torso_imu_link       # ... and its link, on the chain: enables world_orientation()
+  enabled: true
+  joints: []   # joints updated from the state; empty: every movable joint
 ```
 
-It registers `<joint>/position` of the chain's movable joints (and the IMU orientation) as
-state entries: the controller claims them as state interfaces, the node needs sources for
-them. The controller uses the controller manager's robot description; the node reads its
-`robot_description` parameter.
+It registers `<joint>/position` and `<joint>/velocity` of its joints as state entries: the
+controller claims them as state interfaces, the node needs sources for them. Joints left out
+of `joints` (e.g. without state interfaces) are locked at zero. The controller uses the
+controller manager's robot description; the node reads its `robot_description` parameter.
 
-In a plugin: `frame("pelvis")` in `configure()` (throws if the link is not on the chain), then
-`transform(f)` (pose in `base`) or `world_orientation(f)` during the step; check
-`kinematics->ready()` (all joints and IMU received) in `ready()` and use `stamp()` (oldest
-input) as the stamp. `ctx.kinematics` is null when `kinematics.plugin_name` is empty.
+`policy_framework::Kinematics` (`policy_framework/kinematics.hpp`) can also be used on its own:
 
-The wrapper fills the plugin's joint vector with the chain's movable joints from `base` to
-`tip`, the KDL plugin's convention. Another plugin (e.g. `kinematics_interface_pinocchio`) must
-be checked to use the same joint vector before switching `plugin_name`.
+| Method | |
+|--------|---|
+| `Kinematics(urdf, joints = {})` | Build the model |
+| `joint_names()` | Order of the `q`/`v` vectors |
+| `frame("pelvis")` | Link index, while configuring (throws on unknown links) |
+| `update(q, v, stamp)` | Set the joint state and compute the forward kinematics of every frame |
+| `transform(f)`, `transform(f, ref)` | Pose of a link in the root link / in another link |
+| `velocity(f, LOCAL\|ROOT_ALIGNED)` | Spatial velocity (linear, angular) |
+| `world_orientation(f, imu_frame, imu_quaternion)` | Orientation in the world from a measured IMU orientation |
+| `ready()`, `stamp()` | An update happened; its stamp |
+| `with_lock(fn)` | Several reads from the same update |
 
-Limits: one chain per runner (the KDL plugin models a single base→tip chain, and only its
-links are available); orientation only, no base position or linear velocity (that needs a
-state estimator); it runs in the policy step thread (with `async_inference`, on the inference
-thread's copy of the state), never in interface executors.
+Threads: the writer (the control loop) and the readers (terms, callbacks, other threads) share a
+`realtime_tools::prio_inherit_recursive_mutex`. `update()` only tries the lock: it never waits,
+and when a reader holds the lock it returns false and the model keeps the previous state (the
+runner logs it). Readers lock for the time of a copy, and the forward kinematics runs in
+`update()` only, so a reader in the control loop waits at most one `update()`. Terms read the
+IMU from the state themselves and pass it to `world_orientation()`.
+
+In a plugin: `frame()` in `configure()`, check `kinematics->ready()` in `ready()`, return
+`stamp()` (oldest joint input) as the stamp.
+
+Limits: fixed base, so no base position or linear velocity in the world (that needs a state
+estimator); joints must be revolute, continuous or prismatic (lock the others).
 
 ## Running
 
@@ -228,7 +237,7 @@ controller they are declared from the YAML value first.
 | `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
 | `policy_rate` | Controller only: policy rate in Hz (default 0 = every update) |
 | `async_inference`, `inference_thread_priority` | Controller only: policy step in its own real-time thread (default false), its `SCHED_FIFO` priority (default 40) |
-| `kinematics.plugin_name`, `.base`, `.tip`, `.alpha`, `.imu_sensor`, `.imu_link` | Optional kinematic model, see [Kinematics](#kinematics) (empty `plugin_name`, default: none) |
+| `kinematics.enabled`, `kinematics.joints` | Optional whole-body kinematic model, see [Kinematics](#kinematics) (default: none) |
 | `robot_description` | Node only: URDF for the kinematics (the controller uses the controller manager's) |
 
 ### Plugins
