@@ -100,8 +100,8 @@ loads anything in the control loop.
 
 A runner can hold a kinematic model of the whole robot (fixed base at the URDF root link),
 built from the robot description with [Pinocchio](https://github.com/stack-of-tasks/pinocchio).
-`read_sources()` updates it from the joint positions and velocities right before every policy
-step, and every policy plugin (and observation term) reads it through
+It is updated from the joint positions and velocities on every controller `update()` (every
+timer tick in the node), always before the policy step, and every policy plugin (and observation term) reads it through
 `PluginContext::kinematics`, so terms never compute or update kinematics themselves:
 
 ```yaml
@@ -131,8 +131,8 @@ controller manager's robot description; the node reads its `robot_description` p
 
 Threads: the writer (the control loop) and the readers (terms, callbacks, other threads) share a
 `realtime_tools::prio_inherit_recursive_mutex`. `update()` only tries the lock: it never waits,
-and when a reader holds the lock it returns false and the model keeps the previous state (the
-runner logs it). Readers lock for the time of a copy, and the forward kinematics runs in
+and when a reader holds the lock (e.g. the inference thread with `async_inference`) it returns
+false and the model keeps the previous state until the next update (not logged: it is expected). Readers lock for the time of a copy, and the forward kinematics runs in
 `update()` only, so a reader in the control loop waits at most one `update()`. Terms read the
 IMU from the state themselves and pass it to `world_orientation()`.
 
