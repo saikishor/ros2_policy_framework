@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -17,6 +18,7 @@
 #include "hardware_interface/loaned_command_interface.hpp"
 #include "hardware_interface/loaned_state_interface.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
+#include "policy_framework/kinematics.hpp"
 #include "policy_framework/policy_controller.hpp"
 #include "rclcpp/rclcpp.hpp"
 
@@ -139,6 +141,29 @@ TEST_F(PolicyControllerTest, ClaimsTheKinematicsInputsFromTheRobotDescription)
   EXPECT_EQ(
     names, (StringArray{"j1/position", "j1/velocity", "j2/position", "j2/velocity",
       "j3/position", "j3/velocity"}));
+}
+
+TEST_F(PolicyControllerTest, KinematicsIsUpdatedOnEveryUpdateNotOnlyPolicySteps)
+{
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  init({{"kinematics.enabled", true}, {"policy_rate", 50.0}}, 100, urdf.str());
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  const auto kin = controller.kinematics();
+  ASSERT_NE(kin, nullptr);
+  const auto link1 = kin->frame("link1");
+  ASSERT_EQ(update(), controller_interface::return_type::OK);  // policy step
+  ASSERT_TRUE(kin->ready());
+  EXPECT_TRUE(kin->transform(link1).linear().isIdentity(1e-12));
+
+  set_state("j1/position", M_PI / 2);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);  // no policy step
+  EXPECT_TRUE(
+    kin->transform(link1).linear().isApprox(
+      Eigen::AngleAxisd(M_PI / 2, Eigen::Vector3d::UnitZ()).toRotationMatrix()));
 }
 
 TEST_F(PolicyControllerTest, InputsProvidedByTopicSourcesAreNotClaimed)

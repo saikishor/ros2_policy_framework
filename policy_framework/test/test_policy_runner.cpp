@@ -128,7 +128,7 @@ TEST_F(PolicyRunnerTest, ReportsStateEntriesNoSourceProvides)
   EXPECT_EQ(runner.unprovided_state(), StringArray{"j3/position"});
 }
 
-TEST_F(PolicyRunnerTest, ReadSourcesUpdatesTheKinematicsOnceEveryJointWasReceived)
+TEST_F(PolicyRunnerTest, UpdatesTheKinematicsOnceEveryJointWasReceived)
 {
   auto params = runner_params("/runner_js3");
   params.push_back({"kinematics.enabled", true});
@@ -145,10 +145,10 @@ TEST_F(PolicyRunnerTest, ReadSourcesUpdatesTheKinematicsOnceEveryJointWasReceive
   for (const auto * j : {"j1/position", "j2/position", "j1/velocity"}) {
     state.set(state.index(j), 0.0, 2.0);
   }
-  runner.read_sources(0.0);
+  runner.update_kinematics();
   EXPECT_FALSE(kin->ready());  // j2/velocity missing
   state.set(state.index("j2/velocity"), 0.0, 3.0);
-  runner.read_sources(0.0);
+  runner.update_kinematics();
   ASSERT_TRUE(kin->ready());
   EXPECT_DOUBLE_EQ(kin->stamp(), 2.0);  // oldest input
   EXPECT_NEAR(kin->transform(imu).translation().x(), 1.0, 1e-9);

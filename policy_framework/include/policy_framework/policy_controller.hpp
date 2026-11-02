@@ -67,6 +67,15 @@ public:
   controller_interface::return_type update(
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
+  /**
+   * @return The whole-body kinematics (null unless `kinematics.enabled`), updated on every
+   *         update() from the state interfaces. Its readers are thread-safe.
+   */
+  std::shared_ptr<Kinematics> kinematics() const
+  {
+    return runner_ ? runner_->kinematics() : nullptr;
+  }
+
 private:
   /// Load the `executors` parameter as InterfaceExecutor plugins. @throws on any error.
   void load_executors();

@@ -63,6 +63,7 @@ PolicyNode::CallbackReturn PolicyNode::on_cleanup(const rclcpp_lifecycle::State 
 void PolicyNode::update()
 {
   runner_->read_sources(now().seconds());
+  runner_->update_kinematics();
   if (runner_->step() == PolicyPipeline::Status::OK) {
     runner_->write_executors();
   }

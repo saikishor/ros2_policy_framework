@@ -138,13 +138,16 @@ void PolicyRunner::configure_kinematics(
   const auto n = static_cast<Eigen::Index>(kinematics_->joint_names().size());
   kinematics_q_ = Eigen::VectorXd::Zero(n);
   kinematics_v_ = Eigen::VectorXd::Zero(n);
-  kinematics_skipped_ = false;
   RCLCPP_INFO(logger_, "Kinematics over %ld joints", static_cast<long>(n));
 }
 
 void PolicyRunner::read_sources(double now)
 {
   for (const auto & s : sources_) {s->read(state_, now);}
+}
+
+void PolicyRunner::update_kinematics()
+{
   if (!kinematics_ || !state_.all_received(kinematics_position_idx_) ||
     !state_.all_received(kinematics_velocity_idx_))
   {
@@ -160,14 +163,10 @@ void PolicyRunner::read_sources(double now)
       if (stamp <= 0.0 || state_.stamp(i) < stamp) {stamp = state_.stamp(i);}
     }
   }
-  const bool skipped = !kinematics_->update(kinematics_q_, kinematics_v_, stamp);
-  // ponytail: logs from the control cycle on transitions only (rare), like step().
-  if (skipped && !kinematics_skipped_) {
-    RCLCPP_WARN(
-      logger_, "Kinematics update skipped: a reader held the lock; this step uses the "
-      "previous joint state");
-  }
-  kinematics_skipped_ = skipped;
+  // Skipped (false) while a reader holds the lock, e.g. the inference thread: the model keeps
+  // the previous state until the next update. Expected with readers in other threads, so not
+  // logged (this runs at the control rate).
+  kinematics_->update(kinematics_q_, kinematics_v_, stamp);
 }
 
 PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & commands)

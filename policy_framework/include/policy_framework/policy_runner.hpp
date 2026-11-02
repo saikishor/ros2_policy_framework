@@ -35,7 +35,7 @@ namespace policy_framework
  *   plus the parameters of each of its plugins, also under `<policy>.`.
  * - `executors` (string array): executor names; each needs `<executor>.type` (plugin class).
  * - `kinematics.enabled`, `kinematics.joints`: optional whole-body Kinematics model, handed to
- *   the policies' plugins in PluginContext::kinematics and updated by read_sources() from the
+ *   the policies' plugins in PluginContext::kinematics and updated by update_kinematics() from the
  *   `<joint>/position` and `<joint>/velocity` state entries (registered here).
  *
  * A cycle is read_sources() → [host reads state interfaces] → step() → [host writes command
@@ -58,13 +58,15 @@ public:
   /// @return State entries required by the policies that no input source provides.
   std::vector<std::string> unprovided_state() const;
 
-  /**
-   * @brief Copy the latest data of every input source into state() (@p now in seconds), then
-   *        update the kinematics from state() once all its joints were received. Hosts call it
-   *        once per policy step, right before handing the state to step(), so the kinematics
-   *        matches the step's state.
-   */
+  /// Copy the latest data of every input source into state(). @p now in seconds.
   void read_sources(double now);
+
+  /**
+   * @brief Update the kinematics (if any) from the joint positions and velocities of state(),
+   *        once all of them were received. Real-time safe. Hosts call it after refreshing
+   *        state(), at least once per policy step and before it (the controller: every update).
+   */
+  void update_kinematics();
 
   /// Run one step of the active policy. Never throws; exceptions are reported as ERROR.
   PolicyPipeline::Status step() {return step(state_, commands_);}
@@ -112,7 +114,6 @@ private:
   std::vector<size_t> kinematics_velocity_idx_;
   Eigen::VectorXd kinematics_q_;
   Eigen::VectorXd kinematics_v_;
-  bool kinematics_skipped_ = false;  ///< The last update was skipped (logged once).
   std::vector<std::shared_ptr<InputSource>> sources_;
   std::vector<std::shared_ptr<Executor>> executors_;
   std::vector<std::pair<std::string, std::string>> executor_types_;

@@ -219,12 +219,13 @@ controller_interface::return_type PolicyController::update(
   // The policy steps every decimation_ updates (starting with the first); executors run on
   // every update with the fresh state.
   const bool policy_tick = updates_++ % decimation_ == 0;
+  if (policy_tick) {runner_->read_sources(now);}
+  // On every update, so that other readers see the current joint state; before the step (or
+  // the hand-off to the inference thread) so that the step sees this cycle's.
+  runner_->update_kinematics();
   std::optional<PolicyPipeline::Status> status;  // of a step whose result arrived now
   if (!inference_) {
-    if (policy_tick) {
-      runner_->read_sources(now);
-      status = runner_->step();
-    }
+    if (policy_tick) {status = runner_->step();}
   } else {
     // Collect a finished step, then maybe trigger the next one; never wait for inference.
     if (inference_pending_ && !inference_->is_trigger_cycle_in_progress()) {
@@ -237,7 +238,6 @@ controller_interface::return_type PolicyController::update(
     if (policy_tick) {
       bool triggered = false;
       if (!inference_->is_trigger_cycle_in_progress()) {
-        runner_->read_sources(now);
         async_state_.copy_values_from(state);
         triggered = inference_->trigger_async_callback(time, period).first;
         inference_pending_ = triggered;
