@@ -285,11 +285,15 @@ TEST_F(PolicyControllerTest, AsyncInferenceKeepsThePdLawInTheUpdateLoop)
   // Triggers the first policy step without waiting for it: nothing to send yet.
   ASSERT_EQ(update(), controller_interface::return_type::OK);
   EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-  // The step finished: its references (j1 4.5) apply from this update, PD on the latest state.
+  // Once the step finished, its references (j1 4.5) apply from the next update, PD on the
+  // latest state. Polled rather than a fixed sleep: the first inference can be slow on a
+  // loaded machine.
   set_state("j1/position", 2.0);
-  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  for (int i = 0; i < 200 && command("j1/effort") <= 0.0; ++i) {  // 0 until applied
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    ASSERT_EQ(update(), controller_interface::return_type::OK);
+  }
   EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 2.0));
 
   ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
