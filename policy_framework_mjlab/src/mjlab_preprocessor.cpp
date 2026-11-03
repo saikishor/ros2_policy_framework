@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -24,15 +23,11 @@ namespace policy_framework_mjlab
 
 void projected_gravity(double w, double x, double y, double z, float out[3])
 {
-  const double n = std::sqrt(w * w + x * x + y * y + z * z);
-  w /= n;
-  // Rotate v = (0, 0, -1) by the conjugate quaternion (w, -x, -y, -z):
-  // v' = v + w t + r x t, with r = (-x, -y, -z) and t = 2 r x v.
-  const double rx = -x / n, ry = -y / n, rz = -z / n;
-  const double tx = -2.0 * ry, ty = 2.0 * rx, tz = 0.0;  // 2 r x (0, 0, -1)
-  out[0] = static_cast<float>(w * tx + (ry * tz - rz * ty));
-  out[1] = static_cast<float>(w * ty + (rz * tx - rx * tz));
-  out[2] = static_cast<float>(-1.0 + w * tz + (rx * ty - ry * tx));
+  // R^T (0, 0, -1): the negated last row of the rotation matrix of q / |q|.
+  const double s = 2.0 / (w * w + x * x + y * y + z * z);
+  out[0] = static_cast<float>(s * (w * y - x * z));
+  out[1] = static_cast<float>(-s * (w * x + y * z));
+  out[2] = static_cast<float>(s * (x * x + y * y) - 1.0);
 }
 
 void MjlabPreprocessor::configure(
@@ -55,16 +50,12 @@ void MjlabPreprocessor::configure(
   obs_input_ = params.observation_input;
 
   required_.clear();
-  auto add = [&](const std::string & name) {
-      const auto i = state.add(name);
-      if (std::find(required_.begin(), required_.end(), i) == required_.end()) {
-        required_.push_back(i);
-      }
-      return i;
-    };
-  auto add_all = [&](const std::string & prefix, const std::vector<std::string> & fields) {
+  // Register prefix + name + suffix for every name; duplicates in required_ are harmless.
+  auto add = [&](const std::string & prefix, const std::vector<std::string> & names,
+      const std::string & suffix = "") {
       std::vector<size_t> idx;
-      for (const auto & f : fields) {idx.push_back(add(prefix + f));}
+      for (const auto & n : names) {idx.push_back(state.add(prefix + n + suffix));}
+      required_.insert(required_.end(), idx.begin(), idx.end());
       return idx;
     };
   auto output_size = [&](const std::string & name) {
@@ -74,11 +65,7 @@ void MjlabPreprocessor::configure(
       }
       return it->second.data.size();
     };
-  auto joint_entries = [&](const std::string & iface) {
-      std::vector<size_t> idx;
-      for (const auto & j : joints) {idx.push_back(add(j + "/" + iface));}
-      return idx;
-    };
+  const std::vector<std::string> xyz{"x", "y", "z"};
 
   terms_.clear();
   stamps_.clear();
@@ -100,36 +87,29 @@ void MjlabPreprocessor::configure(
         throw std::runtime_error("Observation term plugin '" + name + "' has size 0");
       }
     } else if (name == "base_ang_vel") {
-      t = {Kind::BASE_ANG_VEL, 3, {}, nullptr};
-      ang_vel_ = add_all(imu + "/angular_velocity.", {"x", "y", "z"});
+      t = {Kind::STATE, 3, add(imu + "/angular_velocity.", xyz)};
     } else if (name == "base_lin_acc") {
-      t = {Kind::BASE_LIN_ACC, 3, {}, nullptr};
-      lin_acc_ = add_all(imu + "/linear_acceleration.", {"x", "y", "z"});
+      t = {Kind::STATE, 3, add(imu + "/linear_acceleration.", xyz)};
     } else if (name == "imu_projected_gravity" || name == "projected_gravity") {
-      t = {Kind::PROJECTED_GRAVITY, 3, {}, nullptr};
-      quat_ = add_all(imu + "/orientation.", {"w", "x", "y", "z"});
+      t = {Kind::PROJECTED_GRAVITY, 3, add(imu + "/orientation.", {"w", "x", "y", "z"})};
     } else if (name == "base_lin_vel") {
-      t = {Kind::BASE_LIN_VEL, 3, {}, nullptr};
-      lin_vel_ = add_all(odom + "/linear.", {"x", "y", "z"});
+      t = {Kind::STATE, 3, add(odom + "/linear.", xyz)};
     } else if (name == "joint_pos") {
-      t = {Kind::JOINT_POS, joints.size(), {}, nullptr};
-      joint_pos_ = joint_entries("position");
+      t = {Kind::JOINT_POS, joints.size(), add("", joints, "/position")};
     } else if (name == "joint_vel") {
-      t = {Kind::JOINT_VEL, joints.size(), {}, nullptr};
-      joint_vel_ = joint_entries("velocity");
+      t = {Kind::STATE, joints.size(), add("", joints, "/velocity")};
     } else if (name == "actions") {
-      t = {Kind::ACTIONS, output_size("actions"), {}, nullptr};
+      t = {Kind::ACTIONS, output_size("actions")};
     } else if (name == "command" && motion) {
       if (output_size("joint_pos") != joints.size() || output_size("joint_vel") != joints.size()) {
         throw std::runtime_error("Motion outputs joint_pos/joint_vel must have one value per joint");
       }
-      t = {Kind::MOTION_COMMAND, 2 * joints.size(), {}, nullptr};
-      // Seeds the command on the first step after reset.
-      joint_pos_ = joint_entries("position");
-      joint_vel_ = joint_entries("velocity");
+      // Positions then velocities: they seed the command on the first step after reset.
+      t = {Kind::MOTION_COMMAND, 2 * joints.size(), add("", joints, "/position")};
+      const auto vel = add("", joints, "/velocity");
+      t.idx.insert(t.idx.end(), vel.begin(), vel.end());
     } else if (name == "command") {
-      t = {Kind::TWIST_COMMAND, 3, {}, nullptr};
-      twist_ = add_all(cmd + "/", {"linear.x", "linear.y", "angular.z"});
+      t = {Kind::STATE, 3, add(cmd + "/", {"linear.x", "linear.y", "angular.z"})};
     } else {
       throw std::runtime_error("Unsupported mjlab observation term '" + name + "'");
     }
@@ -151,7 +131,6 @@ void MjlabPreprocessor::configure(
   history_length_ = obs_dim / single_dim;
   has_time_step_ = model.inputs.count("time_step") > 0;
   for (auto & t : terms_) {t.history.assign(history_length_ * t.dim, 0.0F);}
-  scratch_.assign(single_dim, 0.0F);
   RCLCPP_INFO(
     ctx.node->get_logger(), "[%s] mjlab observation: %zu terms, single size %zu, history %zu%s",
     ctx.name.c_str(), terms_.size(), single_dim, history_length_,
@@ -166,7 +145,6 @@ void MjlabPreprocessor::clear()
 
 void MjlabPreprocessor::reset()
 {
-  first_step_ = true;
   step_ = 0;
   for (auto & t : terms_) {
     if (t.plugin) {t.plugin->reset();}
@@ -186,37 +164,29 @@ double MjlabPreprocessor::current_value(
       for (size_t i = 0; i < idx.size(); ++i) {dst[i] = static_cast<float>(state.get(idx[i]));}
       return oldest(idx);
     };
+  const auto & idx = term.idx;
   switch (term.kind) {
-    case Kind::BASE_ANG_VEL: return copy(ang_vel_, out);
-    case Kind::BASE_LIN_ACC: return copy(lin_acc_, out);
-    case Kind::BASE_LIN_VEL: return copy(lin_vel_, out);
-    case Kind::TWIST_COMMAND: return copy(twist_, out);
-    case Kind::JOINT_VEL: return copy(joint_vel_, out);
+    case Kind::STATE: return copy(idx, out);
     case Kind::PLUGIN: return term.plugin->compute(state, last_outputs, out);
     case Kind::PROJECTED_GRAVITY:
       projected_gravity(
-        state.get(quat_[0]), state.get(quat_[1]), state.get(quat_[2]), state.get(quat_[3]), out);
-      return oldest(quat_);
+        state.get(idx[0]), state.get(idx[1]), state.get(idx[2]), state.get(idx[3]), out);
+      return oldest(idx);
     case Kind::JOINT_POS:
-      for (size_t i = 0; i < joint_pos_.size(); ++i) {
-        out[i] = static_cast<float>(state.get(joint_pos_[i]) - default_joint_pos_[i]);
+      for (size_t i = 0; i < idx.size(); ++i) {
+        out[i] = static_cast<float>(state.get(idx[i]) - default_joint_pos_[i]);
       }
-      return oldest(joint_pos_);
+      return oldest(idx);
     case Kind::ACTIONS: {
         const auto & a = last_outputs.at("actions").data;
         std::copy(a.begin(), a.end(), out);
         return prev_obs_stamp_;
       }
     case Kind::MOTION_COMMAND: {
-        const size_t n = joint_pos_.size();
-        if (first_step_) {
-          // Start the reference motion from where the robot is.
-          return std::min(copy(joint_pos_, out), copy(joint_vel_, out + n));
-        }
+        if (step_ == 0) {return copy(idx, out);}  // start the reference motion from the robot
         const auto & p = last_outputs.at("joint_pos").data;
         const auto & v = last_outputs.at("joint_vel").data;
-        std::copy(p.begin(), p.end(), out);
-        std::copy(v.begin(), v.end(), out + n);
+        std::copy(v.begin(), v.end(), std::copy(p.begin(), p.end(), out));
         return prev_obs_stamp_;
       }
   }
@@ -242,7 +212,7 @@ bool MjlabPreprocessor::compute(
     float * newest = t.history.data() + t.history.size() - t.dim;
     const double stamp = current_value(t, state, last_outputs, newest);
     const bool derived = t.kind == Kind::ACTIONS ||
-      (t.kind == Kind::MOTION_COMMAND && !first_step_);
+      (t.kind == Kind::MOTION_COMMAND && step_ > 0);
     stamps_[k].stamp = stamp;
     stamps_[k].from_previous_outputs = derived;
     if (!derived && stamp > 0.0 && (obs_stamp <= 0.0 || stamp < obs_stamp)) {
@@ -262,7 +232,6 @@ bool MjlabPreprocessor::compute(
   }
   history_filled_ = true;
   prev_obs_stamp_ = obs_stamp;
-  first_step_ = false;
   ++step_;
   return true;
 }

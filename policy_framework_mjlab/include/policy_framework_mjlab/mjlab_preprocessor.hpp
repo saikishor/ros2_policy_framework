@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "pluginlib/class_loader.hpp"
@@ -28,7 +29,7 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * Observation terms (in `observation_names` order), read from these state entries:
  * - `base_ang_vel`: `<imu_name>/angular_velocity.{x,y,z}`
  * - `base_lin_acc`: `<imu_name>/linear_acceleration.{x,y,z}`
- * - `imu_projected_gravity`: from `<imu_name>/orientation.{x,y,z,w}`
+ * - `imu_projected_gravity` (or `projected_gravity`): from `<imu_name>/orientation.{w,x,y,z}`
  * - `base_lin_vel`: `<odometry_name>/linear.{x,y,z}`
  * - `joint_pos`: `<joint>/position` - default_joint_pos, for every metadata joint
  * - `joint_vel`: `<joint>/velocity`
@@ -83,13 +84,17 @@ public:
 private:
   enum class Kind
   {
-    BASE_ANG_VEL, BASE_LIN_ACC, PROJECTED_GRAVITY, BASE_LIN_VEL, JOINT_POS, JOINT_VEL,
-    ACTIONS, TWIST_COMMAND, MOTION_COMMAND, PLUGIN
+    STATE,  ///< The state entries as-is.
+    PROJECTED_GRAVITY, JOINT_POS, ACTIONS, MOTION_COMMAND, PLUGIN
   };
   struct Term
   {
-    Kind kind;
-    size_t dim;
+    Term() = default;
+    Term(Kind k, size_t d, std::vector<size_t> i = {})
+    : kind(k), dim(d), idx(std::move(i)) {}
+    Kind kind = Kind::STATE;
+    size_t dim = 0;
+    std::vector<size_t> idx;     ///< State entries read (motion command: positions, velocities).
     std::vector<float> history;  ///< history_length * dim values, oldest first.
     std::shared_ptr<policy_framework::ObservationTerm> plugin;  ///< Kind::PLUGIN only.
   };
@@ -106,16 +111,12 @@ private:
   std::string obs_input_;
   bool has_time_step_ = false;
   std::vector<double> default_joint_pos_;
-  // Store indices.
-  std::vector<size_t> required_;
-  std::vector<size_t> joint_pos_, joint_vel_, ang_vel_, lin_acc_, quat_, lin_vel_, twist_;
+  std::vector<size_t> required_;  ///< Every state entry read by the built-in terms.
   // Control-cycle state.
-  std::vector<float> scratch_;
   bool history_filled_ = false;
   policy_framework::InputStamps stamps_;
   double prev_obs_stamp_ = 0.0;  ///< Oldest input stamp of the previous step, 0 after clear().
-  bool first_step_ = true;  ///< First step since reset().
-  int step_ = 0;
+  int step_ = 0;  ///< Steps since reset().
 };
 
 }  // namespace policy_framework_mjlab
