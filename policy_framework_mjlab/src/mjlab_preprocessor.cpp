@@ -8,6 +8,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "policy_framework_mjlab/mjlab_preprocessor_parameters.hpp"
@@ -35,11 +36,8 @@ void MjlabPreprocessor::configure(
   DataStore & state)
 {
   const auto & md = model.metadata;
-  const auto joints = split(require(md, "joint_names"));
-  default_joint_pos_ = parse_doubles(require(md, "default_joint_pos"));
-  if (default_joint_pos_.size() != joints.size()) {
-    throw std::runtime_error("default_joint_pos and joint_names sizes differ");
-  }
+  auto [joints, defaults] = policy_framework_mjlab::joints(md);
+  default_joint_pos_ = std::move(defaults);
   const auto cmd_it = md.find("command_names");
   const bool motion = cmd_it != md.end() && cmd_it->second == "motion";
 

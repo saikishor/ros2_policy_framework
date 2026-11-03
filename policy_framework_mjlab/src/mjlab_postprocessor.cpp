@@ -118,24 +118,18 @@ void MjlabPostprocessor::configure(
   const policy_framework::PluginContext & ctx, const policy_framework::ModelInfo & model,
   DataStore & commands)
 {
-  logger_ = ctx.node->get_logger().get_child(ctx.name);
   const auto & md = model.metadata;
-  const auto joints = split(require(md, "joint_names"));
-  const auto defaults = parse_doubles(require(md, "default_joint_pos"));
+  const auto [joints, defaults] = policy_framework_mjlab::joints(md);
   scale_ = parse_doubles(require(md, "action_scale"));
   const auto params = mjlab_postprocessor::ParamListener(ctx.node, ctx.name).get_params();
   const auto & excluded = params.excluded_joints;
-  const auto & pos_iface = params.position_interface;
-  const auto & vel_iface = params.velocity_interface;
-  const auto & gains_controller = params.gains_controller;
-  const auto gains_as_commands = params.gains_as_commands;
 
   std::vector<std::string> actuated;
   offset_.clear();
   for (size_t i = 0; i < joints.size(); ++i) {
     if (std::find(excluded.begin(), excluded.end(), joints[i]) == excluded.end()) {
       actuated.push_back(joints[i]);
-      offset_.push_back(defaults.at(i));
+      offset_.push_back(defaults[i]);
     }
   }
   const auto actions = model.outputs.find("actions");
@@ -152,20 +146,27 @@ void MjlabPostprocessor::configure(
   position_idx_.clear();
   velocity_idx_.clear();
   for (const auto & j : actuated) {
-    position_idx_.push_back(commands.add(j + "/" + pos_iface));
-    if (!vel_iface.empty()) {velocity_idx_.push_back(commands.add(j + "/" + vel_iface));}
+    position_idx_.push_back(commands.add(j + "/" + params.position_interface));
+    if (!params.velocity_interface.empty()) {
+      velocity_idx_.push_back(commands.add(j + "/" + params.velocity_interface));
+    }
   }
   const auto stiffness = md.count("joint_stiffness") ?
     parse_doubles(md.at("joint_stiffness")) : std::vector<double>{};
   const auto damping = md.count("joint_damping") ?
     parse_doubles(md.at("joint_damping")) : std::vector<double>{};
+  std::vector<rclcpp::Parameter> gain_parameters;
+  std::string gains_error;  // why the metadata gains are unusable, empty when they are fine
+  try {
+    gain_parameters = make_gain_parameters(actuated, stiffness, damping);
+  } catch (const std::invalid_argument & e) {
+    gains_error = e.what();
+  }
   gain_idx_.clear();
   gain_values_.clear();
-  if (gains_as_commands) {
-    if (stiffness.size() != actuated.size() || damping.size() != actuated.size()) {
-      throw std::runtime_error(
-              "gains_as_commands: expected one joint_stiffness and joint_damping per actuated "
-              "joint (" + std::to_string(actuated.size()) + ") in the model metadata");
+  if (params.gains_as_commands) {
+    if (!gains_error.empty()) {
+      throw std::runtime_error("gains_as_commands: model metadata gains: " + gains_error);
     }
     for (size_t i = 0; i < actuated.size(); ++i) {
       gain_idx_.push_back(commands.add(actuated[i] + "/stiffness"));
@@ -177,18 +178,18 @@ void MjlabPostprocessor::configure(
 
   if (gains_sender_) {gains_sender_->cancel(&gains_request_);}
   gains_sender_.reset();
-  gains_request_ = GainsRequest{ctx.name, {}};
-  if (gains_controller.empty()) {
+  gains_request_ = GainsRequest{ctx.name, gain_parameters};
+  if (params.gains_controller.empty()) {
     return;
   }
-  try {
-    gains_request_.gains = make_gain_parameters(actuated, stiffness, damping);
-  } catch (const std::invalid_argument & e) {
+  if (!gains_error.empty()) {
     // Same as the reference deployer: run the policy, leave the controller gains untouched.
-    RCLCPP_ERROR(logger_, "Not sending gains to %s: %s", gains_controller.c_str(), e.what());
+    RCLCPP_ERROR(
+      ctx.node->get_logger().get_child(ctx.name), "Not sending gains to %s: %s",
+      params.gains_controller.c_str(), gains_error.c_str());
     return;
   }
-  gains_sender_ = GainsSender::get(ctx.node, gains_controller);
+  gains_sender_ = GainsSender::get(ctx.node, params.gains_controller);
 }
 
 MjlabPostprocessor::~MjlabPostprocessor()

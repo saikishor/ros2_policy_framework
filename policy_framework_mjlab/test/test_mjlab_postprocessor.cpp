@@ -127,6 +127,15 @@ TEST(MjlabPostprocessor, RejectsActionCountMismatch)
   EXPECT_THROW(post.configure(ctx, model(), commands), std::runtime_error);
 }
 
+TEST(MjlabPostprocessor, RejectsDefaultsNotMatchingTheJoints)
+{
+  auto m = model();
+  m.metadata["default_joint_pos"] = "0.1,0.2,0.3,0.4";  // one more than joint_names
+  DataStore commands;
+  MjlabPostprocessor post;
+  EXPECT_THROW(post.configure(make_context({}), m, commands), std::runtime_error);
+}
+
 TEST(MakeGainParameters, NamesPidGainsPerJoint)
 {
   const auto params = policy_framework_mjlab::make_gain_parameters(

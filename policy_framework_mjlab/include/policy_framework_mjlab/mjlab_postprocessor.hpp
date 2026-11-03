@@ -14,10 +14,6 @@
 namespace policy_framework_mjlab
 {
 
-/**
- * @brief pid_controller gain parameters `gains.<joint>.p` / `gains.<joint>.d`.
- * @throws std::invalid_argument when the sizes differ or there is no gain.
- */
 /// Gains of one policy for its gains controller.
 struct GainsRequest
 {
@@ -28,6 +24,10 @@ struct GainsRequest
 /// Sends gains to one controller, latest request wins (shared by the policies of a node).
 class GainsSender;
 
+/**
+ * @return pid_controller gain parameters `gains.<joint>.p` / `gains.<joint>.d`.
+ * @throws std::invalid_argument when the sizes differ or there is no joint.
+ */
 std::vector<rclcpp::Parameter> make_gain_parameters(
   const std::vector<std::string> & joints, const std::vector<double> & stiffness,
   const std::vector<double> & damping);
@@ -68,7 +68,6 @@ public:
     policy_framework::DataStore & commands) override;
   /// Real-time safe: only flags the gains to be sent.
   void reset() override;
-  /// Writes the commands with @p stamp (the observation stamp).
   bool compute(
     const policy_framework::TensorMap & outputs, double stamp,
     policy_framework::DataStore & commands) override;
@@ -80,7 +79,6 @@ private:
   std::vector<size_t> gain_idx_;       ///< stiffness, damping entries per actuated joint.
   std::vector<double> gain_values_;
 
-  rclcpp::Logger logger_{rclcpp::get_logger("MjlabPostprocessor")};
   GainsRequest gains_request_;
   std::shared_ptr<GainsSender> gains_sender_;
 };

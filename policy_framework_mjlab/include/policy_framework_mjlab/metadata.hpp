@@ -42,6 +42,24 @@ inline const std::string & require(
   return it->second;
 }
 
+/// Metadata `joint_names` and their `default_joint_pos`.
+struct Joints
+{
+  std::vector<std::string> names;
+  std::vector<double> defaults;
+};
+
+/// @return The model joints. @throws std::runtime_error when missing or the sizes differ.
+inline Joints joints(const std::map<std::string, std::string> & metadata)
+{
+  Joints j{split(require(metadata, "joint_names")),
+    parse_doubles(require(metadata, "default_joint_pos"))};
+  if (j.defaults.size() != j.names.size()) {
+    throw std::runtime_error("default_joint_pos and joint_names sizes differ");
+  }
+  return j;
+}
+
 }  // namespace policy_framework_mjlab
 
 #endif  // POLICY_FRAMEWORK_MJLAB__METADATA_HPP_
