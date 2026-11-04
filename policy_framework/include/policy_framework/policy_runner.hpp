@@ -38,8 +38,8 @@ namespace policy_framework
  *   the policies' plugins in PluginContext::kinematics and updated by update_kinematics() from the
  *   `<joint>/position` and `<joint>/velocity` state entries (registered here).
  *
- * A cycle is read_sources() → [host reads state interfaces] → step() → [host writes command
- * interfaces] → write_executors() (only after a successful step()).
+ * A cycle: [controller: copy state interfaces] → read_sources() → update_kinematics() → step()
+ * → node: write_executors() / controller: its InterfaceExecutors (after a successful step()).
  */
 class PolicyRunner
 {

@@ -2,7 +2,7 @@ kinematics:
   enabled:
     type: bool
     default_value: false
-    description: "Build the whole-body kinematic model from the robot description, updated in every read_sources() from <joint>/position and <joint>/velocity."
+    description: "Build the whole-body kinematic model from the robot description, updated from <joint>/position and <joint>/velocity on every controller update / node tick (once all were received)."
     read_only: true
   joints:
     type: string_array

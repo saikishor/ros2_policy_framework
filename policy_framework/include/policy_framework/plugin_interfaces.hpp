@@ -73,20 +73,17 @@ struct InputStamp
 };
 using InputStamps = std::vector<InputStamp>;
 
-/// What a plugin needs to configure itself.
 class Kinematics;
 
+/// What a plugin needs to configure itself.
 struct PluginContext
 {
   /// Node of the runner (standalone node or controller), used for parameters, topics, timers.
   rclcpp_lifecycle::LifecycleNode::SharedPtr node;
-  /// Name of the policy, source or executor; plugin parameters live under `<name>.`.
+  /// Name of the policy, source, executor or term; plugin parameters live under `<name>.`.
   std::string name;
-  /**
-   * Kinematics model of the runner, updated at the start of every policy step; null when not
-   * configured. Only given to the policy stages (and their observation terms), which run in the
-   * step thread.
-   */
+  /// Whole-body kinematics (null unless `kinematics.enabled`), updated by the host before every
+  /// policy step; given to the policy stages and their observation terms only.
   std::shared_ptr<Kinematics> kinematics = nullptr;
 };
 
