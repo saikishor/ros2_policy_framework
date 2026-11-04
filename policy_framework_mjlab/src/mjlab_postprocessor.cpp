@@ -35,8 +35,12 @@ public:
   /// Real-time safe: replaces any request not sent yet.
   void request(const GainsRequest * r) {pending_.store(r);}
 
-  /// Drop @p r if still pending (its owner is going away).
-  void cancel(const GainsRequest * r) {pending_.compare_exchange_strong(r, nullptr);}
+  /// Drop @p r if still pending; once it returns, @p r is no longer read (its owner may go).
+  void cancel(const GainsRequest * r)
+  {
+    const std::lock_guard<std::mutex> lock(taking_);
+    pending_.compare_exchange_strong(r, nullptr);
+  }
 
   /// Shared sender for (@p node, @p target): one timer and one latest-wins slot per target.
   static std::shared_ptr<GainsSender> get(
@@ -64,10 +68,16 @@ private:
         target_.c_str());
       return;
     }
-    const auto * r = pending_.exchange(nullptr);
-    if (!r) {return;}
-    const auto gains = r->gains;
-    const auto policy = r->policy;
+    std::vector<rclcpp::Parameter> gains;
+    std::string policy;
+    {
+      // With cancel(): the request's owner cannot destroy it while it is copied.
+      const std::lock_guard<std::mutex> lock(taking_);
+      const auto * r = pending_.exchange(nullptr);
+      if (!r) {return;}
+      gains = r->gains;
+      policy = r->policy;
+    }
     client_->set_parameters(
       gains,
       [this, gains, policy](
@@ -94,6 +104,7 @@ private:
   rclcpp::AsyncParametersClient::SharedPtr client_;
   rclcpp::TimerBase::SharedPtr timer_;
   std::atomic<const GainsRequest *> pending_{nullptr};
+  std::mutex taking_;  ///< Non real-time: send() and cancel() only, never request().
 };
 
 std::vector<rclcpp::Parameter> make_gain_parameters(
