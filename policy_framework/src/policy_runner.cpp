@@ -3,6 +3,7 @@
 
 #include "policy_framework/policy_runner.hpp"
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <stdexcept>
@@ -30,7 +31,7 @@ void PolicyRunner::configure(
   const std::string & robot_description)
 {
   logger_ = node->get_logger();
-  const auto logger = node->get_logger();
+  const auto & logger = logger_;
   // Reconfiguration starts from scratch: drop plugins before their loaders.
   sources_.clear();
   executors_.clear();
@@ -81,11 +82,13 @@ void PolicyRunner::configure(
     pipeline_->add_policy(std::move(p));
   }
 
-  for (const auto & [name, type] : load_executors ? executor_types_ : decltype(executor_types_){}) {
-    auto executor = executor_loader_->createSharedInstance(type);
-    executor->configure({node, name}, commands_);
-    executors_.push_back(executor);
-    RCLCPP_INFO(logger, "Executor '%s' (%s)", name.c_str(), type.c_str());
+  if (load_executors) {
+    for (const auto & [name, type] : executor_types_) {
+      auto executor = executor_loader_->createSharedInstance(type);
+      executor->configure({node, name}, commands_);
+      executors_.push_back(executor);
+      RCLCPP_INFO(logger, "Executor '%s' (%s)", name.c_str(), type.c_str());
+    }
   }
 
   switch_service_ = node->create_service<srv::SwitchPolicy>(
@@ -108,14 +111,11 @@ std::vector<std::string> PolicyRunner::unprovided_state() const
 {
   std::vector<std::string> missing;
   for (const auto & name : state_.names()) {
-    bool provided = false;
-    for (const auto & s : sources_) {
-      if (s->provides(name)) {
-        provided = true;
-        break;
-      }
+    if (std::none_of(
+        sources_.begin(), sources_.end(), [&](const auto & s) {return s->provides(name);}))
+    {
+      missing.push_back(name);
     }
-    if (!provided) {missing.push_back(name);}
   }
   return missing;
 }

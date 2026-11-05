@@ -46,12 +46,6 @@ bool PolicyPipeline::request_switch(const std::string & name, std::string & mess
   return true;
 }
 
-void PolicyPipeline::activate(size_t index)
-{
-  active_.store(index);
-  needs_reset_ = true;
-}
-
 PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore & commands)
 {
   if (entries_.empty()) {
@@ -61,7 +55,8 @@ PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore &
     for (auto & entry : entries_) {entry.needs_clear = true;}
   }
   if (const int req = requested_.exchange(-1); req >= 0) {
-    activate(static_cast<size_t>(req));
+    active_.store(static_cast<size_t>(req));
+    needs_reset_ = true;
   }
   auto & e = entries_[active_.load()];
   if (e.needs_clear) {

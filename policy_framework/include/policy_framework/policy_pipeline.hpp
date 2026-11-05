@@ -101,9 +101,6 @@ public:
   const std::string & active_policy() const {return entries_.at(active_.load()).policy.name;}
   /// @return All policies, in the order they were added.
   std::vector<std::string> policy_names() const;
-  /// @return The policy entries; for inspection only.
-  const Policy & policy(size_t i) const {return entries_.at(i).policy;}
-  size_t size() const {return entries_.size();}
 
 private:
   struct Entry
@@ -113,8 +110,6 @@ private:
     TensorMap outputs;
     bool needs_clear = true;  ///< Only touched from step().
   };
-
-  void activate(size_t index);
 
   std::vector<Entry> entries_;
   std::atomic<size_t> active_{0};

@@ -159,13 +159,14 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
   for (const auto & e : executors_) {
     std::vector<size_t> loaned;
     for (const auto & name : e->command_interfaces()) {
-      size_t i = 0;
-      while (i < command_interfaces_.size() && command_interfaces_[i].get_name() != name) {++i;}
-      if (i == command_interfaces_.size()) {
+      const auto it = std::find_if(
+        command_interfaces_.begin(), command_interfaces_.end(),
+        [&](const auto & ci) {return ci.get_name() == name;});
+      if (it == command_interfaces_.end()) {
         RCLCPP_ERROR(get_node()->get_logger(), "Command interface '%s' not loaned", name.c_str());
         return CallbackReturn::ERROR;
       }
-      loaned.push_back(i);
+      loaned.push_back(static_cast<size_t>(it - command_interfaces_.begin()));
     }
     values_.emplace_back(loaned.size(), 0.0);
     loaned_command_.push_back(std::move(loaned));
@@ -187,7 +188,7 @@ PolicyController::CallbackReturn PolicyController::on_deactivate(const rclcpp_li
 
 void PolicyController::apply_values()
 {
-  for (size_t k = 0; k < executors_.size(); ++k) {
+  for (size_t k = 0; k < values_.size(); ++k) {
     for (size_t i = 0; i < values_[k].size(); ++i) {
       if (!std::isnan(values_[k][i])) {
         (void)command_interfaces_[loaned_command_[k][i]].set_value(values_[k][i]);
@@ -198,7 +199,7 @@ void PolicyController::apply_values()
 
 void PolicyController::write_safe_values()
 {
-  for (size_t k = 0; k < executors_.size() && k < values_.size(); ++k) {
+  for (size_t k = 0; k < values_.size(); ++k) {
     executors_[k]->safe_values(values_[k]);
   }
   apply_values();
