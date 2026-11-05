@@ -65,7 +65,6 @@ public:
 
   size_t configure(const PluginContext & ctx, const ModelInfo & model, DataStore &) override
   {
-    clock_ = ctx.node->get_clock();
     const auto dim = configure_term(ctx, model);
     topic_.subscribe(ctx.node, topic_parameter(ctx, default_topic_));
     return dim;
@@ -86,11 +85,10 @@ protected:
   Received latest() {return topic_.get();}
 
   /// @return Current time of the node clock (the receive_time clock), seconds.
-  double now() const {return clock_->now().seconds();}
+  double now() const {return topic_.now();}
 
 private:
   std::string default_topic_;
-  rclcpp::Clock::SharedPtr clock_;
   LatestMessage<MsgT> topic_;
 };
 

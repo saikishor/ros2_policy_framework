@@ -3,6 +3,8 @@
 
 #include "policy_framework/topic_sources.hpp"
 
+#include "entry_name.hpp"
+
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -24,11 +26,6 @@ std::string topic_parameter(const PluginContext & ctx, const std::string & defau
 namespace
 {
 
-bool ends_with(const std::string & s, const std::string & suffix)
-{
-  return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
 /// Header stamp in seconds, or @p fallback when the publisher left it empty.
 double stamp_or(const builtin_interfaces::msg::Time & t, double fallback)
 {
@@ -49,10 +46,9 @@ bool FieldWriter::has(const std::string & name) const
 
 void FieldWriter::write(DataStore & store, const double * values, double stamp)
 {
-  if (!resolved_) {
-    // The store is complete once the control cycle runs, so resolving once is enough.
+  if (indices_.size() != names_.size()) {
+    // First call only (allocates once): the store is complete once the control cycle runs.
     for (const auto & n : names_) {indices_.push_back(store.find(n));}
-    resolved_ = true;
   }
   for (size_t i = 0; i < indices_.size(); ++i) {
     if (indices_[i]) {store.set(*indices_[i], values[i], stamp);}
@@ -69,10 +65,9 @@ void JointStateSource::configure_source(const PluginContext & ctx)
 bool JointStateSource::provides(const std::string & name) const
 {
   for (const auto * suffix : {"/position", "/velocity", "/effort"}) {
-    if (!ends_with(name, suffix)) {continue;}
-    if (joints_.empty()) {return true;}
-    const auto joint = name.substr(0, name.size() - std::string(suffix).size());
-    return std::find(joints_.begin(), joints_.end(), joint) != joints_.end();
+    const auto joint = strip_suffix(name, suffix);
+    if (!joint) {continue;}
+    return joints_.empty() || std::find(joints_.begin(), joints_.end(), *joint) != joints_.end();
   }
   return false;
 }
@@ -133,6 +128,7 @@ void ImuSource::read(DataStore & state, double now)
 void TwistSource::configure_source(const PluginContext & ctx)
 {
   timeout_ = twist_source::ParamListener(ctx.node, ctx.name).get_params().timeout;
+  logger_ = ctx.node->get_logger().get_child(ctx.name);
   fields_ = FieldWriter(
     ctx.name, {"linear.x", "linear.y", "linear.z", "angular.x", "angular.y", "angular.z"});
 }
@@ -143,10 +139,8 @@ void TwistSource::read(DataStore & state, double now)
   const bool stale = in.msg && timeout_ > 0.0 && now - in.receive_time > timeout_;
   if (stale != timed_out_) {
     // Edge triggered: logs once per transition, not every cycle.
-    RCLCPP_WARN_EXPRESSION(
-      rclcpp::get_logger(name_), stale, "No velocity command for %.2f s, using zero", timeout_);
-    RCLCPP_INFO_EXPRESSION(
-      rclcpp::get_logger(name_), !stale, "Velocity command resumed");
+    RCLCPP_WARN_EXPRESSION(logger_, stale, "No velocity command for %.2f s, using zero", timeout_);
+    RCLCPP_INFO_EXPRESSION(logger_, !stale, "Velocity command resumed");
     timed_out_ = stale;
   }
   if (!in.msg || stale) {

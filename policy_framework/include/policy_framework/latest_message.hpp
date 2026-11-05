@@ -54,6 +54,9 @@ public:
   /// @return The latest message and when it arrived. Real-time safe.
   Received get() {return *buffer_.readFromRT();}
 
+  /// @return Current time of the node clock (the receive_time clock), seconds.
+  double now() const {return clock_->now().seconds();}
+
 private:
   rclcpp::Clock::SharedPtr clock_;
   typename rclcpp::Subscription<MsgT>::SharedPtr sub_;

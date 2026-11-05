@@ -35,7 +35,6 @@ class TopicSource : public InputSource
 public:
   void configure(const PluginContext & ctx) override
   {
-    name_ = ctx.name;
     const auto topic = topic_parameter(ctx, "~/" + ctx.name);
     configure_source(ctx);
     topic_.subscribe(ctx.node, topic);
@@ -49,8 +48,6 @@ protected:
 
   /// @return The latest message (may be null) and when it arrived. Real-time safe.
   Received latest() {return topic_.get();}
-
-  std::string name_;
 
 private:
   LatestMessage<MsgT> topic_;
@@ -71,8 +68,7 @@ public:
 
 private:
   std::vector<std::string> names_;
-  std::vector<std::optional<size_t>> indices_;
-  bool resolved_ = false;
+  std::vector<std::optional<size_t>> indices_;  ///< Resolved on the first write().
 };
 
 /**
@@ -132,6 +128,7 @@ private:
   FieldWriter fields_;
   double timeout_ = 1.0;
   bool timed_out_ = false;
+  rclcpp::Logger logger_ = rclcpp::get_logger("twist_source");
 };
 
 /**

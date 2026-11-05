@@ -36,7 +36,6 @@ public:
   void write(const DataStore & commands) override;
 
 private:
-  std::shared_ptr<rclcpp::Publisher<control_msgs::msg::MultiDOFCommand>> pub_;
   std::unique_ptr<realtime_tools::RealtimePublisher<control_msgs::msg::MultiDOFCommand>> rt_pub_;
   control_msgs::msg::MultiDOFCommand msg_;
   std::vector<size_t> values_idx_;

@@ -3,6 +3,8 @@
 
 #include "policy_framework/multi_dof_command_executor.hpp"
 
+#include "entry_name.hpp"
+
 #include <stdexcept>
 #include <string>
 
@@ -23,17 +25,12 @@ void MultiDofCommandExecutor::configure(const PluginContext & ctx, const DataSto
   values_idx_.clear();
   values_dot_idx_.clear();
   for (size_t i = 0; i < commands.size(); ++i) {
-    const auto & name = commands.names()[i];
-    if (name.size() <= values_suffix.size() ||
-      name.compare(name.size() - values_suffix.size(), values_suffix.size(), values_suffix) != 0)
-    {
-      continue;
-    }
-    const auto dof = name.substr(0, name.size() - values_suffix.size());
-    msg_.dof_names.push_back(dof);
+    const auto dof = strip_suffix(commands.names()[i], values_suffix);
+    if (!dof) {continue;}
+    msg_.dof_names.push_back(*dof);
     values_idx_.push_back(i);
     values_dot_idx_.push_back(
-      dot_iface.empty() ? std::nullopt : commands.find(dof + "/" + dot_iface));
+      dot_iface.empty() ? std::nullopt : commands.find(*dof + "/" + dot_iface));
   }
   if (values_idx_.empty()) {
     throw std::runtime_error(
@@ -41,10 +38,9 @@ void MultiDofCommandExecutor::configure(const PluginContext & ctx, const DataSto
   }
   msg_.values.assign(values_idx_.size(), 0.0);
   msg_.values_dot.assign(values_idx_.size(), 0.0);
-  pub_ = ctx.node->create_publisher<control_msgs::msg::MultiDOFCommand>(
-    topic, rclcpp::SystemDefaultsQoS());
   rt_pub_ = std::make_unique<realtime_tools::RealtimePublisher<control_msgs::msg::MultiDOFCommand>>(
-    pub_);
+    ctx.node->create_publisher<control_msgs::msg::MultiDOFCommand>(
+      topic, rclcpp::SystemDefaultsQoS()));
 }
 
 void MultiDofCommandExecutor::write(const DataStore & commands)

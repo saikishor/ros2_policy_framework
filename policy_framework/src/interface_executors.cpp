@@ -3,6 +3,8 @@
 
 #include "policy_framework/interface_executors.hpp"
 
+#include "entry_name.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -19,13 +21,6 @@ namespace policy_framework
 
 namespace
 {
-
-const std::string kPosition = "/position";
-
-bool ends_with(const std::string & s, const std::string & suffix)
-{
-  return s.size() > suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
 
 /// Value of a received, finite entry.
 std::optional<double> valid(const DataStore & store, size_t i)
@@ -44,7 +39,7 @@ void PdEffortExecutor::configure(
   auto names = params.joints;
   if (names.empty()) {
     for (const auto & n : commands.names()) {
-      if (ends_with(n, kPosition)) {names.push_back(n.substr(0, n.size() - kPosition.size()));}
+      if (const auto joint = strip_suffix(n, "/position")) {names.push_back(*joint);}
     }
   }
   const auto & effort = params.effort_interface;
@@ -67,8 +62,8 @@ void PdEffortExecutor::configure(
   feedback_.clear();
   for (size_t i = 0; i < names.size(); ++i) {
     const auto & j = names[i];
-    const auto ref_pos = commands.find(j + kPosition);
-    if (!ref_pos) {throw std::runtime_error(ctx.name + ": no command entry " + j + kPosition);}
+    const auto ref_pos = commands.find(j + "/position");
+    if (!ref_pos) {throw std::runtime_error(ctx.name + ": no command entry " + j + "/position");}
     Joint joint{*ref_pos, state.add(j + "/position"), state.add(j + "/velocity"),
       commands.find(j + "/velocity"), commands.find(j + "/stiffness"),
       commands.find(j + "/damping")};
@@ -119,7 +114,7 @@ void ReferenceInterfaceExecutor::configure(
   for (size_t i = 0; i < commands.size(); ++i) {
     const auto & name = commands.names()[i];
     const bool selected = std::any_of(
-      kinds.begin(), kinds.end(), [&](const std::string & k) {return ends_with(name, "/" + k);});
+      kinds.begin(), kinds.end(), [&](const std::string & k) {return strip_suffix(name, "/" + k).has_value();});
     if (!selected) {continue;}
     entries_.push_back(i);
     interfaces_.push_back(prefix.empty() ? name : prefix + "/" + name);
