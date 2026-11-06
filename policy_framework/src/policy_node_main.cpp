@@ -5,6 +5,7 @@
 
 #include "lifecycle_msgs/msg/state.hpp"
 #include "policy_framework/policy_node.hpp"
+#include "policy_framework/policy_node_parameters.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 /// Runs a PolicyNode. With the `autostart` parameter (default true) it configures and
@@ -14,7 +15,7 @@ int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<policy_framework::PolicyNode>();
-  if (node->declare_parameter<bool>("autostart", true)) {
+  if (policy_node::ParamListener(node).get_params().autostart) {
     if (node->configure().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE ||
       node->activate().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
     {

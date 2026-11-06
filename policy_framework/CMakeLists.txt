@@ -74,7 +74,7 @@ target_link_libraries(${PROJECT_NAME}
   PRIVATE onnxruntime::onnxruntime pinocchio::pinocchio ${PARAMETER_LIBRARIES})
 
 add_executable(policy_node src/policy_node_main.cpp)
-target_link_libraries(policy_node ${PROJECT_NAME})
+target_link_libraries(policy_node ${PROJECT_NAME} policy_node_parameters)
 
 # All plugin base classes live in this package, so every plugin type is exported against it.
 pluginlib_export_plugin_description_file(${PROJECT_NAME} plugins.xml)
