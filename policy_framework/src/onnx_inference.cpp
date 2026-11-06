@@ -88,9 +88,7 @@ struct OnnxInference::Impl
   std::vector<Ort::Value> input_values, output_values;
 };
 
-OnnxInference::OnnxInference()
-: impl_(std::make_unique<Impl>()) {}
-
+OnnxInference::OnnxInference() = default;  // impl_ is created by configure()
 OnnxInference::~OnnxInference() = default;
 
 std::string OnnxInference::resolve_model_path(const std::string & path)
@@ -138,8 +136,6 @@ void OnnxInference::configure(const PluginContext & ctx)
     model_.metadata[key.get()] = value ? value.get() : "";
   }
 
-  s.input_names.clear();
-  s.output_names.clear();
   for (size_t i = 0; i < s.session->GetInputCount(); ++i) {
     s.input_names.push_back(s.session->GetInputNameAllocated(i, allocator).get());
     model_.inputs[s.input_names.back()] =
@@ -150,12 +146,8 @@ void OnnxInference::configure(const PluginContext & ctx)
     model_.outputs[s.output_names.back()] =
       make_tensor(s.session->GetOutputTypeInfo(i), s.output_names.back());
   }
-  s.input_cnames.clear();
-  s.output_cnames.clear();
   for (const auto & n : s.input_names) {s.input_cnames.push_back(n.c_str());}
   for (const auto & n : s.output_names) {s.output_cnames.push_back(n.c_str());}
-  s.bound_inputs.clear();
-  s.bound_outputs.clear();
 
   RCLCPP_INFO(logger_, "Loaded ONNX model %s", model_path.c_str());
   for (const auto & [name, t] : model_.inputs) {
