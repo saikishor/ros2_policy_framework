@@ -3,6 +3,8 @@
 
 #include "policy_framework/kinematics.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 #include "pinocchio/algorithm/frames.hpp"

@@ -4,6 +4,8 @@
 #ifndef POLICY_FRAMEWORK__POLICY_NODE_HPP_
 #define POLICY_FRAMEWORK__POLICY_NODE_HPP_
 
+#include <memory>
+
 #include "policy_framework/policy_runner.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
