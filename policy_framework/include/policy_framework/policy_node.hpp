@@ -17,8 +17,8 @@ namespace policy_framework
  *
  * All inputs must come from input sources (topics) and commands leave through executors.
  * Parameters: those of PolicyRunner, plus `update_rate` (Hz, default 50), the policy step
- * rate, and `robot_description` (the URDF, needed only by the kinematics; its joints and IMU
- * must then also come from sources). The timer uses the node clock, so it follows `/clock`
+ * rate, `autostart` (default true) and `robot_description` (the URDF, needed only by the
+ * kinematics, whose joint positions and velocities must then also come from sources). The timer uses the node clock, so it follows `/clock`
  * with `use_sim_time`.
  *
  * - configure: loads everything; fails when a policy input is not provided by any source.

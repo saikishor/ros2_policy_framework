@@ -48,9 +48,9 @@ namespace policy_framework
  * held). A tick that finds the previous step still running is skipped with a warning.
  * Exclusive with is_async.
  *
- * Safety: executors run only once the active policy produced commands since activation. On
- * deactivation and when the policy fails, every executor's safe_values() are written (zero
- * effort for PdEffortExecutor).
+ * Safety: executors run only once the active policy produced commands since activation; after
+ * that, a step waiting for data keeps the last commands applied. On deactivation and when the
+ * policy fails, every executor's safe_values() are written (zero effort for PdEffortExecutor).
  *
  * On activation the first policy restarts from scratch. Policies are switched with the
  * `~/switch_policy` service.
