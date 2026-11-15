@@ -11,12 +11,15 @@ The same policy configuration runs
 
 and several policies can be loaded at once and **switched at runtime**.
 
+This README is the reference (parameters, plugins, behaviour). The concepts, with diagrams of
+how the data flows and how the pieces fit, are explained in [`docs/`](docs/index.rst).
+
 ## Packages
 
 | Package | Content |
 |---------|---------|
 | `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages), `SwitchPolicy` service |
-| `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` observation term and the Kangaroo deployment config/launch |
+| `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` and supermimic `MotionGoalTerm` observation terms and the Kangaroo deployment config/launch |
 
 ## Architecture
 
@@ -110,11 +113,27 @@ or, chaining into a pid_controller that closes the loop:
   the thread uses the default scheduler.
 - **is_async**: the standard ros2_control option moves the whole `update()` to its own thread.
   Suits a reference executor, not a PD law. Exclusive with `async_inference`.
-- **Safety**: executors run only once the active policy produced commands since activation;
-  after that a step waiting for data keeps the last commands. On deactivation and when a stage
-  fails (`update()` returns `ERROR`) each executor writes its safe values: zero effort for
-  `PdEffortExecutor`, nothing for `ReferenceInterfaceExecutor` (the chained controller holds its
-  reference).
+- **Safety**:
+  - *Hold*: from activation until the active policy produced its first commands (it may wait
+    for an input, or for its first inference) the executors hold the robot where it is:
+    `PdEffortExecutor` runs its PD law around the joint positions at activation, with the gains
+    the policy provides before its first step (`gains_as_commands`) or its `stiffness`/`damping`
+    parameters; `ReferenceInterfaceExecutor` writes nothing (the chained controller holds).
+    After that, a step waiting for data keeps the last commands.
+  - *Safe values*: on deactivation and when a stage fails (`update()` returns `ERROR`) each
+    executor writes its safe values: zero effort for `PdEffortExecutor`, nothing for
+    `ReferenceInterfaceExecutor`.
+  - *Unreadable state interfaces* (locked by their writer, e.g. an asynchronous hardware
+    component): the previous value is used for up to `max_failed_reads` consecutive updates;
+    one more writes the safe values and returns `ERROR`.
+  - *Safety entry* (`safety_entry`, e.g. `rl_safety_controller/safe`): a state entry, claimed
+    as a state interface, that is 0 while user commands must be ignored. The policy keeps
+    running (the robot keeps balancing) with neutral commands: zero velocity (`TwistSource`,
+    `TwistCommandTerm`), a still stand (`MotionGoalTerm`). Transitions are logged.
+- **Introspection**: `<controller>.policy_step_time_us` (duration of the last policy step) and
+  `<controller>.observation_age_ms` (age of the oldest input of that step when its commands
+  were applied) are registered with ros2_control's introspection, and available as
+  `PolicyController::timing()`.
 
 ## Configuration
 
@@ -136,7 +155,9 @@ name. Write floating point values with a decimal point (`50.0`).
 | `<policy>.<plugin param>` | Parameters of the policy's plugins |
 | `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
 | `kinematics.enabled`, `kinematics.joints` | Whole-body kinematics (default false), see below |
+| `safety_entry` | State entry that is 0 while user commands must be ignored (default empty: always accepted), see Safety |
 | `policy_rate` | Controller: policy rate in Hz (default 0 = every update) |
+| `max_failed_reads` | Controller: consecutive updates with an unreadable state interface that are tolerated (default 5) |
 | `async_inference`, `inference_thread_priority` | Controller: policy step in its own thread (default false), its priority (default 40) |
 | `update_rate` | Node: policy rate in Hz (default 50) |
 | `autostart` | Node: configure and activate on startup (default true) |
@@ -150,9 +171,11 @@ ros2 service call /<node or controller>/switch_policy policy_framework/srv/Switc
 
 A switch applies at the start of the next step and calls `reset()` on the activated policy's
 stages; requesting the active policy restarts it. A policy keeps its memory (history, previous
-outputs) when switched away and back, as `pal_policy_deployer` does; it is cleared only before
-its first activation and on every (re)activation of the node/controller, which also restarts
-the first policy. Per policy, `max_steps` (default 0 = unlimited) returns to the first policy
+outputs) when switched away and back, as `pal_policy_deployer` does, and while it is not active
+its preprocessor still `observe()`s every step, so its observation history follows the robot
+and it resumes from the real recent past. The memory is cleared only before its first
+activation and on every (re)activation of the node/controller, which also restarts the first
+policy. Per policy, `max_steps` (default 0 = unlimited) returns to the first policy
 after N steps (e.g. a jump motion), and `interruptible: false` rejects switches while it runs.
 All models are loaded at configuration: switching never loads or allocates.
 
@@ -169,6 +192,9 @@ at the URDF root link), shared by all policies through `PluginContext::kinematic
 from `<joint>/position` and `<joint>/velocity` (registered as state entries, so the controller
 claims them) on every controller update or node tick, before the policy step, once all were
 received. Its readers are thread-safe; see [Using the kinematics](#using-the-kinematics).
+With `async_inference` the policies get a second model, computed in the inference thread from
+the state snapshot of their step, so the frames a term reads always belong to the joint state
+it reads; `PolicyController::kinematics()` keeps following the state interfaces on every update.
 Limits: no base position or linear velocity in the world (needs a state estimator); joints
 must be revolute, continuous or prismatic (lock the others).
 
@@ -186,7 +212,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
-| `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type` |
+| `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `imu_frame` (URDF link of the IMU, for the base terms of pal_mjlab exports), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type`, `terms.motion_goal.topic` (`~/motion_reference`), `terms.motion_goal.timeout` (0.5 s) |
 | `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface` (`position`), `velocity_interface` (`velocity`, empty: none), `gains_controller` (empty: none), `gains_as_commands` (false) |
 | `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm | `topic` (`cmd_vel`), `timeout` (1.0 s, ≤ 0 disables) → linear.x, linear.y, angular.z; zero when absent or stale |
 
@@ -212,19 +238,53 @@ Builds the observation from the ONNX metadata exported by mjlab (`observation_na
 | `command` (otherwise) | `<velocity_command_name>/linear.x`, `linear.y`, `angular.z` |
 | any name with `terms.<name>.type` set | the `ObservationTerm` plugin of that class |
 
-The history length is `obs size / single observation size`. Each term is its own block of
-`history × dim` values, oldest first; as mjlab's `CircularBuffer`, the first step after a clear
-back-fills the whole history. A `time_step` input receives the steps since activation, and a
-motion command is re-seeded from the robot state on every activation.
+Each term is its own block of `history × dim` values, oldest first; as mjlab's
+`CircularBuffer`, the first step after a clear back-fills the whole history. The history length
+is `obs size / single observation size`, the same for every term. A `time_step` input receives
+the steps since activation, and a motion command is re-seeded from the robot state on every
+activation.
+
+**pal_mjlab exports** are recognised by their extra metadata:
+
+| Metadata | Effect |
+|----------|--------|
+| `observation_joint_names` | joints of `joint_pos` / `joint_vel` (a subset of `joint_names`) |
+| `observation_terms_dim` | checked against the size of every term |
+| `observation_terms_history_length` | history length of each term |
+| `goal_root_body` | the base link of the policy, wherever the IMU is mounted |
+
+| Term | Source |
+|------|--------|
+| `imu_ang_vel` | `<imu_name>/angular_velocity.{x,y,z}` |
+| `velocity_command` | `<velocity_command_name>/linear.x`, `linear.y`, `angular.z` |
+| `base_ang_vel` (with `goal_root_body`) | angular velocity of the base in its axes: the gyroscope reading moved to the base with the kinematics |
+| `base_projected_gravity` | gravity in the base frame, from the IMU orientation and the kinematics |
+| `motion_goal` | reference motion of a supermimic policy, see below |
+
+The base terms and `motion_goal` need `kinematics.enabled` and `imu_frame` (the URDF link of
+the IMU).
+
+**`motion_goal`** (`MotionGoalTerm`) reads a `pal_motion_msgs/MotionReference` topic
+(`terms.motion_goal.topic`, default `~/motion_reference`): `goal_num_future_frames` frames of
+goal joint positions, velocities and the reference root orientation in the base frame (first
+two columns of its rotation matrix). A message with fewer frames has its last one repeated.
+When a stream starts it is turned about z to the robot's heading and keeps that alignment.
+Without a usable reference (none yet, older than `terms.motion_goal.timeout`, malformed, or
+`safety_entry` at 0) the goal is a still stand at the robot's heading: `goal_hold_joint_pos`,
+else the default positions of the goal joints. The policy therefore never waits for a
+reference.
 
 ### MjlabPostprocessor
 
 Writes `<joint>/position = action_scale · action + default_joint_pos` (and `<joint>/velocity =
-0`) for the metadata joints minus `excluded_joints` (e.g. passive joints). The policy's
+0`) for the metadata joints minus `excluded_joints` (e.g. passive joints). pal_mjlab exports
+name the actuated joints themselves (`action_joint_names`; `excluded_joints` is then not used)
+and their offsets (`action_offset`, else their default positions). The policy's
 `joint_stiffness`/`joint_damping` metadata gains are either
 - written as `<joint>/stiffness` and `<joint>/damping` commands on every step
-  (`gains_as_commands`, for `PdEffortExecutor`: they follow policy switches immediately;
-  missing gains are a configuration error), or
+  (`gains_as_commands`, for `PdEffortExecutor`: they follow policy switches immediately, and
+  are known before the first step so that the executor can hold the robot; missing gains are
+  a configuration error), or
 - sent as `gains.<joint>.p/.d` parameters of the `gains_controller` pid_controller each time
   the policy is activated, retried every 0.5 s until its parameter service is up (only the
   latest activated policy's gains when switching quickly; missing gains are logged and the
@@ -303,6 +363,12 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
 - Register every state/command entry in `configure()`; in the cycle use only indices, and do
   not allocate, block or log every cycle.
 - `Preprocessor::compute` and `ObservationTerm::ready` return false until their inputs arrived.
+- `Preprocessor::observe` is called instead of `compute` while another policy is active: keep
+  time-dependent memory (a history) current there.
+- `Postprocessor::initial_commands` writes what is known before the first step (e.g. gains);
+  `InterfaceExecutor::hold` computes the values that keep the robot still until then.
+- A plugin that feeds user commands to a policy checks `CommandGate::open(state)` and uses its
+  neutral command while it is false (`safety_entry`).
 - `InputSource` callbacks never touch the store: buffer the message (`LatestMessage`) and copy it
   in `read()`.
 - Keep stamps flowing (see [Timestamps](#timestamps)). `policy_framework_mjlab` is a complete
@@ -347,14 +413,16 @@ own, and from other code through `PolicyController::kinematics()`):
 | `transform(f)`, `transform(f, ref)` | Pose in the root link / in another link |
 | `velocity(f, LOCAL\|ROOT_ALIGNED)` | Spatial velocity (linear, angular) |
 | `world_orientation(f, imu_frame, imu_quaternion)` | Orientation in the world from a measured IMU orientation (read from the state by the term) |
+| `world_angular_velocity(f, imu_frame, gyro)` | Angular velocity in the world, in the frame's axes, from a gyroscope on another link |
 | `ready()`, `stamp()` | An update happened; its stamp (oldest joint input) |
 | `with_lock(fn)` | Several reads from the same update |
 
 In a term: `frame()` in `configure()`, `kinematics->ready()` in `ready()`, `stamp()` as the
 stamp. Writer and readers share a `realtime_tools::prio_inherit_recursive_mutex`: `update()`
 never waits (it skips the update while a reader holds the lock, the next update catches up),
-and readers lock for a copy only. The model is not part of the state snapshot of
-`async_inference`, so use `with_lock()` for consistent reads there.
+and readers lock for a copy only. Use `with_lock()` for several reads from the same update.
+The model a term gets always matches the state its step reads, also with `async_inference`
+(see [Kinematics](#kinematics)).
 
 ### Timestamps
 
@@ -366,14 +434,15 @@ ages and the latency down to the commands:
 | State entry from a topic source | message header stamp; receive time when there is none (e.g. Twist) |
 | State entry from a state interface | time it was read (interfaces carry no stamp) |
 | Observation term | `ObservationTerm::compute()` return value; built-in terms: oldest of their entries |
-| Term fed back from previous outputs (`actions`, motion command) | previous observation stamp, flagged `from_previous_outputs` |
+| Term fed back from previous outputs (`actions`, motion command; a term returns `ObservationTerm::kFromPreviousOutputs`) | previous observation stamp, flagged `from_previous_outputs` |
 | Observation (`PolicyPipeline::observation_stamp()`) | oldest input stamp, feedback terms excluded |
 | Command entry | observation stamp of the step that computed it |
 
 A preprocessor reports `input_stamps()` (per term for mjlab, per entry for
-`ConcatPreprocessor`), a postprocessor writes the stamp it receives on every command. Stamps are
-not published yet (`MultiDOFCommand` has no header). Header stamps compare only when publishers
-use the node's clock.
+`ConcatPreprocessor`), a postprocessor writes the stamp it receives on every command. The
+controller publishes the age of each step's observation as introspection (see Introspection);
+the node does not publish stamps (`MultiDOFCommand` has no header). Header stamps compare only
+when publishers use the node's clock.
 
 ## Tests
 
