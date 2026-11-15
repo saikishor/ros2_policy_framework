@@ -42,6 +42,11 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * joints of `joint_pos` / `joint_vel`, a subset of `joint_names`), `observation_terms_dim`
  * (checked against the terms) and `observation_terms_history_length`; their terms
  * `imu_ang_vel` and `velocity_command` are `base_ang_vel` and the twist `command` above.
+ * Exports with a `goal_root_body` observe that link as their base, wherever the IMU is mounted
+ * (parameter `imu_frame`, its URDF link; needs `kinematics.enabled`):
+ * - `base_ang_vel`: the angular velocity of the base, in its axes (BaseFromImu)
+ * - `base_projected_gravity`: gravity in the base frame
+ * - `motion_goal`: the reference motion of a supermimic policy (MotionGoalTerm)
  *
  * History: each term is laid out as its own block, oldest first and newest last (matching
  * mjlab's per-term history with flattening). Its length is the term's
@@ -68,7 +73,7 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * If the model has a `time_step` input it receives the number of steps since reset(); the
  * motion command is re-seeded from the robot state after reset().
  *
- * Parameters (under `<policy>.`): `imu_name` (default `imu`), `velocity_command_name`
+ * Parameters (under `<policy>.`): `imu_name` (default `imu`), `imu_frame`, `velocity_command_name`
  * (default `cmd_vel`), `odometry_name` (default `odom`), `observation_input` (default `obs`).
  */
 class MjlabPreprocessor : public policy_framework::Preprocessor

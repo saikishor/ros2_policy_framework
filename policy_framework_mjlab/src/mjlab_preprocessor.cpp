@@ -13,6 +13,7 @@
 
 #include "policy_framework_mjlab/mjlab_preprocessor_parameters.hpp"
 #include "pluginlib/class_list_macros.hpp"
+#include "policy_framework_mjlab/base_from_imu.hpp"
 #include "policy_framework_mjlab/metadata.hpp"
 
 using policy_framework::DataStore;
@@ -165,6 +166,39 @@ private:
   bool first_ = true;
 };
 
+/// pal_mjlab base terms: the IMU measurements moved to the base link with the kinematics.
+class BaseTerm : public ObservationTerm
+{
+public:
+  enum class Kind {ANGULAR_VELOCITY, PROJECTED_GRAVITY};
+  BaseTerm(Kind kind, std::string imu_name, std::string imu_frame, std::string base)
+  : kind_(kind), imu_name_(std::move(imu_name)), imu_frame_(std::move(imu_frame)),
+    base_body_(std::move(base)) {}
+
+  size_t configure(const PluginContext & ctx, const ModelInfo &, DataStore & state) override
+  {
+    base_.configure(ctx, state, imu_name_, imu_frame_, base_body_);
+    return 3;
+  }
+  bool ready(const DataStore & state) override {return base_.ready(state);}
+  double compute(const DataStore & state, const TensorMap &, float * out) override
+  {
+    if (kind_ == Kind::ANGULAR_VELOCITY) {
+      const Eigen::Vector3d w = base_.angular_velocity(state);
+      for (int i = 0; i < 3; ++i) {out[i] = static_cast<float>(w[i]);}
+    } else {
+      const Eigen::Quaterniond q = base_.orientation(state);
+      projected_gravity(q.w(), q.x(), q.y(), q.z(), out);
+    }
+    return base_.stamp(state);
+  }
+
+private:
+  Kind kind_;
+  std::string imu_name_, imu_frame_, base_body_;
+  BaseFromImu base_;
+};
+
 }  // namespace
 
 void MjlabPreprocessor::configure(
@@ -180,9 +214,20 @@ void MjlabPreprocessor::configure(
   const auto & imu = params.imu_name;
   obs_input_ = params.observation_input;
 
+  // pal_mjlab exports that observe their base name its link; the IMU may sit on another one.
+  const auto base_it = md.find("goal_root_body");
+  const std::string base = base_it == md.end() ? "" : base_it->second;
   const Names xyz{"x", "y", "z"};
   // The built-in term of each name; null for a name this preprocessor does not know.
   auto builtin = [&](const std::string & name) -> std::shared_ptr<ObservationTerm> {
+      if (name == "base_ang_vel" && !base.empty()) {
+        return std::make_shared<BaseTerm>(
+          BaseTerm::Kind::ANGULAR_VELOCITY, imu, params.imu_frame, base);
+      }
+      if (name == "base_projected_gravity") {
+        return std::make_shared<BaseTerm>(
+          BaseTerm::Kind::PROJECTED_GRAVITY, imu, params.imu_frame, require(md, "goal_root_body"));
+      }
       if (name == "base_ang_vel" || name == "imu_ang_vel") {
         return std::make_shared<StateTerm>(entries(imu + "/angular_velocity.", xyz));
       }

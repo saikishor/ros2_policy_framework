@@ -416,6 +416,68 @@ TEST(MjlabPreprocessor, TermPluginsReadTheRunnerKinematics)
   EXPECT_EQ(in["obs"].data, (Floats{1.0F, 0.0F, 1.0F}));
 }
 
+// pal_mjlab base terms: the base is the metadata goal_root_body, not the link of the IMU.
+ModelInfo base_model()
+{
+  ModelInfo m;
+  m.metadata = {{"joint_names", "j1,j2,j3"}, {"default_joint_pos", "0,0,0"},
+    {"observation_names", "base_ang_vel,base_projected_gravity"},
+    {"goal_root_body", "base_link"}};
+  m.inputs["obs"] = zeros(6);
+  m.outputs["actions"] = zeros(1);
+  return m;
+}
+
+TEST(MjlabPreprocessor, BaseTermsOfPalExportsMoveTheImuToTheBaseWithTheKinematics)
+{
+  const auto model = base_model();
+  auto ctx = make_context({{"p.imu_frame", "imu_link"}});
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  ctx.kinematics = std::make_shared<policy_framework::Kinematics>(urdf.str());
+  DataStore state;
+  MjlabPreprocessor pre;
+  pre.configure(ctx, model, state);
+  TensorMap in = model.inputs;
+
+  // Base rolled by 0.3 rad; imu_link is yawed by 90 degrees w.r.t. it (joints at zero).
+  const Eigen::Quaterniond imu = Eigen::AngleAxisd(0.3, Eigen::Vector3d::UnitX()) *
+    Eigen::Quaterniond(Eigen::AngleAxisd(M_PI / 2, Eigen::Vector3d::UnitZ()));
+  set(state, "imu/orientation.w", imu.w());
+  set(state, "imu/orientation.x", imu.x());
+  set(state, "imu/orientation.y", imu.y());
+  set(state, "imu/orientation.z", imu.z());
+  set(state, "imu/angular_velocity.x", 0.1);
+  set(state, "imu/angular_velocity.y", 0.2);
+  set(state, "imu/angular_velocity.z", 0.3);
+  EXPECT_FALSE(pre.compute(state, model.outputs, in));  // the kinematics has no joint state yet
+
+  const Eigen::VectorXd zero = Eigen::VectorXd::Zero(3);
+  ASSERT_TRUE(ctx.kinematics->update(zero, zero, 1.0));
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  const Floats expected = {
+    -0.2F, 0.1F, 0.3F,  // the gyroscope reading in the base axes
+    0.0F, -static_cast<float>(std::sin(0.3)), -static_cast<float>(std::cos(0.3))};
+  for (size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_NEAR(in["obs"].data[i], expected[i], 1e-6) << "index " << i;
+  }
+}
+
+TEST(MjlabPreprocessor, BaseTermsOfPalExportsNeedTheKinematicsAndTheImuFrame)
+{
+  DataStore state;
+  EXPECT_THROW(
+    MjlabPreprocessor().configure(make_context({{"p.imu_frame", "imu_link"}}), base_model(), state),
+    std::runtime_error);  // no kinematics
+  auto ctx = make_context();
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  ctx.kinematics = std::make_shared<policy_framework::Kinematics>(urdf.str());
+  EXPECT_THROW(MjlabPreprocessor().configure(ctx, base_model(), state), std::runtime_error);
+}
+
 TEST(MjlabPreprocessor, RejectsAnEmptyObservationInput)
 {
   DataStore state;
