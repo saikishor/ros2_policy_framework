@@ -191,17 +191,15 @@ double MjlabPreprocessor::current_value(
   return 0.0;
 }
 
-bool MjlabPreprocessor::compute(
-  const DataStore & state, const TensorMap & last_outputs, TensorMap & inputs)
+bool MjlabPreprocessor::ready(const DataStore & state) const
 {
-  if (!state.all_received(required_)) {
-    return false;
-  }
-  for (auto & t : terms_) {
-    if (t.plugin && !t.plugin->ready(state)) {return false;}
-  }
-  auto & obs = inputs.at(obs_input_).data;
-  size_t offset = 0;
+  if (!state.all_received(required_)) {return false;}
+  return std::all_of(
+    terms_.begin(), terms_.end(), [&](const Term & t) {return !t.plugin || t.plugin->ready(state);});
+}
+
+void MjlabPreprocessor::push(const DataStore & state, const TensorMap & last_outputs)
+{
   double obs_stamp = 0.0;  // oldest known stamp of the terms not derived from previous outputs
   for (size_t k = 0; k < terms_.size(); ++k) {
     auto & t = terms_[k];
@@ -222,14 +220,31 @@ bool MjlabPreprocessor::compute(
         std::copy(newest, newest + t.dim, t.history.begin() + h * t.dim);
       }
     }
+  }
+  history_filled_ = true;
+  prev_obs_stamp_ = obs_stamp;
+}
+
+void MjlabPreprocessor::observe(const DataStore & state, const TensorMap & last_outputs)
+{
+  // Before the first compute() there is no history to keep current: it back-fills then.
+  if (history_filled_ && ready(state)) {push(state, last_outputs);}
+}
+
+bool MjlabPreprocessor::compute(
+  const DataStore & state, const TensorMap & last_outputs, TensorMap & inputs)
+{
+  if (!ready(state)) {return false;}
+  push(state, last_outputs);
+  auto & obs = inputs.at(obs_input_).data;
+  size_t offset = 0;
+  for (const auto & t : terms_) {
     std::copy(t.history.begin(), t.history.end(), obs.begin() + offset);
     offset += t.history.size();
   }
   if (has_time_step_) {
     inputs.at("time_step").data[0] = static_cast<float>(step_);
   }
-  history_filled_ = true;
-  prev_obs_stamp_ = obs_stamp;
   ++step_;
   return true;
 }

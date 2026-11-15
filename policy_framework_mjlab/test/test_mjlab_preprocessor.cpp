@@ -167,6 +167,37 @@ TEST(MjlabPreprocessor, BuildsTermMajorHistoryOldestFirst)
   }
 }
 
+TEST(MjlabPreprocessor, ObserveKeepsTheHistoryCurrentWhileInactive)
+{
+  const auto model = twist_model(2);
+  DataStore state;
+  MjlabPreprocessor pre;
+  pre.configure(make_context(), model, state);
+  TensorMap in = model.inputs;
+
+  // Not started yet: nothing to keep current, the first compute() still back-fills.
+  pre.observe(state, model.outputs);
+  set_upright_robot(state, 1.1, 1.2);
+  pre.reset();
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_NEAR(in["obs"].data[6 + i], (Floats{1.0F, 1.0F, 1.0F, 1.0F})[i], 1e-6);
+  }
+
+  // Another policy is active: the robot moves on, and so does the history.
+  set(state, "a/position", 2.1);
+  pre.observe(state, model.outputs);
+  set(state, "a/position", 3.1);
+  pre.observe(state, model.outputs);
+
+  set(state, "a/position", 4.1);
+  pre.reset();
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_NEAR(in["obs"].data[6 + i], (Floats{3.0F, 1.0F, 4.0F, 1.0F})[i], 1e-6);
+  }
+}
+
 TEST(MjlabPreprocessor, ReportsTheOldestStampOfEachTerm)
 {
   const auto model = twist_model(1);

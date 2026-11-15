@@ -42,9 +42,10 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * term is laid out as its own block, oldest first and newest last (matching mjlab's
  * per-term history with flattening). As mjlab's CircularBuffer does, the first step after
  * clear() (first activation, host restart) back-fills the whole history with the current
- * value. The history is kept when the policy is switched away and back (reset() only), like
- * pal_policy_deployer: back-filling a single frame of a dynamic state (e.g. a jump landing)
- * made history-3 policies fall in simulation.
+ * value. The history is kept when the policy is switched away and back (reset() only) and,
+ * like pal_policy_deployer, keeps following the robot while another policy is active
+ * (observe()), so the policy resumes with the real recent past. Back-filling a single frame
+ * of a dynamic state instead (e.g. a jump landing) made history-3 policies fall in simulation.
  *
  * Term plugins: with `<policy>.terms.<term>.type` set, the term is a
  * policy_framework::ObservationTerm plugin of that class (parameters under
@@ -76,6 +77,10 @@ public:
   bool compute(
     const policy_framework::DataStore & state, const policy_framework::TensorMap & last_outputs,
     policy_framework::TensorMap & inputs) override;
+  /// Pushes the current values into the history, once it was started by a compute().
+  void observe(
+    const policy_framework::DataStore & state,
+    const policy_framework::TensorMap & last_outputs) override;
   const policy_framework::InputStamps & input_stamps() const override {return stamps_;}
 
   /// @return Number of past observations per term in the model input. Valid after configure().
@@ -103,6 +108,12 @@ private:
   double current_value(
     const Term & term, const policy_framework::DataStore & state,
     const policy_framework::TensorMap & last_outputs, float * out) const;
+
+  /// @return true when every input of every term is available.
+  bool ready(const policy_framework::DataStore & state) const;
+  /// Append the current value of every term to its history (and record the stamps).
+  void push(
+    const policy_framework::DataStore & state, const policy_framework::TensorMap & last_outputs);
 
   // Declared before terms_ so that it outlives the plugin instances.
   std::unique_ptr<pluginlib::ClassLoader<policy_framework::ObservationTerm>> term_loader_;
