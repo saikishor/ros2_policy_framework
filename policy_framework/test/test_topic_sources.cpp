@@ -140,6 +140,28 @@ TEST_F(TopicSourcesTest, TwistIsZeroBeforeFirstMessageAndAfterTimeout)
   EXPECT_DOUBLE_EQ(store.get(wz), 0.0);
 }
 
+TEST_F(TopicSourcesTest, TwistIsZeroWhileTheSafetyEntryIsNotSet)
+{
+  make_node({{"cmd_vel.topic", "/test_cmd_vel_safety"}});
+  policy_framework::TwistSource src;
+  src.configure({node, "cmd_vel", nullptr, "safety/safe"});
+  const auto vx = store.add("cmd_vel/linear.x");
+  const auto safe = store.add("safety/safe");
+  geometry_msgs::msg::Twist msg;
+  msg.linear.x = 0.3;
+  publish("/test_cmd_vel_safety", msg);
+  const double now = node->get_clock()->now().seconds();
+
+  src.read(store, now);  // safety not known yet: not safe
+  EXPECT_DOUBLE_EQ(store.get(vx), 0.0);
+  store.set(safe, 1.0, now);
+  src.read(store, now);
+  EXPECT_DOUBLE_EQ(store.get(vx), 0.3);
+  store.set(safe, 0.0, now);
+  src.read(store, now);
+  EXPECT_DOUBLE_EQ(store.get(vx), 0.0);
+}
+
 TEST_F(TopicSourcesTest, OdometryWritesPoseAndTwist)
 {
   make_node({{"odom.topic", "/test_odom"}});

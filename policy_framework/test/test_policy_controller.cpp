@@ -168,6 +168,14 @@ TEST_F(PolicyControllerTest, KinematicsIsUpdatedOnEveryUpdateNotOnlyPolicySteps)
       Eigen::AngleAxisd(M_PI / 2, Eigen::Vector3d::UnitZ()).toRotationMatrix()));
 }
 
+TEST_F(PolicyControllerTest, ClaimsTheSafetyEntryAsAStateInterface)
+{
+  init({{"safety_entry", "rl_safety_controller/safe"}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  const auto names = controller.state_interface_configuration().names;
+  EXPECT_NE(std::find(names.begin(), names.end(), "rl_safety_controller/safe"), names.end());
+}
+
 TEST_F(PolicyControllerTest, InputsProvidedByTopicSourcesAreNotClaimed)
 {
   init({

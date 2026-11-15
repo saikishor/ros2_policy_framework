@@ -129,6 +129,7 @@ void TwistSource::configure_source(const PluginContext & ctx)
 {
   timeout_ = twist_source::ParamListener(ctx.node, ctx.name).get_params().timeout;
   logger_ = ctx.node->get_logger().get_child(ctx.name);
+  gate_ = CommandGate(ctx);
   fields_ = FieldWriter(
     ctx.name, {"linear.x", "linear.y", "linear.z", "angular.x", "angular.y", "angular.z"});
 }
@@ -143,7 +144,7 @@ void TwistSource::read(DataStore & state, double now)
     RCLCPP_INFO_EXPRESSION(logger_, !stale, "Velocity command resumed");
     timed_out_ = stale;
   }
-  if (!in.msg || stale) {
+  if (!in.msg || stale || !gate_.open(state)) {
     const double zero[6] = {};
     fields_.write(state, zero, now);
     return;

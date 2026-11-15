@@ -52,6 +52,11 @@ policy_runner:
       default_value: true
       description: "false: switch requests are rejected while this policy is active."
       read_only: true
+  safety_entry:
+    type: string
+    default_value: ""
+    description: "State entry (a state interface in PolicyController, e.g. rl_safety_controller/safe) that is 0 while user commands (velocity command, motion reference) must be ignored and replaced by neutral ones. Empty: always accepted."
+    read_only: true
   executors:
     type: string_array
     default_value: []

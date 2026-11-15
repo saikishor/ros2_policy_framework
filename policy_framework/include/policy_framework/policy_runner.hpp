@@ -33,6 +33,8 @@ namespace policy_framework
  *   - `<policy>.max_steps` (int, default 0): > 0 returns to the first policy after N steps.
  *   - `<policy>.interruptible` (bool, default true)
  *   plus the parameters of each of its plugins, also under `<policy>.`.
+ * - `safety_entry` (string, default empty): state entry that is 0 while user commands must be
+ *   ignored (see CommandGate), registered here and handed to the plugins.
  * - `executors` (string array): executor names; each needs `<executor>.type` (plugin class).
  * - `kinematics.enabled`, `kinematics.joints`: optional whole-body Kinematics model, handed to
  *   the policies' plugins in PluginContext::kinematics and updated by update_kinematics() from the
@@ -134,6 +136,8 @@ private:
   rclcpp::Service<srv::SwitchPolicy>::SharedPtr switch_service_;
 
   // Used only from step(), to log transitions once instead of every cycle.
+  CommandGate command_gate_;
+  bool commands_accepted_ = true;
   PolicyPipeline::Status last_status_ = PolicyPipeline::Status::OK;
   std::string last_policy_;
 };

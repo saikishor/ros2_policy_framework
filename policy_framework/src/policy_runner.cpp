@@ -52,19 +52,24 @@ void PolicyRunner::configure(
     executor_types_.emplace_back(name, params.executors_map.at(name).type);
   }
 
+  const auto & safety = params.safety_entry;
+  if (!safety.empty()) {state_.add(safety);}
+  command_gate_ = CommandGate(PluginContext{node, "", nullptr, safety});
+  commands_accepted_ = true;
+
   // Before the policies: their plugins look frames up while configuring.
   configure_kinematics(node, robot_description);
 
   for (const auto & name : params.sources) {
     const auto & type = params.sources_map.at(name).type;
     auto source = source_loader_->createSharedInstance(type);
-    source->configure({node, name});
+    source->configure({node, name, nullptr, safety});
     sources_.push_back(source);
     RCLCPP_INFO(logger, "Input source '%s' (%s)", name.c_str(), type.c_str());
   }
 
   for (const auto & name : params.policies) {
-    const PluginContext ctx{node, name, kinematics_};
+    const PluginContext ctx{node, name, kinematics_, safety};
     const auto & stages = params.policies_map.at(name);
     Policy p;
     p.name = name;
@@ -171,6 +176,12 @@ void PolicyRunner::update_kinematics()
 
 PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & commands)
 {
+  if (const bool accepted = command_gate_.open(state); accepted != commands_accepted_) {
+    // Logged on transitions only, like the ones below.
+    RCLCPP_WARN_EXPRESSION(logger_, !accepted, "Safety entry is 0: ignoring user commands");
+    RCLCPP_INFO_EXPRESSION(logger_, accepted, "Safety entry is set: accepting user commands");
+    commands_accepted_ = accepted;
+  }
   PolicyPipeline::Status status;
   try {
     status = pipeline_->step(state, commands);

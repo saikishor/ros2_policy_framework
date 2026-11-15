@@ -8,6 +8,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -85,6 +86,40 @@ struct PluginContext
   /// Whole-body kinematics (null unless `kinematics.enabled`), updated by the host before every
   /// policy step; given to the policy stages and their observation terms only.
   std::shared_ptr<Kinematics> kinematics = nullptr;
+  /// State entry that is 0 while user commands must be ignored (see CommandGate); empty: none.
+  std::string safety_entry = "";
+};
+
+/**
+ * @brief Whether user commands (a velocity command, a motion reference...) may be used now.
+ *
+ * With the host parameter `safety_entry` set (e.g. `rl_safety_controller/safe`, a state
+ * interface in the controller), commands are only accepted while that state entry was received
+ * and is greater than 0. Plugins that feed user commands to a policy check open() and use their
+ * neutral command (e.g. zero velocity) while it is false; the policy itself keeps running.
+ */
+class CommandGate
+{
+public:
+  CommandGate() = default;
+  explicit CommandGate(const PluginContext & ctx)
+  : name_(ctx.safety_entry) {}
+
+  /// Real-time safe after the first call (which looks the entry up in @p state).
+  bool open(const DataStore & state)
+  {
+    if (name_.empty()) {return true;}
+    if (!resolved_) {
+      index_ = state.find(name_);
+      resolved_ = true;
+    }
+    return index_ && state.received(*index_) && state.get(*index_) > 0.0;
+  }
+
+private:
+  std::string name_;
+  std::optional<size_t> index_;
+  bool resolved_ = false;
 };
 
 /**

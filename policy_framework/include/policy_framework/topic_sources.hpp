@@ -113,9 +113,10 @@ private:
 /**
  * @brief geometry_msgs/Twist → `<name>/linear.{x,y,z}`, `<name>/angular.{x,y,z}`.
  *
- * A velocity command that never arrived or is older than `timeout` seconds (parameter, default
- * 1.0, <= 0 disables it) is written as zero, so a policy never acts on a stale command and does
- * not wait for a command to start.
+ * A velocity command that never arrived, is older than `timeout` seconds (parameter, default
+ * 1.0, <= 0 disables it) or arrives while the host's `safety_entry` is 0 (CommandGate) is written
+ * as zero, so a policy never acts on a stale or unsafe command and does not wait for a command
+ * to start.
  */
 class TwistSource : public TopicSource<geometry_msgs::msg::Twist>
 {
@@ -126,6 +127,7 @@ public:
 private:
   void configure_source(const PluginContext & ctx) override;
   FieldWriter fields_;
+  CommandGate gate_;
   double timeout_ = 1.0;
   bool timed_out_ = false;
   rclcpp::Logger logger_ = rclcpp::get_logger("twist_source");
