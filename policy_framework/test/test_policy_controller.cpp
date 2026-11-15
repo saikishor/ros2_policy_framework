@@ -7,7 +7,9 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
+#include <future>
 #include <memory>
+#include <shared_mutex>
 #include <sstream>
 #include <thread>
 #include <string>
@@ -264,6 +266,44 @@ TEST_F(PolicyControllerTest, ExecutorsHoldTheRobotUntilThePolicyProducesCommands
   set_state("j1/velocity", 0.0);
   ASSERT_EQ(update(), controller_interface::return_type::OK);
   EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+}
+
+TEST_F(PolicyControllerTest, FailsWhenAStateInterfaceCannotBeReadForTooLong)
+{
+  with_reference_executor = false;
+  init({
+    {"max_failed_reads", 2},
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{0.0, 0.0}}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+
+  // Another thread (e.g. an asynchronous hardware component) keeps j1/position locked.
+  auto & mutex = states.front()->get_mutex();
+  std::promise<void> locked, release;
+  std::thread writer([&]() {
+      std::unique_lock<std::shared_mutex> lock(mutex);
+      locked.set_value();
+      release.get_future().wait();
+    });
+  locked.get_future().wait();
+  EXPECT_EQ(update(), controller_interface::return_type::OK);  // tolerated: previous value kept
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+  EXPECT_EQ(update(), controller_interface::return_type::ERROR);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+  release.set_value();
+  writer.join();
+
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
 }
 
 TEST_F(PolicyControllerTest, PolicyRunsAtPolicyRateAndExecutorsOnEveryUpdate)

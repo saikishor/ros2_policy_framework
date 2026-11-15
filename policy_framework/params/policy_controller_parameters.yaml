@@ -6,6 +6,13 @@ policy_controller:
     read_only: true
     validation:
       gt_eq<>: [0.0]
+  max_failed_reads:
+    type: int
+    default_value: 5
+    description: "Consecutive updates in which a state interface could not be read (locked by its writer) that are tolerated, keeping the previous value; one more fails the controller."
+    read_only: true
+    validation:
+      gt_eq<>: [0]
   async_inference:
     type: bool
     default_value: false

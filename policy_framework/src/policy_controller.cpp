@@ -55,6 +55,7 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
     return CallbackReturn::ERROR;
   }
   const double policy_rate = params.policy_rate;
+  max_failed_reads_ = static_cast<unsigned int>(params.max_failed_reads);
   if (params.async_inference && is_async()) {
     RCLCPP_ERROR(
       get_node()->get_logger(), "async_inference and is_async are exclusive: async_inference "
@@ -173,6 +174,7 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
   }
   policy_ready_ = false;
   hold_start_ = true;
+  failed_reads_ = 0;
   updates_ = 0;
   inference_pending_ = false;
   runner_->restart();
@@ -212,10 +214,23 @@ controller_interface::return_type PolicyController::update(
   // Node clock (not the update time) so that it compares with the topic receive times.
   const double now = get_node()->now().seconds();
   auto & state = runner_->state();
+  bool read_failed = false;
   for (size_t i = 0; i < state_interfaces_.size(); ++i) {
-    // get_optional() fails only when the interface is locked by the writer (async mode): keep
-    // the previous value then.
-    if (const auto v = state_interfaces_[i].get_optional()) {state.set(state_idx_[i], *v, now);}
+    // get_optional() fails only when the interface is locked by its writer (e.g. an
+    // asynchronous hardware component): keep the previous value then, but not for long.
+    if (const auto v = state_interfaces_[i].get_optional()) {
+      state.set(state_idx_[i], *v, now);
+    } else {
+      read_failed = true;
+    }
+  }
+  failed_reads_ = read_failed ? failed_reads_ + 1 : 0;
+  if (failed_reads_ > max_failed_reads_) {
+    RCLCPP_ERROR_THROTTLE(
+      get_node()->get_logger(), *get_node()->get_clock(), 1000,
+      "State interfaces could not be read for %u updates in a row", failed_reads_);
+    write_safe_values();
+    return controller_interface::return_type::ERROR;
   }
 
   // The policy steps every decimation_ updates (starting with the first); executors run on
