@@ -4,6 +4,7 @@
 #include "policy_framework/policy_controller.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <exception>
 #include <optional>
@@ -12,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "hardware_interface/introspection.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework/policy_controller_parameters.hpp"
 
@@ -20,6 +22,8 @@ namespace policy_framework
 
 PolicyController::CallbackReturn PolicyController::on_init()
 {
+  REGISTER_ROS2_CONTROL_INTROSPECTION("policy_step_time_us", &timing_.step_time_us);
+  REGISTER_ROS2_CONTROL_INTROSPECTION("observation_age_ms", &timing_.observation_age_ms);
   return CallbackReturn::SUCCESS;
 }
 
@@ -175,6 +179,7 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
   policy_ready_ = false;
   hold_start_ = true;
   failed_reads_ = 0;
+  timing_ = Timing();
   updates_ = 0;
   inference_pending_ = false;
   runner_->restart();
@@ -241,13 +246,28 @@ controller_interface::return_type PolicyController::update(
   // the hand-off to the inference thread) so that the step sees this cycle's.
   runner_->update_kinematics();
   std::optional<PolicyPipeline::Status> status;  // of a step whose result arrived now
+  // Called right after a step finished, before the next one may start in the inference thread.
+  auto record_observation_age = [&]() {
+      const double stamp = runner_->pipeline().observation_stamp();
+      timing_.observation_age_ms =
+        status == PolicyPipeline::Status::OK && stamp > 0.0 ? (now - stamp) * 1e3 : 0.0;
+    };
   if (!inference_) {
-    if (policy_tick) {status = runner_->step();}
+    if (policy_tick) {
+      const auto start = std::chrono::steady_clock::now();
+      status = runner_->step();
+      timing_.step_time_us =
+        std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
+      record_observation_age();
+    }
   } else {
     // Collect a finished step, then maybe trigger the next one; never wait for inference.
     if (inference_pending_ && !inference_->is_trigger_cycle_in_progress()) {
       inference_pending_ = false;
       status = inference_->get_last_return_value();
+      timing_.step_time_us =
+        std::chrono::duration<double, std::micro>(inference_->get_last_execution_time()).count();
+      record_observation_age();
       if (status == PolicyPipeline::Status::OK) {
         runner_->commands().copy_values_from(async_commands_);
       }

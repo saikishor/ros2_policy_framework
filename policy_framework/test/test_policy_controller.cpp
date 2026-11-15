@@ -203,6 +203,19 @@ TEST_F(PolicyControllerTest, UpdateRunsPolicyFromStateToCommandInterfaces)
   EXPECT_DOUBLE_EQ(command("pid/j2/position"), 6.5);
 }
 
+TEST_F(PolicyControllerTest, MeasuresThePolicyStepAndTheAgeOfItsObservation)
+{
+  init();
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  EXPECT_DOUBLE_EQ(controller.timing().step_time_us, 0.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_GT(controller.timing().step_time_us, 0.0);
+  // State interfaces are stamped with the update that read them: no age when synchronous.
+  EXPECT_DOUBLE_EQ(controller.timing().observation_age_ms, 0.0);
+}
+
 TEST_F(PolicyControllerTest, WithoutExecutorsNoCommandInterfaceIsClaimed)
 {
   with_reference_executor = false;

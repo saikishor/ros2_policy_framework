@@ -56,6 +56,9 @@ namespace policy_framework
  * previous value is used meanwhile), every executor's safe_values() are written (zero effort
  * for PdEffortExecutor).
  *
+ * Introspection: the duration of each policy step and the age of its observation (see Timing)
+ * are registered with ros2_control's introspection.
+ *
  * On activation the first policy restarts from scratch. Policies are switched with the
  * `~/switch_policy` service.
  */
@@ -70,6 +73,18 @@ public:
   CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
   controller_interface::return_type update(
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
+
+  /// Measurements of the last finished policy step, also published by ros2_control's
+  /// introspection as `<controller>.policy_step_time_us` and `.observation_age_ms`.
+  struct Timing
+  {
+    /// Duration of the step (preprocessor, inference, postprocessor), microseconds.
+    double step_time_us = 0.0;
+    /// Age of the oldest input of the step when its commands were applied, milliseconds: how
+    /// stale the observation behind the current commands was. 0 when unknown.
+    double observation_age_ms = 0.0;
+  };
+  const Timing & timing() const {return timing_;}
 
   /**
    * @return The whole-body kinematics (null unless `kinematics.enabled`), updated on every
@@ -107,6 +122,7 @@ private:
   bool hold_start_ = true;     ///< No update since activation yet.
   unsigned int max_failed_reads_ = 5;
   unsigned int failed_reads_ = 0;  ///< Consecutive updates with an unreadable state interface.
+  Timing timing_;
   unsigned int decimation_ = 1;  ///< Updates per policy step.
   uint64_t updates_ = 0;         ///< Updates since activation.
 };
