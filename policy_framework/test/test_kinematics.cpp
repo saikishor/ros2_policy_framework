@@ -129,6 +129,32 @@ TEST(Kinematics, WorldOrientationComposesAnImuOrientationWithTheBody)
   EXPECT_TRUE(kin.world_orientation(base, imu, q_imu).isApprox(expected_base));
 }
 
+TEST(Kinematics, WorldAngularVelocityRemovesTheJointMotionFromAGyroscope)
+{
+  Kinematics kin(read_urdf());
+  const auto base = kin.frame("base_link");
+  const auto link2 = kin.frame("link2");
+  const auto imu = kin.frame("imu_link");
+  ASSERT_TRUE(
+    kin.update(
+      by_name(kin, {{"j1", 0.4}, {"j2", -0.2}}), by_name(kin, {{"j1", 2.0}, {"j2", -1.0}}), 1.0));
+
+  // The base turns at `base_rate` (in its own axes) while the joints turn the IMU further:
+  // j1 about the base z, j2 about the y axis of link1, which j1 has turned by 0.4 rad.
+  const Eigen::Vector3d base_rate(0.1, -0.3, 0.5);
+  const Eigen::Vector3d joints_rate = 2.0 * Eigen::Vector3d::UnitZ() +
+    -1.0 * (Eigen::AngleAxisd(0.4, Eigen::Vector3d::UnitZ()) * Eigen::Vector3d::UnitY());
+  const Eigen::Matrix3d base_from_imu = kin.transform(imu).linear();
+  const Eigen::Vector3d gyro = base_from_imu.transpose() * (base_rate + joints_rate);
+
+  // The root link does not move in the model, whatever the joints do.
+  EXPECT_TRUE(kin.velocity(base, Kinematics::Reference::LOCAL).isZero());
+  EXPECT_TRUE(kin.world_angular_velocity(base, imu, gyro).isApprox(base_rate, 1e-9));
+  // link2 carries the IMU, yawed by 90 degrees: the same rate in other axes.
+  const Eigen::Vector3d link2_rate = Eigen::AngleAxisd(M_PI / 2, Eigen::Vector3d::UnitZ()) * gyro;
+  EXPECT_TRUE(kin.world_angular_velocity(link2, imu, gyro).isApprox(link2_rate, 1e-9));
+}
+
 TEST(Kinematics, UpdateIsSkippedWithoutBlockingWhileAReaderHoldsTheLock)
 {
   Kinematics kin(read_urdf());

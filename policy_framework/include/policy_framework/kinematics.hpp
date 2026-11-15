@@ -91,6 +91,15 @@ public:
   Eigen::Quaterniond world_orientation(
     size_t frame, size_t imu_frame, const Eigen::Quaterniond & imu) const;
 
+  /**
+   * @return Angular velocity in the world of @p frame, in its own axes (rad/s), given the
+   *         angular velocity @p imu_angular_velocity measured by a gyroscope in the frame
+   *         @p imu_frame (in the IMU axes): what that gyroscope would measure mounted on
+   *         @p frame, i.e. without the motion of the joints in between.
+   */
+  Eigen::Vector3d world_angular_velocity(
+    size_t frame, size_t imu_frame, const Eigen::Vector3d & imu_angular_velocity) const;
+
   /// Call @p f(*this) under the lock: its reads all come from the same update().
   template<typename F>
   void with_lock(F && f) const

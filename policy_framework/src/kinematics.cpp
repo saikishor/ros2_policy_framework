@@ -169,4 +169,21 @@ Eigen::Quaterniond Kinematics::world_orientation(
   return imu * Eigen::Quaterniond(o[imu_frame].rotation().transpose() * o[frame].rotation());
 }
 
+Eigen::Vector3d Kinematics::world_angular_velocity(
+  size_t frame, size_t imu_frame, const Eigen::Vector3d & imu_angular_velocity) const
+{
+  Lock lock(mutex_);
+  const auto & m = *model_;
+  // Of the frame w.r.t. the root, in the frame's axes. A copy: angular() refers to a temporary.
+  auto relative = [&](size_t f) -> Eigen::Vector3d {
+      return pinocchio::getFrameVelocity(m.model, m.data, f, pinocchio::LOCAL).angular();
+    };
+  // The root turns as the IMU does minus what the joints add; the frame as the root plus what
+  // the joints add to it.
+  const Eigen::Vector3d root_in_imu = imu_angular_velocity - relative(imu_frame);
+  const Eigen::Matrix3d frame_from_imu =
+    m.data.oMf[frame].rotation().transpose() * m.data.oMf[imu_frame].rotation();
+  return frame_from_imu * root_in_imu + relative(frame);
+}
+
 }  // namespace policy_framework
