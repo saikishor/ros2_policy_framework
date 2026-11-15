@@ -137,17 +137,27 @@ void MjlabPostprocessor::configure(
 
   std::vector<std::string> actuated;
   offset_.clear();
-  for (size_t i = 0; i < joints.size(); ++i) {
-    if (std::find(excluded.begin(), excluded.end(), joints[i]) == excluded.end()) {
-      actuated.push_back(joints[i]);
-      offset_.push_back(defaults[i]);
+  if (md.count("action_joint_names")) {
+    // pal_mjlab exports name their action joints, and usually their offsets.
+    auto action = policy_framework_mjlab::joints(md, "action_joint_names");
+    actuated = std::move(action.names);
+    offset_ = md.count("action_offset") ?
+      parse_doubles(md.at("action_offset")) : std::move(action.defaults);
+  } else {
+    for (size_t i = 0; i < joints.size(); ++i) {
+      if (std::find(excluded.begin(), excluded.end(), joints[i]) == excluded.end()) {
+        actuated.push_back(joints[i]);
+        offset_.push_back(defaults[i]);
+      }
     }
   }
   const auto actions = model.outputs.find("actions");
   if (actions == model.outputs.end()) {
     throw std::runtime_error("Model has no 'actions' output");
   }
-  if (actuated.size() != actions->second.data.size() || scale_.size() != actuated.size()) {
+  if (actuated.size() != actions->second.data.size() || scale_.size() != actuated.size() ||
+    offset_.size() != actuated.size())
+  {
     throw std::runtime_error(
             "Model has " + std::to_string(actions->second.data.size()) + " actions and " +
             std::to_string(scale_.size()) + " action scales but " +

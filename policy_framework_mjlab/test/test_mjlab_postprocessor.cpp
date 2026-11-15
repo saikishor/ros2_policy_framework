@@ -68,6 +68,30 @@ TEST(MjlabPostprocessor, ScalesAndOffsetsActionsOfActuatedJoints)
   EXPECT_DOUBLE_EQ(commands.get(commands.index("c/velocity")), 0.0);
 }
 
+TEST(MjlabPostprocessor, PalExportsNameTheirActionJointsAndOffsets)
+{
+  auto m = model();
+  m.metadata["action_joint_names"] = "c,a";  // their own order; 'passive' needs no exclusion
+  m.metadata["action_offset"] = "1.0,2.0";
+  DataStore commands;
+  MjlabPostprocessor post;
+  post.configure(make_context({{"p.velocity_interface", ""}}), m, commands);
+  EXPECT_EQ(commands.names(), (StringArray{"c/position", "a/position"}));
+  auto out = m.outputs;
+  out["actions"].data = {0.5F, -1.0F};
+  ASSERT_TRUE(post.compute(out, 0.0, commands));
+  EXPECT_DOUBLE_EQ(commands.get(commands.index("c/position")), 2.0 * 0.5 + 1.0);
+  EXPECT_DOUBLE_EQ(commands.get(commands.index("a/position")), 3.0 * -1.0 + 2.0);
+
+  // Without action_offset the offsets are the default positions of the action joints.
+  m.metadata.erase("action_offset");
+  DataStore other;
+  MjlabPostprocessor post2;
+  post2.configure(make_context({{"p.velocity_interface", ""}}), m, other);
+  ASSERT_TRUE(post2.compute(out, 0.0, other));
+  EXPECT_DOUBLE_EQ(other.get(other.index("c/position")), 2.0 * 0.5 + 0.3);
+}
+
 TEST(MjlabPostprocessor, GainsCanBeWrittenAsCommandsForAControllerSidePdLaw)
 {
   const auto m = model();

@@ -40,6 +40,10 @@ std::vector<rclcpp::Parameter> make_gain_parameters(
  * For each of them: `<joint>/<position_interface>` = action_scale * action + default_joint_pos,
  * and, unless `velocity_interface` is empty, `<joint>/<velocity_interface>` = 0.
  *
+ * pal_mjlab exports name the actuated joints themselves (`action_joint_names`, in action order;
+ * `excluded_joints` is then not used) and their offsets (`action_offset`, else their default
+ * positions).
+ *
  * Gains: when `gains_controller` is set (e.g. `/rl_impedance_controller`), the metadata
  * `joint_stiffness` / `joint_damping` of the policy are sent as that pid_controller's
  * `gains.<joint>.p/.d` parameters every time the policy is activated, from a non real-time
