@@ -66,6 +66,37 @@ TEST(TwistCommandTerm, IsLinearXYAngularZOfTheTopicAndZeroWhenAbsentOrStale)
   EXPECT_FLOAT_EQ(out[2], 0.0F);
 }
 
+TEST(TwistCommandTerm, IsZeroWhileTheSafetyEntryIsZero)
+{
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({{"p.terms.command.topic", "/test_twist_term_safety"}});
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_twist_term_safety", opts);
+  DataStore state;
+  const auto safe = state.add("safety/safe");
+  state.set(safe, 1.0, 0.0);
+  TwistCommandTerm term;
+  ASSERT_EQ(term.configure({node, "p.terms.command", nullptr, "safety/safe"}, ModelInfo{}, state), 3U);
+
+  auto pub_node = std::make_shared<rclcpp::Node>("test_twist_term_safety_pub");
+  auto pub = pub_node->create_publisher<geometry_msgs::msg::Twist>("/test_twist_term_safety", 10);
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(node->get_node_base_interface());
+  geometry_msgs::msg::Twist msg;
+  msg.linear.x = 0.6;
+  float out[3] = {};
+  for (int i = 0; i < 500 && out[0] < 0.5F; ++i) {
+    pub->publish(msg);
+    exec.spin_some();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    term.compute(state, TensorMap{}, out);
+  }
+  ASSERT_FLOAT_EQ(out[0], 0.6F);
+
+  state.set(safe, 0.0, 0.0);
+  term.compute(state, TensorMap{}, out);
+  EXPECT_FLOAT_EQ(out[0], 0.0F);
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

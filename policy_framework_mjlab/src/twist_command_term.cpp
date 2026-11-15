@@ -13,15 +13,16 @@ size_t TwistCommandTerm::configure_term(
   const policy_framework::PluginContext & ctx, const policy_framework::ModelInfo &)
 {
   timeout_ = twist_command_term::ParamListener(ctx.node, ctx.name).get_params().timeout;
+  gate_ = policy_framework::CommandGate(ctx);
   return 3;
 }
 
 double TwistCommandTerm::compute(
-  const policy_framework::DataStore &, const policy_framework::TensorMap &, float * out)
+  const policy_framework::DataStore & state, const policy_framework::TensorMap &, float * out)
 {
   const auto in = latest();
   const double t = now();
-  if (!in.msg || (timeout_ > 0.0 && t - in.receive_time > timeout_)) {
+  if (!in.msg || (timeout_ > 0.0 && t - in.receive_time > timeout_) || !gate_.open(state)) {
     out[0] = out[1] = out[2] = 0.0F;
     return t;
   }

@@ -15,8 +15,9 @@ namespace policy_framework_mjlab
  *        geometry_msgs/Twist topic, without going through the state store.
  *
  * Parameters (under `<policy>.terms.<term>.`): `topic` (default `cmd_vel`), `timeout` (seconds,
- * default 1.0, <= 0 disables it). Always ready: a command that never arrived or is older than
- * `timeout` is zero, so a policy neither waits for a command nor acts on a stale one.
+ * default 1.0, <= 0 disables it). Always ready: a command that never arrived, is older than
+ * `timeout` or arrives while the host's `safety_entry` is 0 (policy_framework::CommandGate) is
+ * zero, so a policy neither waits for a command nor acts on a stale or unsafe one.
  *
  * Stamp: the receive time (a Twist has no header); the current time for a zero command.
  */
@@ -35,6 +36,7 @@ protected:
   override;
 
 private:
+  policy_framework::CommandGate gate_;
   double timeout_ = 1.0;
 };
 
