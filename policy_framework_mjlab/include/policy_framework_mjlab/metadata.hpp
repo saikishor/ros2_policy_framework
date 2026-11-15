@@ -5,6 +5,7 @@
 #define POLICY_FRAMEWORK_MJLAB__METADATA_HPP_
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -93,7 +94,7 @@ inline std::vector<size_t> parse_counts(
 {
   std::vector<size_t> out;
   for (const double v : parse_doubles(require(metadata, key))) {
-    if (v < 1.0 || v != static_cast<double>(static_cast<size_t>(v))) {
+    if (v < 1.0 || std::trunc(v) < v) {
       throw std::runtime_error("Model metadata '" + key + "' must hold positive integers");
     }
     out.push_back(static_cast<size_t>(v));
