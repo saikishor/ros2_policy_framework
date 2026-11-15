@@ -444,6 +444,16 @@ controller publishes the age of each step's observation as introspection (see In
 the node does not publish stamps (`MultiDOFCommand` has no header). Header stamps compare only
 when publishers use the node's clock.
 
+## Documentation
+
+The concept pages in [`docs/`](docs/index.rst) are reStructuredText for Sphinx, with Graphviz
+diagrams:
+
+```bash
+pip install sphinx && sudo apt install graphviz
+sphinx-build -b html docs docs/_build/html
+```
+
 ## Tests
 
 ```bash
