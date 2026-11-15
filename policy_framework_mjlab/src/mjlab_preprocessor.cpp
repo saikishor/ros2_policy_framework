@@ -15,6 +15,7 @@
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework_mjlab/base_from_imu.hpp"
 #include "policy_framework_mjlab/metadata.hpp"
+#include "policy_framework_mjlab/motion_goal_term.hpp"
 
 using policy_framework::DataStore;
 using policy_framework::get_parameter;
@@ -228,6 +229,7 @@ void MjlabPreprocessor::configure(
         return std::make_shared<BaseTerm>(
           BaseTerm::Kind::PROJECTED_GRAVITY, imu, params.imu_frame, require(md, "goal_root_body"));
       }
+      if (name == "motion_goal") {return std::make_shared<MotionGoalTerm>(imu, params.imu_frame);}
       if (name == "base_ang_vel" || name == "imu_ang_vel") {
         return std::make_shared<StateTerm>(entries(imu + "/angular_velocity.", xyz));
       }

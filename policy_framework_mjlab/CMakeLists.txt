@@ -12,6 +12,7 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   src/mjlab_preprocessor.cpp
   src/mjlab_postprocessor.cpp
   src/twist_command_term.cpp
+  src/motion_goal_term.cpp
 )
 # Parameter declaration and validation, generated from params/*.yaml.
 foreach(params IN ITEMS mjlab_preprocessor mjlab_postprocessor twist_command_term)
@@ -35,6 +36,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_mjlab_postprocessor ${PROJECT_NAME})
   ament_add_gtest(test_twist_command_term test/test_twist_command_term.cpp)
   target_link_libraries(test_twist_command_term ${PROJECT_NAME})
+  ament_add_gtest(test_motion_goal_term test/test_motion_goal_term.cpp)
+  target_link_libraries(test_motion_goal_term ${PROJECT_NAME})
+  target_compile_definitions(test_motion_goal_term PRIVATE
+    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/../policy_framework/test/urdf/test_robot.urdf")
   ament_add_gtest(test_shipped_models test/test_shipped_models.cpp TIMEOUT 300)
   target_link_libraries(test_shipped_models ${PROJECT_NAME})
 endif()
