@@ -87,27 +87,12 @@ public:
   size_t history_length() const {return history_length_;}
 
 private:
-  enum class Kind
-  {
-    STATE,  ///< The state entries as-is.
-    PROJECTED_GRAVITY, JOINT_POS, ACTIONS, MOTION_COMMAND, PLUGIN
-  };
   struct Term
   {
-    Term() = default;
-    Term(Kind k, size_t d, std::vector<size_t> i = {})
-    : kind(k), dim(d), idx(std::move(i)) {}
-    Kind kind = Kind::STATE;
+    std::shared_ptr<policy_framework::ObservationTerm> term;  ///< Built-in or plugin.
     size_t dim = 0;
-    std::vector<size_t> idx;     ///< State entries read (motion command: positions, velocities).
     std::vector<float> history;  ///< history_length * dim values, oldest first.
-    std::shared_ptr<policy_framework::ObservationTerm> plugin;  ///< Kind::PLUGIN only.
   };
-
-  /// Write the current value of @p term into @p out (term.dim values). @return Its stamp.
-  double current_value(
-    const Term & term, const policy_framework::DataStore & state,
-    const policy_framework::TensorMap & last_outputs, float * out) const;
 
   /// @return true when every input of every term is available.
   bool ready(const policy_framework::DataStore & state) const;
@@ -121,8 +106,6 @@ private:
   size_t history_length_ = 1;
   std::string obs_input_;
   bool has_time_step_ = false;
-  std::vector<double> default_joint_pos_;
-  std::vector<size_t> required_;  ///< Every state entry read by the built-in terms.
   // Control-cycle state.
   bool history_filled_ = false;
   policy_framework::InputStamps stamps_;

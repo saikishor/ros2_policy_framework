@@ -28,6 +28,10 @@ class ObservationTerm
 {
 public:
   virtual ~ObservationTerm() = default;
+
+  /// Returned by compute() for a value derived from the policy's previous outputs (e.g. the
+  /// last action): it has no stamp of its own and does not count for the observation stamp.
+  static constexpr double kFromPreviousOutputs = -1.0;
   /**
    * @brief Configure; register in @p state every entry read.
    * @param ctx Parameters of the term live under `<ctx.name>.`.
@@ -49,6 +53,7 @@ public:
    * @return Stamp of the written value (seconds, node clock): when the data was produced,
    *         e.g. the message header stamp, else its receive time; the current time for a
    *         value generated now (e.g. a default). Read it from the same message as the value.
+   *         kFromPreviousOutputs for a value taken from @p last_outputs.
    */
   virtual double compute(const DataStore & state, const TensorMap & last_outputs, float * out) = 0;
 };
