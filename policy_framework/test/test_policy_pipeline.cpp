@@ -50,6 +50,7 @@ public:
   void configure(const PluginContext &, const ModelInfo &, DataStore &) override {}
   void reset() override {++resets;}
   void clear() override {++clears;}
+  void observe(const DataStore &, const TensorMap &) override {++observations;}
   bool compute(const DataStore &, const TensorMap & last, TensorMap & in) override
   {
     if (!ready) {return false;}
@@ -61,6 +62,7 @@ public:
   policy_framework::InputStamps stamps;
   int resets = 0;
   int clears = 0;
+  int observations = 0;
 };
 
 class FakePostprocessor : public policy_framework::Postprocessor
@@ -120,6 +122,24 @@ TEST_F(PolicyPipelineTest, StepRunsStagesAndFeedsBackPreviousOutputs)
   EXPECT_DOUBLE_EQ(cmd(), 2.0);
   EXPECT_EQ(a.pre->resets, 1);  // activated once
   EXPECT_EQ(a.pre->clears, 1);  // first start is from scratch
+}
+
+TEST_F(PolicyPipelineTest, InactivePoliciesObserveEveryStep)
+{
+  Fakes a(1.0F), b(10.0F);
+  pipeline.add_policy(a.policy("a"));
+  pipeline.add_policy(b.policy("b"));
+
+  for (int i = 0; i < 3; ++i) {ASSERT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::OK);}
+  EXPECT_EQ(a.pre->observations, 0);  // the active policy computes instead
+  EXPECT_EQ(b.pre->observations, 3);
+  EXPECT_EQ(b.inf->runs, 0);
+
+  std::string msg;
+  ASSERT_TRUE(pipeline.request_switch("b", msg));
+  ASSERT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::OK);
+  EXPECT_EQ(a.pre->observations, 1);
+  EXPECT_EQ(b.pre->observations, 3);
 }
 
 TEST_F(PolicyPipelineTest, CommandsCarryTheOldestStampOfTheObservation)

@@ -158,6 +158,18 @@ public:
   virtual bool compute(
     const DataStore & state, const TensorMap & last_outputs, TensorMap & inputs) = 0;
   /**
+   * @brief Called from the control cycle on every step while another policy is active, instead
+   *        of compute(). Keep time-dependent memory current here (e.g. the observation
+   *        history), so that the policy does not resume from a stale past when switched back.
+   * @param last_outputs Model outputs of the last step of this policy.
+   */
+  virtual void observe(const DataStore & state, const TensorMap & last_outputs)
+  {
+    (void)state;
+    (void)last_outputs;
+  }
+
+  /**
    * @return One stamp per input of the last successful compute() (e.g. per observation term
    *         or per entry). The names and their order are fixed after configure(); only the
    *         stamps change. Empty when the preprocessor does not report stamps.

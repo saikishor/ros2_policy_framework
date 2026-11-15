@@ -59,6 +59,9 @@ PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore &
     needs_reset_ = true;
   }
   auto & e = entries_[active_.load()];
+  for (auto & other : entries_) {
+    if (&other != &e) {other.policy.preprocessor->observe(state, other.outputs);}
+  }
   if (e.needs_clear) {
     for (auto & [name, t] : e.outputs) {std::fill(t.data.begin(), t.data.end(), 0.0F);}
     e.policy.preprocessor->clear();

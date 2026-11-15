@@ -36,7 +36,8 @@ struct Policy
  * preprocessor and postprocessor are reset(). A policy keeps its memory (previous outputs,
  * preprocessor history) across a switch away and back, like pal_policy_deployer; it is only
  * cleared (outputs zeroed, Preprocessor::clear()) before its first activation and after
- * restart().
+ * restart(). While a policy is not active its preprocessor observe()s every step instead, so
+ * that this memory follows the robot.
  *
  * Policies must all be added before the first step(); step() itself does not allocate unless
  * the plugins do.
