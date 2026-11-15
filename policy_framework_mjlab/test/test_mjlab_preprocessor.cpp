@@ -71,7 +71,7 @@ ModelInfo motion_model()
 
 void set(DataStore & s, const std::string & name, double v, double stamp = 0.0)
 {
-  s.set(s.index(name), v, stamp);
+  s.set(s.add(name), v, stamp);  // add(): a model may not read every entry a helper sets
 }
 
 void set_upright_robot(DataStore & s, double pos_a, double pos_b)
@@ -196,6 +196,66 @@ TEST(MjlabPreprocessor, ObserveKeepsTheHistoryCurrentWhileInactive)
   for (size_t i = 0; i < 4; ++i) {
     EXPECT_NEAR(in["obs"].data[6 + i], (Floats{3.0F, 1.0F, 4.0F, 1.0F})[i], 1e-6);
   }
+}
+
+// A pal_mjlab export: 'p' is passive (not observed), and every term has its own history length.
+// obs = imu_ang_vel 3x1 + joint_pos 2x3 + actions 1x2 + velocity_command 3x1 = 14.
+ModelInfo pal_model()
+{
+  ModelInfo m;
+  m.metadata = {
+    {"joint_names", "a,p,b"},
+    {"default_joint_pos", "0.1,0.5,0.2"},
+    {"observation_joint_names", "a,b"},
+    {"observation_names", "imu_ang_vel,joint_pos,actions,velocity_command"},
+    {"observation_terms_dim", "3.000,2.000,1.000,3.000"},
+    {"observation_terms_history_length", "1.000,3.000,2.000,1.000"},
+  };
+  m.inputs["obs"] = zeros(14);
+  m.outputs["actions"] = zeros(1);
+  return m;
+}
+
+TEST(MjlabPreprocessor, PalExportsHaveObservedJointsAndPerTermHistory)
+{
+  const auto model = pal_model();
+  DataStore state;
+  MjlabPreprocessor pre;
+  pre.configure(make_context(), model, state);
+  EXPECT_FALSE(state.find("p/position").has_value());  // not observed
+  EXPECT_EQ(pre.history_length(), 3U);                 // the longest
+  pre.reset();
+  set_upright_robot(state, 1.1, 1.2);
+  TensorMap in = model.inputs;
+  TensorMap out = model.outputs;
+
+  ASSERT_TRUE(pre.compute(state, out, in));
+  out["actions"].data[0] = 0.7F;
+  set(state, "a/position", 2.1);
+  ASSERT_TRUE(pre.compute(state, out, in));
+  const Floats expected = {
+    0.5F, 0, 0,                        // imu_ang_vel, 1 frame
+    1.0F, 1.0F, 1.0F, 1.0F, 2.0F, 1.0F,  // joint_pos, 3 frames, relative to the defaults of a, b
+    0, 0.7F,                           // actions, 2 frames
+    0.4F, 0, 0,                        // velocity_command, 1 frame
+  };
+  for (size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_NEAR(in["obs"].data[i], expected[i], 1e-6) << "index " << i;
+  }
+}
+
+TEST(MjlabPreprocessor, RejectsPalExportsWithInconsistentTerms)
+{
+  DataStore state;
+  auto wrong_dim = pal_model();
+  wrong_dim.metadata["observation_terms_dim"] = "3.000,5.000,1.000,3.000";
+  EXPECT_THROW(MjlabPreprocessor().configure(make_context(), wrong_dim, state), std::runtime_error);
+  auto wrong_total = pal_model();
+  wrong_total.metadata["observation_terms_history_length"] = "1,3,3,1";
+  EXPECT_THROW(MjlabPreprocessor().configure(make_context(), wrong_total, state), std::runtime_error);
+  auto wrong_count = pal_model();
+  wrong_count.metadata["observation_terms_history_length"] = "1,3";
+  EXPECT_THROW(MjlabPreprocessor().configure(make_context(), wrong_count, state), std::runtime_error);
 }
 
 TEST(MjlabPreprocessor, ReportsTheOldestStampOfEachTerm)

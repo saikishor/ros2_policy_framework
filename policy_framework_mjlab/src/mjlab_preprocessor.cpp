@@ -172,7 +172,7 @@ void MjlabPreprocessor::configure(
   DataStore & state)
 {
   const auto & md = model.metadata;
-  const auto [joints, defaults] = policy_framework_mjlab::joints(md);
+  const auto [joints, defaults] = policy_framework_mjlab::joints(md, "observation_joint_names");
   const auto cmd_it = md.find("command_names");
   const bool motion = cmd_it != md.end() && cmd_it->second == "motion";
 
@@ -183,7 +183,7 @@ void MjlabPreprocessor::configure(
   const Names xyz{"x", "y", "z"};
   // The built-in term of each name; null for a name this preprocessor does not know.
   auto builtin = [&](const std::string & name) -> std::shared_ptr<ObservationTerm> {
-      if (name == "base_ang_vel") {
+      if (name == "base_ang_vel" || name == "imu_ang_vel") {
         return std::make_shared<StateTerm>(entries(imu + "/angular_velocity.", xyz));
       }
       if (name == "base_lin_acc") {
@@ -201,17 +201,18 @@ void MjlabPreprocessor::configure(
       if (name == "joint_vel") {return std::make_shared<StateTerm>(entries("", joints, "/velocity"));}
       if (name == "actions") {return std::make_shared<ActionsTerm>();}
       if (name == "command" && motion) {return std::make_shared<MotionCommandTerm>(joints);}
-      if (name == "command") {
+      if (name == "command" || name == "velocity_command") {
         return std::make_shared<StateTerm>(
           entries(params.velocity_command_name + "/", {"linear.x", "linear.y", "angular.z"}));
       }
       return nullptr;
     };
 
+  const auto names = split(require(md, "observation_names"));
   terms_.clear();
   stamps_.clear();
   size_t single_dim = 0;
-  for (const auto & name : split(require(md, "observation_names"))) {
+  for (const auto & name : names) {
     Term t;
     // Not a generated parameter: the term names come from the model metadata.
     const auto plugin = get_parameter<std::string>(ctx, "terms." + name + ".type", "");
@@ -240,14 +241,41 @@ void MjlabPreprocessor::configure(
     throw std::runtime_error("Model has no '" + obs_input_ + "' input");
   }
   const auto obs_dim = in->second.data.size();
-  if (single_dim == 0 || obs_dim % single_dim != 0) {
-    throw std::runtime_error(
-            "Observation size " + std::to_string(obs_dim) +
-            " is not a multiple of the single observation size " + std::to_string(single_dim));
+  if (md.count("observation_terms_dim")) {
+    const auto dims = parse_counts(md, "observation_terms_dim", names.size());
+    for (size_t k = 0; k < names.size(); ++k) {
+      if (dims[k] != terms_[k].dim) {
+        throw std::runtime_error(
+                "Observation term '" + names[k] + "' has size " + std::to_string(dims[k]) +
+                " in the model metadata but " + std::to_string(terms_[k].dim) + " here");
+      }
+    }
   }
-  history_length_ = obs_dim / single_dim;
+  std::vector<size_t> lengths;
+  if (md.count("observation_terms_history_length")) {
+    // pal_mjlab exports: a history length per term.
+    lengths = parse_counts(md, "observation_terms_history_length", names.size());
+  } else {
+    if (single_dim == 0 || obs_dim % single_dim != 0) {
+      throw std::runtime_error(
+              "Observation size " + std::to_string(obs_dim) +
+              " is not a multiple of the single observation size " + std::to_string(single_dim));
+    }
+    lengths.assign(names.size(), obs_dim / single_dim);
+  }
+  size_t total = 0;
+  history_length_ = 0;
+  for (size_t k = 0; k < terms_.size(); ++k) {
+    terms_[k].history.assign(lengths[k] * terms_[k].dim, 0.0F);
+    total += terms_[k].history.size();
+    history_length_ = std::max(history_length_, lengths[k]);
+  }
+  if (total != obs_dim) {
+    throw std::runtime_error(
+            "The observation terms add up to " + std::to_string(total) + " values, but the '" +
+            obs_input_ + "' input has " + std::to_string(obs_dim));
+  }
   has_time_step_ = model.inputs.count("time_step") > 0;
-  for (auto & t : terms_) {t.history.assign(history_length_ * t.dim, 0.0F);}
   RCLCPP_INFO(
     ctx.node->get_logger(), "[%s] mjlab observation: %zu terms, single size %zu, history %zu%s",
     ctx.name.c_str(), terms_.size(), single_dim, history_length_,
@@ -291,8 +319,8 @@ void MjlabPreprocessor::push(const DataStore & state, const TensorMap & last_out
     }
     if (!history_filled_) {
       // Like mjlab's CircularBuffer: the first push after clear back-fills the whole history.
-      for (size_t h = 0; h + 1 < history_length_; ++h) {
-        std::copy(newest, newest + t.dim, t.history.begin() + h * t.dim);
+      for (auto frame = t.history.begin(); frame + t.dim < t.history.end(); frame += t.dim) {
+        std::copy(newest, newest + t.dim, frame);
       }
     }
   }

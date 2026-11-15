@@ -38,9 +38,15 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  *   previous step (the robot joint positions/velocities on the first step after reset);
  *   otherwise a twist `<velocity_command_name>/linear.x`, `linear.y`, `angular.z`.
  *
- * History: the history length is the input size divided by the single observation size. Each
- * term is laid out as its own block, oldest first and newest last (matching mjlab's
- * per-term history with flattening). As mjlab's CircularBuffer does, the first step after
+ * pal_mjlab exports are recognised by their extra metadata: `observation_joint_names` (the
+ * joints of `joint_pos` / `joint_vel`, a subset of `joint_names`), `observation_terms_dim`
+ * (checked against the terms) and `observation_terms_history_length`; their terms
+ * `imu_ang_vel` and `velocity_command` are `base_ang_vel` and the twist `command` above.
+ *
+ * History: each term is laid out as its own block, oldest first and newest last (matching
+ * mjlab's per-term history with flattening). Its length is the term's
+ * `observation_terms_history_length`; without that metadata, the same for every term: the
+ * input size divided by the single observation size. As mjlab's CircularBuffer does, the first step after
  * clear() (first activation, host restart) back-fills the whole history with the current
  * value. The history is kept when the policy is switched away and back (reset() only) and,
  * like pal_policy_deployer, keeps following the robot while another policy is active
@@ -83,7 +89,8 @@ public:
     const policy_framework::TensorMap & last_outputs) override;
   const policy_framework::InputStamps & input_stamps() const override {return stamps_;}
 
-  /// @return Number of past observations per term in the model input. Valid after configure().
+  /// @return Frames of the term with the longest history in the model input. Valid after
+  ///         configure().
   size_t history_length() const {return history_length_;}
 
 private:

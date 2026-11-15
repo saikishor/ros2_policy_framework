@@ -4,6 +4,7 @@
 #ifndef POLICY_FRAMEWORK_MJLAB__METADATA_HPP_
 #define POLICY_FRAMEWORK_MJLAB__METADATA_HPP_
 
+#include <algorithm>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -58,6 +59,51 @@ inline Joints joints(const std::map<std::string, std::string> & metadata)
     throw std::runtime_error("default_joint_pos and joint_names sizes differ");
   }
   return j;
+}
+
+/**
+ * @return The joints listed in metadata[key] (a subset of `joint_names`, e.g. pal_mjlab's
+ *         `observation_joint_names`) with their defaults; every model joint when there is no
+ *         such key.
+ * @throws std::runtime_error when a listed joint is not a model joint.
+ */
+inline Joints joints(const std::map<std::string, std::string> & metadata, const std::string & key)
+{
+  const auto all = joints(metadata);
+  const auto it = metadata.find(key);
+  if (it == metadata.end()) {return all;}
+  Joints subset;
+  for (const auto & name : split(it->second)) {
+    const auto pos = std::find(all.names.begin(), all.names.end(), name);
+    if (pos == all.names.end()) {
+      throw std::runtime_error("Model metadata '" + key + "' has unknown joint '" + name + "'");
+    }
+    subset.names.push_back(name);
+    subset.defaults.push_back(all.defaults[static_cast<size_t>(pos - all.names.begin())]);
+  }
+  return subset;
+}
+
+/**
+ * @return metadata[key] as @p size counts (pal_mjlab writes them as "3.000").
+ * @throws std::runtime_error on another size or a value that is not a positive integer.
+ */
+inline std::vector<size_t> parse_counts(
+  const std::map<std::string, std::string> & metadata, const std::string & key, size_t size)
+{
+  std::vector<size_t> out;
+  for (const double v : parse_doubles(require(metadata, key))) {
+    if (v < 1.0 || v != static_cast<double>(static_cast<size_t>(v))) {
+      throw std::runtime_error("Model metadata '" + key + "' must hold positive integers");
+    }
+    out.push_back(static_cast<size_t>(v));
+  }
+  if (out.size() != size) {
+    throw std::runtime_error(
+            "Model metadata '" + key + "' has " + std::to_string(out.size()) + " values, expected " +
+            std::to_string(size));
+  }
+  return out;
 }
 
 }  // namespace policy_framework_mjlab
