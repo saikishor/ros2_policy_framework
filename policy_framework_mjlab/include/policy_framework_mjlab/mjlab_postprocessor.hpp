@@ -50,7 +50,7 @@ std::vector<rclcpp::Parameter> make_gain_parameters(
  * With `gains_as_commands` the same gains are also written as command entries
  * `<joint>/stiffness` and `<joint>/damping` on every step, for a PD law in the controller
  * (policy_framework/PdEffortExecutor): gains then follow policy switches with no parameter
- * service involved. Missing metadata gains are then a configuration error.
+ * service involved. They are also the policy's initial commands, known before its first step. Missing metadata gains are then a configuration error.
  *
  * Parameters (under `<policy>.`): `excluded_joints` (string array, default empty),
  * `position_interface` (default `position`), `velocity_interface` (default `velocity`),
@@ -68,6 +68,8 @@ public:
     policy_framework::DataStore & commands) override;
   /// Real-time safe: only flags the gains to be sent.
   void reset() override;
+  /// With `gains_as_commands`: the gains, so that a PD law can hold the robot before the first step.
+  void initial_commands(policy_framework::DataStore & commands) override;
   bool compute(
     const policy_framework::TensorMap & outputs, double stamp,
     policy_framework::DataStore & commands) override;

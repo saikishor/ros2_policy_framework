@@ -214,6 +214,11 @@ void MjlabPostprocessor::reset()
   if (gains_sender_) {gains_sender_->request(&gains_request_);}
 }
 
+void MjlabPostprocessor::initial_commands(DataStore & commands)
+{
+  for (size_t i = 0; i < gain_idx_.size(); ++i) {commands.set(gain_idx_[i], gain_values_[i], 0.0);}
+}
+
 bool MjlabPostprocessor::compute(
   const policy_framework::TensorMap & outputs, double stamp, DataStore & commands)
 {

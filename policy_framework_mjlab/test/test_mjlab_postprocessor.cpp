@@ -77,6 +77,12 @@ TEST(MjlabPostprocessor, GainsCanBeWrittenAsCommandsForAControllerSidePdLaw)
   for (const auto * n : {"a/stiffness", "a/damping", "c/stiffness", "c/damping"}) {
     EXPECT_TRUE(commands.find(n).has_value()) << n;
   }
+  // Before the first step only the gains are known, for the executors to hold the robot.
+  post.initial_commands(commands);
+  EXPECT_DOUBLE_EQ(commands.get(commands.index("c/stiffness")), 30.0);
+  EXPECT_TRUE(commands.received(commands.index("a/damping")));
+  EXPECT_FALSE(commands.received(commands.index("a/position")));
+
   auto out = m.outputs;
   ASSERT_TRUE(post.compute(out, 7.5, commands));
   EXPECT_DOUBLE_EQ(commands.get(commands.index("a/stiffness")), 10.0);
