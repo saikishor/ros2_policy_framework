@@ -233,6 +233,39 @@ TEST_F(PolicyControllerTest, PdEffortExecutorComputesEffortAndZeroesItOnDeactiva
   EXPECT_DOUBLE_EQ(command("j2/effort"), 0.0);
 }
 
+TEST_F(PolicyControllerTest, ExecutorsHoldTheRobotUntilThePolicyProducesCommands)
+{
+  with_reference_executor = false;
+  init({
+    {"sources", StringArray{"js"}},  // j3 from a topic that never publishes: the policy waits
+    {"js.type", "policy_framework/JointStateSource"},
+    {"js.joints", StringArray{"j3"}},
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{1.0, 1.0}}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+
+  set_state("j1/position", 1.2);
+  set_state("j1/velocity", 0.5);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (1.0 - 1.2) - 1.0 * 0.5);
+  EXPECT_DOUBLE_EQ(command("j2/effort"), 0.0);
+
+  // A new activation holds the position of that moment.
+  ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/velocity", 0.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+}
+
 TEST_F(PolicyControllerTest, PolicyRunsAtPolicyRateAndExecutorsOnEveryUpdate)
 {
   with_reference_executor = false;

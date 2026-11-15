@@ -196,6 +196,14 @@ public:
     const PluginContext & ctx, const ModelInfo & model, DataStore & commands) = 0;
   /// Called from the control cycle whenever the policy becomes active. Must be real-time safe.
   virtual void reset() {}
+
+  /**
+   * @brief Write the commands that are already known before the first step, e.g. the policy's
+   *        gains; not references (the executors hold the robot until the first step, see
+   *        InterfaceExecutor::hold()). Called for the default policy when the host starts,
+   *        outside the control cycle.
+   */
+  virtual void initial_commands(DataStore & commands) {(void)commands;}
   /**
    * @brief Write the commands. Called from the control cycle.
    * @param stamp Stamp of the observation the outputs were computed from (oldest input, see
@@ -276,10 +284,30 @@ public:
   virtual std::vector<std::string> state_entries() const {return {};}
   /**
    * @brief Compute the interface values. Called from the control loop on every update, once
-   *        the active policy has produced commands since the controller was activated.
+   *        the active policy has produced commands since the controller was activated (until
+   *        then: hold()).
    * @param values One per command_interfaces(); NaN leaves that interface unchanged.
    */
   virtual void write(const DataStore & commands, const DataStore & state, std::vector<double> & values) = 0;
+  /**
+   * @brief Compute the interface values that keep the robot where it is. Called from the
+   *        control loop on every update from the activation of the controller until the active
+   *        policy produced its first commands (e.g. while it waits for its inputs, or for its
+   *        first inference), instead of write().
+   * @param commands Only holds the policy's Postprocessor::initial_commands().
+   * @param start true on the first call after an activation.
+   * @param values One per command_interfaces(); NaN leaves that interface unchanged. Default:
+   *        all NaN.
+   */
+  virtual void hold(
+    const DataStore & commands, const DataStore & state, std::vector<double> & values, bool start)
+  {
+    (void)commands;
+    (void)state;
+    (void)start;
+    values.assign(values.size(), std::numeric_limits<double>::quiet_NaN());
+  }
+
   /**
    * @brief Values written when the controller stops commanding: on deactivation and when the
    *        policy fails. Default: NaN (leave every interface unchanged).

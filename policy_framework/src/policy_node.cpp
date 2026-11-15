@@ -41,7 +41,7 @@ PolicyNode::CallbackReturn PolicyNode::on_configure(const rclcpp_lifecycle::Stat
 
 PolicyNode::CallbackReturn PolicyNode::on_activate(const rclcpp_lifecycle::State &)
 {
-  runner_->pipeline().restart();
+  runner_->restart();
   timer_ = rclcpp::create_timer(
     this, get_clock(), rclcpp::Duration::from_seconds(1.0 / update_rate_), [this]() {update();});
   return CallbackReturn::SUCCESS;

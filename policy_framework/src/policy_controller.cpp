@@ -172,9 +172,10 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
     loaned_command_.push_back(std::move(loaned));
   }
   policy_ready_ = false;
+  hold_start_ = true;
   updates_ = 0;
   inference_pending_ = false;
-  runner_->pipeline().restart();
+  runner_->restart();
   return CallbackReturn::SUCCESS;
 }
 
@@ -255,12 +256,16 @@ controller_interface::return_type PolicyController::update(
     return controller_interface::return_type::ERROR;
   }
   if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
-  // Before the first commands since activation, the command store may still hold the previous
-  // activation's commands: send nothing.
-  if (!policy_ready_) {return controller_interface::return_type::OK;}
+  // Before the first commands since activation the command store may still hold the previous
+  // activation's references: the executors hold the robot instead of following them.
   for (size_t k = 0; k < executors_.size(); ++k) {
-    executors_[k]->write(runner_->commands(), state, values_[k]);
+    if (policy_ready_) {
+      executors_[k]->write(runner_->commands(), state, values_[k]);
+    } else {
+      executors_[k]->hold(runner_->commands(), state, values_[k], hold_start_);
+    }
   }
+  hold_start_ = false;
   apply_values();
   return controller_interface::return_type::OK;
 }

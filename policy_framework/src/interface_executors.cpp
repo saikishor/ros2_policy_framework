@@ -72,8 +72,10 @@ void PdEffortExecutor::configure(
               ctx.name + ": no gains for " + j +
               " (neither stiffness/damping command entries nor parameters)");
     }
-    joint.kp = kp.empty() ? 0.0 : kp[i];
-    joint.kd = kd.empty() ? 0.0 : kd[i];
+    joint.has_kp = !kp.empty();
+    joint.has_kd = !kd.empty();
+    joint.kp = joint.has_kp ? kp[i] : 0.0;
+    joint.kd = joint.has_kd ? kd[i] : 0.0;
     joint.limit = limits.empty() ? 0.0 : limits[i];
     joints_.push_back(joint);
     interfaces_.push_back(j + "/" + effort);
@@ -82,24 +84,48 @@ void PdEffortExecutor::configure(
   }
 }
 
+double PdEffortExecutor::effort(
+  const Joint & j, std::optional<double> ref, std::optional<double> ref_vel,
+  const DataStore & commands, const DataStore & state)
+{
+  // Gains: the command entry once the policy wrote it, else the parameter if there is one.
+  auto gain = [&](const std::optional<size_t> & entry, bool has_param, double param) {
+      auto g = entry ? valid(commands, *entry) : std::nullopt;
+      return g || !has_param ? g : std::optional<double>(param);
+    };
+  const auto q = valid(state, j.q);
+  const auto dq = valid(state, j.dq);
+  const auto kp = gain(j.kp_entry, j.has_kp, j.kp);
+  const auto kd = gain(j.kd_entry, j.has_kd, j.kd);
+  if (!ref || !q || !dq || !ref_vel || !kp || !kd) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  const double u = *kp * (*ref - *q) + *kd * (*ref_vel - *dq);
+  return j.limit > 0.0 ? std::clamp(u, -j.limit, j.limit) : u;
+}
+
 void PdEffortExecutor::write(
   const DataStore & commands, const DataStore & state, std::vector<double> & values)
 {
   for (size_t i = 0; i < joints_.size(); ++i) {
     const auto & j = joints_[i];
-    const auto ref = valid(commands, j.ref_pos);
-    const auto q = valid(state, j.q);
-    const auto dq = valid(state, j.dq);
-    const auto ref_vel = j.ref_vel ? valid(commands, *j.ref_vel) : std::optional<double>(0.0);
-    const auto kp = j.kp_entry ? valid(commands, *j.kp_entry) : std::optional<double>(j.kp);
-    const auto kd = j.kd_entry ? valid(commands, *j.kd_entry) : std::optional<double>(j.kd);
-    if (!ref || !q || !dq || !ref_vel || !kp || !kd) {
-      values[i] = std::numeric_limits<double>::quiet_NaN();
-      continue;
+    values[i] = effort(
+      j, valid(commands, j.ref_pos),
+      j.ref_vel ? valid(commands, *j.ref_vel) : std::optional<double>(0.0), commands, state);
+  }
+}
+
+void PdEffortExecutor::hold(
+  const DataStore & commands, const DataStore & state, std::vector<double> & values, bool start)
+{
+  for (size_t i = 0; i < joints_.size(); ++i) {
+    auto & j = joints_[i];
+    if (start || std::isnan(j.hold_q)) {
+      j.hold_q = valid(state, j.q).value_or(std::numeric_limits<double>::quiet_NaN());
     }
-    double u = *kp * (*ref - *q) + *kd * (*ref_vel - *dq);
-    if (j.limit > 0.0) {u = std::clamp(u, -j.limit, j.limit);}
-    values[i] = u;
+    values[i] = effort(
+      j, std::isnan(j.hold_q) ? std::nullopt : std::optional<double>(j.hold_q), 0.0, commands,
+      state);
   }
 }
 

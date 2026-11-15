@@ -69,6 +69,11 @@ class FakePostprocessor : public policy_framework::Postprocessor
 {
 public:
   void configure(const PluginContext &, const ModelInfo &, DataStore &) override {}
+  void initial_commands(DataStore & commands) override
+  {
+    commands.set(commands.index("cmd"), initial, 0.0);
+  }
+  double initial = 0.0;
   bool compute(const TensorMap & out, double stamp, DataStore & commands) override
   {
     commands.set(commands.index("cmd"), out.at("actions").data[0], stamp);
@@ -122,6 +127,17 @@ TEST_F(PolicyPipelineTest, StepRunsStagesAndFeedsBackPreviousOutputs)
   EXPECT_DOUBLE_EQ(cmd(), 2.0);
   EXPECT_EQ(a.pre->resets, 1);  // activated once
   EXPECT_EQ(a.pre->clears, 1);  // first start is from scratch
+}
+
+TEST_F(PolicyPipelineTest, InitialCommandsComeFromTheDefaultPolicy)
+{
+  Fakes a(1.0F), b(10.0F);
+  a.post->initial = 3.0;
+  b.post->initial = 5.0;
+  pipeline.add_policy(a.policy("a"));
+  pipeline.add_policy(b.policy("b"));
+  pipeline.write_initial_commands(commands);
+  EXPECT_DOUBLE_EQ(cmd(), 3.0);
 }
 
 TEST_F(PolicyPipelineTest, InactivePoliciesObserveEveryStep)

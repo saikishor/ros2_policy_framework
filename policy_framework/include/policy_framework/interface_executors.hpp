@@ -36,6 +36,10 @@ namespace policy_framework
  *
  * A joint whose reference, measurement or gains are not received or not finite is left
  * unchanged. safe_values() is zero effort.
+ *
+ * hold(): the same law around the joint positions of its start with a zero velocity reference,
+ * with the gains the policy wrote as initial commands, otherwise the parameters; a joint without
+ * gains is left unchanged.
  */
 class PdEffortExecutor : public InterfaceExecutor
 {
@@ -46,6 +50,9 @@ public:
   /// Joint positions and velocities: the PD feedback.
   std::vector<std::string> state_entries() const override {return feedback_;}
   void write(const DataStore & commands, const DataStore & state, std::vector<double> & values) override;
+  void hold(
+    const DataStore & commands, const DataStore & state, std::vector<double> & values,
+    bool start) override;
   void safe_values(std::vector<double> & values) override {values.assign(values.size(), 0.0);}
 
 private:
@@ -54,7 +61,14 @@ private:
     size_t ref_pos, q, dq;
     std::optional<size_t> ref_vel, kp_entry, kd_entry;
     double kp = 0.0, kd = 0.0, limit = 0.0;  // limit <= 0: none
+    bool has_kp = false, has_kd = false;     // the parameters give this gain
+    double hold_q = 0.0;                     // NaN until hold() saw the position
   };
+  /// Effort of @p joint towards (@p ref, @p ref_vel), NaN when something is missing.
+  static double effort(
+    const Joint & joint, std::optional<double> ref, std::optional<double> ref_vel,
+    const DataStore & commands, const DataStore & state);
+
   std::vector<Joint> joints_;
   std::vector<std::string> interfaces_;
   std::vector<std::string> feedback_;

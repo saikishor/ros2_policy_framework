@@ -126,6 +126,42 @@ TEST_F(PdEffortExecutorTest, WritesNothingForAJointWithMissingOrInvalidData)
   EXPECT_TRUE(std::isnan(values[1]));
 }
 
+TEST_F(PdEffortExecutorTest, HoldKeepsThePositionOfItsStart)
+{
+  configure({{"pd.stiffness", Doubles{10.0, 20.0}}, {"pd.damping", Doubles{1.0, 2.0}}});
+  set_robot_and_references();  // the references are not used: the policy has not run yet
+  pd.hold(commands, state, values, true);
+  EXPECT_DOUBLE_EQ(values[0], -1.0 * 0.5);
+  EXPECT_DOUBLE_EQ(values[1], -2.0 * -1.0);
+
+  set(state, "a/position", 1.2);
+  set(state, "a/velocity", 0.0);
+  pd.hold(commands, state, values, false);
+  EXPECT_DOUBLE_EQ(values[0], 10.0 * (1.0 - 1.2));
+
+  // A new start holds the position of that moment.
+  pd.hold(commands, state, values, true);
+  EXPECT_DOUBLE_EQ(values[0], 0.0);
+}
+
+TEST_F(PdEffortExecutorTest, HoldUsesTheGainsWrittenByThePolicyAndNothingWithoutGains)
+{
+  for (const auto * n : {"a/stiffness", "a/damping", "b/stiffness", "b/damping"}) {
+    commands.add(n);
+  }
+  configure({});
+  set_robot_and_references();
+  pd.hold(commands, state, values, true);
+  EXPECT_TRUE(std::isnan(values[0]));  // no gains yet: leave the interface unchanged
+
+  set(commands, "a/stiffness", 100.0);
+  set(commands, "a/damping", 4.0);
+  set(state, "a/position", 0.9);
+  pd.hold(commands, state, values, false);
+  EXPECT_DOUBLE_EQ(values[0], 100.0 * (1.0 - 0.9) - 4.0 * 0.5);
+  EXPECT_TRUE(std::isnan(values[1]));
+}
+
 TEST_F(PdEffortExecutorTest, SafeValuesAreZeroEffort)
 {
   configure({{"pd.stiffness", Doubles{10.0, 20.0}}, {"pd.damping", Doubles{1.0, 2.0}}});

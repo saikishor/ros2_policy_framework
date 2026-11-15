@@ -78,6 +78,12 @@ public:
     requested_.store(0);
   }
 
+  /// Postprocessor::initial_commands() of the default (first) policy. Not for the control cycle.
+  void write_initial_commands(DataStore & commands)
+  {
+    if (!entries_.empty()) {entries_.front().policy.postprocessor->initial_commands(commands);}
+  }
+
   /**
    * @brief Run one step of the active policy (applying any pending switch first).
    * @param state Inputs, read by the preprocessor.

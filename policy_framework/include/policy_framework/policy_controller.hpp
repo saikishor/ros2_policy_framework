@@ -48,9 +48,11 @@ namespace policy_framework
  * held). A tick that finds the previous step still running is skipped with a warning.
  * Exclusive with is_async.
  *
- * Safety: executors run only once the active policy produced commands since activation; after
- * that, a step waiting for data keeps the last commands applied. On deactivation and when the
- * policy fails, every executor's safe_values() are written (zero effort for PdEffortExecutor).
+ * Safety: from activation until the active policy produced its first commands (it may wait for
+ * its inputs, or for its first inference) the executors hold() the robot where it is
+ * (PdEffortExecutor: a PD around the position at activation); after that, a step waiting for
+ * data keeps the last commands applied. On deactivation and when the policy fails, every
+ * executor's safe_values() are written (zero effort for PdEffortExecutor).
  *
  * On activation the first policy restarts from scratch. Policies are switched with the
  * `~/switch_policy` service.
@@ -100,6 +102,7 @@ private:
   std::vector<std::vector<double>> values_;           ///< Per executor, one per interface.
   std::vector<std::vector<size_t>> loaned_command_;   ///< Per executor, loaned interface index.
   bool policy_ready_ = false;  ///< The policy produced commands since activation.
+  bool hold_start_ = true;     ///< No update since activation yet.
   unsigned int decimation_ = 1;  ///< Updates per policy step.
   uint64_t updates_ = 0;         ///< Updates since activation.
 };

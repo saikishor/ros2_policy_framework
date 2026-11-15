@@ -58,6 +58,16 @@ public:
   /// @return State entries required by the policies that no input source provides.
   std::vector<std::string> unprovided_state() const;
 
+  /**
+   * @brief Start over from the default policy with every policy cleared (at the next step()),
+   *        and write its initial commands. Hosts call it when they are activated.
+   */
+  void restart()
+  {
+    pipeline_->restart();
+    pipeline_->write_initial_commands(commands_);
+  }
+
   /// Copy the latest data of every input source into state(). @p now in seconds.
   void read_sources(double now);
 
