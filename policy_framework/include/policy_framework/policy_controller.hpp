@@ -27,7 +27,10 @@ namespace policy_framework
  * come from state interfaces.
  *
  * Kinematics (`kinematics.*`, see Kinematics) uses the controller manager's robot description;
- * its joint positions and velocities are claimed like any other input.
+ * its joint positions and velocities are claimed like any other input. kinematics() follows
+ * the state interfaces on every update; with `async_inference` the policies' plugins use a
+ * second model, computed in the inference thread from the state snapshot of their step, so
+ * that the frames they read always belong to the joint state they read.
  *
  * Outputs: `executors` are InterfaceExecutor plugins (each needs `<name>.type`) that turn the
  * commands into command interface values, e.g. policy_framework/PdEffortExecutor (PD law into

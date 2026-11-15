@@ -84,7 +84,7 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
       "in the asynchronous thread; prefer is_async: false");
   }
   try {
-    runner_->configure(get_node(), false, get_robot_description());
+    runner_->configure(get_node(), false, get_robot_description(), params.async_inference);
     load_executors();
     state_names_ = runner_->unprovided_state();
     command_names_.clear();
@@ -242,8 +242,8 @@ controller_interface::return_type PolicyController::update(
   // every update with the fresh state.
   const bool policy_tick = updates_++ % decimation_ == 0;
   if (policy_tick) {runner_->read_sources(now);}
-  // On every update, so that other readers see the current joint state; before the step (or
-  // the hand-off to the inference thread) so that the step sees this cycle's.
+  // On every update, so that other readers see the current joint state; before the step so
+  // that it sees this cycle's (an inference thread updates its own model from its snapshot).
   runner_->update_kinematics();
   std::optional<PolicyPipeline::Status> status;  // of a step whose result arrived now
   // Called right after a step finished, before the next one may start in the inference thread.

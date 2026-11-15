@@ -28,14 +28,15 @@ std::unique_ptr<pluginlib::ClassLoader<T>> make_loader(const std::string & base)
 
 void PolicyRunner::configure(
   const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, bool load_executors,
-  const std::string & robot_description)
+  const std::string & robot_description, bool step_in_other_thread)
 {
   logger_ = node->get_logger();
   const auto & logger = logger_;
   // Reconfiguration starts from scratch: drop plugins before their loaders.
   sources_.clear();
   executors_.clear();
-  kinematics_.reset();
+  kinematics_ = KinematicsFeed();
+  policy_kinematics_ = KinematicsFeed();
   pipeline_ = std::make_unique<PolicyPipeline>();
   state_ = DataStore();
   commands_ = DataStore();
@@ -58,7 +59,7 @@ void PolicyRunner::configure(
   commands_accepted_ = true;
 
   // Before the policies: their plugins look frames up while configuring.
-  configure_kinematics(node, robot_description);
+  configure_kinematics(node, robot_description, step_in_other_thread);
 
   for (const auto & name : params.sources) {
     const auto & type = params.sources_map.at(name).type;
@@ -69,7 +70,7 @@ void PolicyRunner::configure(
   }
 
   for (const auto & name : params.policies) {
-    const PluginContext ctx{node, name, kinematics_, safety};
+    const PluginContext ctx{node, name, policy_kinematics_.model, safety};
     const auto & stages = params.policies_map.at(name);
     Policy p;
     p.name = name;
@@ -126,7 +127,8 @@ std::vector<std::string> PolicyRunner::unprovided_state() const
 }
 
 void PolicyRunner::configure_kinematics(
-  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & robot_description)
+  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & robot_description,
+  bool step_in_other_thread)
 {
   kinematics_position_idx_.clear();
   kinematics_velocity_idx_.clear();
@@ -135,15 +137,23 @@ void PolicyRunner::configure_kinematics(
   if (robot_description.empty()) {
     throw std::runtime_error("kinematics.enabled needs a robot description");
   }
-  kinematics_ = std::make_shared<Kinematics>(robot_description, params.joints);
-  for (const auto & j : kinematics_->joint_names()) {
+  auto make = [&]() {
+      KinematicsFeed feed;
+      feed.model = std::make_shared<Kinematics>(robot_description, params.joints);
+      const auto n = static_cast<Eigen::Index>(feed.model->joint_names().size());
+      feed.q = Eigen::VectorXd::Zero(n);
+      feed.v = Eigen::VectorXd::Zero(n);
+      return feed;
+    };
+  kinematics_ = make();
+  // A step in another thread reads a copy of the state: its plugins need the kinematics of
+  // that copy, not of whatever the host's thread has moved on to meanwhile.
+  policy_kinematics_ = step_in_other_thread ? make() : kinematics_;
+  for (const auto & j : kinematics_.model->joint_names()) {
     kinematics_position_idx_.push_back(state_.add(j + "/position"));
     kinematics_velocity_idx_.push_back(state_.add(j + "/velocity"));
   }
-  const auto n = static_cast<Eigen::Index>(kinematics_->joint_names().size());
-  kinematics_q_ = Eigen::VectorXd::Zero(n);
-  kinematics_v_ = Eigen::VectorXd::Zero(n);
-  RCLCPP_INFO(logger_, "Kinematics over %ld joints", static_cast<long>(n));
+  RCLCPP_INFO(logger_, "Kinematics over %zu joints", kinematics_.model->joint_names().size());
 }
 
 void PolicyRunner::read_sources(double now)
@@ -151,10 +161,10 @@ void PolicyRunner::read_sources(double now)
   for (const auto & s : sources_) {s->read(state_, now);}
 }
 
-void PolicyRunner::update_kinematics()
+void PolicyRunner::update_kinematics(KinematicsFeed & feed, const DataStore & state) const
 {
-  if (!kinematics_ || !state_.all_received(kinematics_position_idx_) ||
-    !state_.all_received(kinematics_velocity_idx_))
+  if (!feed.model || !state.all_received(kinematics_position_idx_) ||
+    !state.all_received(kinematics_velocity_idx_))
   {
     return;
   }
@@ -162,17 +172,19 @@ void PolicyRunner::update_kinematics()
   for (size_t j = 0; j < kinematics_position_idx_.size(); ++j) {
     const auto p = kinematics_position_idx_[j];
     const auto v = kinematics_velocity_idx_[j];
-    kinematics_q_[static_cast<Eigen::Index>(j)] = state_.get(p);
-    kinematics_v_[static_cast<Eigen::Index>(j)] = state_.get(v);
+    feed.q[static_cast<Eigen::Index>(j)] = state.get(p);
+    feed.v[static_cast<Eigen::Index>(j)] = state.get(v);
     for (const auto i : {p, v}) {
-      if (stamp <= 0.0 || state_.stamp(i) < stamp) {stamp = state_.stamp(i);}
+      if (stamp <= 0.0 || state.stamp(i) < stamp) {stamp = state.stamp(i);}
     }
   }
-  // Skipped (false) while a reader holds the lock, e.g. the inference thread: the model keeps
-  // the previous state until the next update. Expected with readers in other threads, so not
-  // logged (this runs at the control rate).
-  kinematics_->update(kinematics_q_, kinematics_v_, stamp);
+  // Skipped (false) while a reader in another thread holds the lock: the model keeps the
+  // previous state until the next update. Expected, so not logged (this runs at the control
+  // rate).
+  feed.model->update(feed.q, feed.v, stamp);
 }
+
+void PolicyRunner::update_kinematics() {update_kinematics(kinematics_, state_);}
 
 PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & commands)
 {
@@ -182,6 +194,7 @@ PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & c
     RCLCPP_INFO_EXPRESSION(logger_, accepted, "Safety entry is set: accepting user commands");
     commands_accepted_ = accepted;
   }
+  if (policy_kinematics_.model != kinematics_.model) {update_kinematics(policy_kinematics_, state);}
   PolicyPipeline::Status status;
   try {
     status = pipeline_->step(state, commands);

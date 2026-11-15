@@ -83,8 +83,9 @@ struct PluginContext
   rclcpp_lifecycle::LifecycleNode::SharedPtr node;
   /// Name of the policy, source, executor or term; plugin parameters live under `<name>.`.
   std::string name;
-  /// Whole-body kinematics (null unless `kinematics.enabled`), updated by the host before every
-  /// policy step; given to the policy stages and their observation terms only.
+  /// Whole-body kinematics (null unless `kinematics.enabled`) of the state the policy step
+  /// reads, updated before every step; given to the policy stages and their observation terms
+  /// only.
   std::shared_ptr<Kinematics> kinematics = nullptr;
   /// State entry that is 0 while user commands must be ignored (see CommandGate); empty: none.
   std::string safety_entry = "";

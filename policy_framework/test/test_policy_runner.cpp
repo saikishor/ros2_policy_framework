@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -60,8 +61,10 @@ protected:
     helper = std::make_shared<rclcpp::Node>("helper");
     exec.add_node(node->get_node_base_interface());
     exec.add_node(helper);
-    runner.configure(node, true, robot_description);
+    runner.configure(node, true, robot_description, step_in_other_thread);
   }
+
+  bool step_in_other_thread = false;
 
   void spin_for(std::chrono::milliseconds d)
   {
@@ -152,6 +155,49 @@ TEST_F(PolicyRunnerTest, UpdatesTheKinematicsOnceEveryJointWasReceived)
   ASSERT_TRUE(kin->ready());
   EXPECT_DOUBLE_EQ(kin->stamp(), 2.0);  // oldest input
   EXPECT_NEAR(kin->transform(imu).translation().x(), 1.0, 1e-9);
+}
+
+TEST_F(PolicyRunnerTest, PoliciesShareTheHostKinematicsWhenTheyStepInItsThread)
+{
+  auto params = runner_params("/runner_js5");
+  params.push_back({"kinematics.enabled", true});
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  configure(params, urdf.str());
+  EXPECT_EQ(runner.policy_kinematics(), runner.kinematics());
+}
+
+TEST_F(PolicyRunnerTest, PolicyKinematicsFollowsTheStateOfItsStepInAnotherThread)
+{
+  step_in_other_thread = true;
+  auto params = runner_params("/runner_js6");
+  params.push_back({"kinematics.enabled", true});
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  configure(params, urdf.str());
+  const auto host = runner.kinematics();
+  const auto policy = runner.policy_kinematics();
+  ASSERT_NE(policy, nullptr);
+  ASSERT_NE(policy, host);
+  const auto imu = host->frame("imu_link");
+
+  // The snapshot handed to the step: every joint at zero.
+  auto & state = runner.state();
+  for (const auto & n : state.names()) {state.set(state.index(n), 0.0, 1.0);}
+  auto snapshot = state;
+  auto commands = runner.commands();
+  // Meanwhile the control loop moves on: j1 turned by 90 degrees.
+  state.set(state.index("j1/position"), M_PI / 2.0, 2.0);
+  runner.update_kinematics();
+  EXPECT_FALSE(policy->ready());  // only updated by the step
+
+  ASSERT_EQ(runner.step(snapshot, commands), policy_framework::PolicyPipeline::Status::OK);
+  EXPECT_NEAR(policy->transform(imu).translation().x(), 1.0, 1e-9);  // the snapshot
+  EXPECT_DOUBLE_EQ(policy->stamp(), 1.0);
+  EXPECT_NEAR(host->transform(imu).translation().x(), 0.0, 1e-9);    // the latest state
+  EXPECT_NEAR(host->transform(imu).translation().y(), 1.0, 1e-9);
 }
 
 TEST_F(PolicyRunnerTest, HasNoKinematicsByDefault)
