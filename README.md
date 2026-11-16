@@ -447,12 +447,31 @@ when publishers use the node's clock.
 ## Documentation
 
 The concept pages in [`docs/`](docs/index.rst) are reStructuredText for Sphinx, with Graphviz
-diagrams:
+diagrams, rendered with the Read the Docs theme.
+
+To build and browse them locally, run these from the repository root:
 
 ```bash
-pip install sphinx sphinx-rtd-theme && sudo apt install graphviz
-sphinx-build -b html docs docs/_build/html
+# one-time setup: Graphviz for the diagrams, Sphinx and the theme in a virtualenv
+sudo apt install graphviz
+python3 -m venv ~/.venvs/sphinx
+~/.venvs/sphinx/bin/pip install sphinx sphinx-rtd-theme
+
+# build the HTML pages (add -W to turn warnings into errors)
+~/.venvs/sphinx/bin/sphinx-build -b html docs docs/_build/html
+
+# serve them, then open http://localhost:8000
+python3 -m http.server 8000 -d docs/_build/html
 ```
+
+To rebuild the pages and reload the browser whenever a `.rst` file is saved, run this instead:
+
+```bash
+~/.venvs/sphinx/bin/pip install sphinx-autobuild
+~/.venvs/sphinx/bin/sphinx-autobuild docs docs/_build/html --port 8000
+```
+
+The output in `docs/_build/` is ignored by git.
 
 ## Tests
 
