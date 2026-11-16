@@ -473,6 +473,10 @@ To rebuild the pages and reload the browser whenever a `.rst` file is saved, run
 
 The output in `docs/_build/` is ignored by git.
 
+The [`docs` workflow](.github/workflows/docs.yml) builds the pages with `-W` on every push and pull
+request, and publishes them to GitHub Pages from `main` (the repository's Pages source must be set
+to "GitHub Actions").
+
 ## Tests
 
 ```bash
