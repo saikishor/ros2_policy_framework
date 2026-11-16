@@ -450,7 +450,7 @@ The concept pages in [`docs/`](docs/index.rst) are reStructuredText for Sphinx, 
 diagrams:
 
 ```bash
-pip install sphinx && sudo apt install graphviz
+pip install sphinx sphinx-rtd-theme && sudo apt install graphviz
 sphinx-build -b html docs docs/_build/html
 ```
 
