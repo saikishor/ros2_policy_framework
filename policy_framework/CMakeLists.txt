@@ -82,6 +82,7 @@ add_library(${PROJECT_NAME} SHARED
   src/plugins/stages/generic_stages.cpp
   src/plugins/executors/interface_executors.cpp
   src/core/step_publisher.cpp
+  src/core/step_replayer.cpp
   src/hosts/policy_runner.cpp
   src/hosts/policy_node.cpp
   src/hosts/policy_controller.cpp
@@ -138,6 +139,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_kinematics ${PROJECT_NAME})
   target_compile_definitions(test_kinematics PRIVATE
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/urdf/test_robot.urdf")
+  ament_add_gtest(test_step_replayer test/core/test_step_replayer.cpp)
+  target_link_libraries(test_step_replayer ${PROJECT_NAME})
   ament_add_gtest(test_generic_stages test/plugins/stages/test_generic_stages.cpp)
   target_link_libraries(test_generic_stages ${PROJECT_NAME})
   foreach(path IN ITEMS
