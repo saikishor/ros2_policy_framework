@@ -50,8 +50,9 @@ how the data flows and how the pieces fit, are explained in [`docs/`](docs/index
   (`PdEffortExecutor`) or references of a chained controller (`ReferenceInterfaceExecutor`).
 
 One cycle: [controller: state interfaces] → sources → kinematics → preprocessor → inference →
-postprocessor → executors. While an input was never received the preprocessor skips the step:
-the node sends nothing, the controller keeps the last commands (see Safety).
+postprocessor → transition ramp → executors. While an input was never received the
+preprocessor skips the step: the node sends nothing, the controller keeps the last commands
+(see Safety).
 
 ## Running
 
@@ -120,12 +121,26 @@ or, chaining into a pid_controller that closes the loop:
     the policy provides before its first step (`gains_as_commands`) or its `stiffness`/`damping`
     parameters; `ReferenceInterfaceExecutor` writes nothing (the chained controller holds).
     After that, a step waiting for data keeps the last commands.
-  - *Safe values*: on deactivation and when a stage fails (`update()` returns `ERROR`) each
-    executor writes its safe values: zero effort for `PdEffortExecutor`, nothing for
-    `ReferenceInterfaceExecutor`.
+  - *Transition*: with the policy's `transition_time` the commands ramp from the joint
+    positions measured when its first commands arrive, instead of jumping to them (see
+    Policy switching).
+  - *Faults*: a stage fails (also a non-finite model output, which never reaches the
+    executors), state interfaces stay unreadable, or a `safety.*` check is violated.
+    `on_fault: stop` (default): each executor writes its safe values (zero effort for
+    `PdEffortExecutor`, nothing for `ReferenceInterfaceExecutor`) and `update()` returns
+    `ERROR`. `on_fault: damp`: the controller stays active, stops following the policy and
+    writes each executor's damping values on every update (`PdEffortExecutor`:
+    `-fault_damping · velocity`) until it is reactivated. On deactivation the safe values are
+    written.
   - *Unreadable state interfaces* (locked by their writer, e.g. an asynchronous hardware
     component): the previous value is used for up to `max_failed_reads` consecutive updates;
-    one more writes the safe values and returns `ERROR`.
+    one more is a fault.
+  - *Safety checks* (`safety.*`, all off by default, also in the node, which stops sending
+    commands until it is reactivated): IMU tilt (`max_tilt`, `imu`: reads
+    `<imu>/orientation.*`), velocity of a commanded joint (`max_joint_velocity`), its position
+    within the robot description limits minus `position_margin` (`joint_position_limits`), and
+    the age of the last step's observation (`max_input_age`, e.g. a topic that stopped). The
+    entries they read are claimed as state interfaces.
   - *Safety entry* (`safety_entry`, e.g. `rl_safety_controller/safe`): a state entry, claimed
     as a state interface, that is 0 while user commands must be ignored. The policy keeps
     running (the robot keeps balancing) with neutral commands: zero velocity (`TwistSource`,
@@ -151,11 +166,16 @@ name. Write floating point values with a decimal point (`50.0`).
 | `policies` | Policy names (required); the first one is the default |
 | `<policy>.preprocessor` / `.postprocessor` | Plugin classes (required) |
 | `<policy>.inference` | Plugin class, default `policy_framework/OnnxInference` |
-| `<policy>.max_steps`, `.interruptible` | Switching, see below |
+| `<policy>.max_steps`, `.interruptible`, `.transition_time` | Switching, see below |
 | `<policy>.<plugin param>` | Parameters of the policy's plugins |
 | `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
 | `kinematics.enabled`, `kinematics.joints` | Whole-body kinematics (default false), see below |
 | `safety_entry` | State entry that is 0 while user commands must be ignored (default empty: always accepted), see Safety |
+| `safety.max_tilt`, `safety.imu` | Fault above this IMU tilt in rad (default 0: off); state entry prefix of the IMU |
+| `safety.max_joint_velocity` | Fault above this \|velocity\| of a commanded joint (default 0: off) |
+| `safety.joint_position_limits`, `safety.position_margin` | Fault outside the robot description joint limits minus the margin (default false, 0) |
+| `safety.max_input_age` | Fault when the last step's observation is older than this, in s (default 0: off) |
+| `on_fault` | Controller: `stop` (default: safe values, `ERROR`) or `damp` (damping until reactivated), see Safety |
 | `policy_rate` | Controller: policy rate in Hz (default 0 = every update) |
 | `max_failed_reads` | Controller: consecutive updates with an unreadable state interface that are tolerated (default 5) |
 | `async_inference`, `inference_thread_priority` | Controller: policy step in its own thread (default false), its priority (default 40) |
@@ -178,6 +198,32 @@ activation and on every (re)activation of the node/controller, which also restar
 policy. Per policy, `max_steps` (default 0 = unlimited) returns to the first policy
 after N steps (e.g. a jump motion), and `interruptible: false` rejects switches while it runs.
 All models are loaded at configuration: switching never loads or allocates.
+
+`<policy>.transition_time` (seconds, default 0: at once): when the policy takes over (its first
+commands after an activation, or after a switch) the commands the executors read ramp linearly
+to its commands, from the previous commands, or after an activation from the measured joint
+positions. Every command is blended (references and gains); the policy keeps running and the
+ramp ends at its latest commands. The controller advances it on every update, also with
+`async_inference`.
+
+A policy without a model (`NullInference`, `NullPreprocessor`, `FixedPosePostprocessor`)
+commands a fixed pose, e.g. to stand up on activation and stand by between motions:
+
+```yaml
+policies: [stand, walk]
+stand:
+  inference: policy_framework/NullInference
+  preprocessor: policy_framework/NullPreprocessor
+  postprocessor: policy_framework/FixedPosePostprocessor
+  joints: [leg_left_1_joint, leg_left_2_joint]
+  positions: [0.0, -0.3]
+  stiffness: [150.0, 150.0]   # optional, for PdEffortExecutor
+  damping: [5.0, 5.0]
+  transition_time: 2.0
+walk:
+  # ...
+  transition_time: 0.5
+```
 
 ### Kinematics
 
@@ -202,16 +248,19 @@ must be revolute, continuous or prismatic (lock the others).
 
 | Plugin | Type | Parameters (under `<name>.`) |
 |--------|------|------------------------------|
+| `policy_framework/NullInference` | Inference | none: no model, no tensors |
 | `policy_framework/OnnxInference` | Inference | `model_path` (file, or directory: its first `.onnx` by name), `num_threads` (1); float32 tensors, dynamic dimensions fixed to 1 |
 | `policy_framework/JointStateSource` | InputSource | `topic`, `joints` (empty = any) → `<joint>/position\|velocity\|effort` |
 | `policy_framework/ImuSource` | InputSource | `topic`, `sensor_name` (source name) → `<sensor>/orientation.*`, `angular_velocity.*`, `linear_acceleration.*` |
 | `policy_framework/TwistSource` | InputSource | `topic`, `timeout` (1.0 s, ≤ 0 disables) → `<name>/linear.*`, `angular.*`; zero when absent or stale |
 | `policy_framework/OdometrySource` | InputSource | `topic` → `<name>/position.*`, `orientation.*`, `linear.*`, `angular.*` |
 | `policy_framework/MultiDofCommandExecutor` | Executor (node) | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`, empty: 0); drops a message while the previous one is being published |
-| `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none); a joint with a missing or non-finite value is left unchanged |
+| `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, `on_fault: damp`; empty: zero effort); a joint with a missing or non-finite value is left unchanged |
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
+| `policy_framework/NullPreprocessor` | Preprocessor | none: no inputs, always ready |
+| `policy_framework/FixedPosePostprocessor` | Postprocessor | `joints`, `positions` → `<joint>/position`, `<joint>/velocity` = 0; `stiffness`, `damping` (optional) → `<joint>/stiffness\|damping`, also before the first step |
 | `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `imu_frame` (URDF link of the IMU, for the base terms of pal_mjlab exports), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type`, `terms.motion_goal.topic` (`~/motion_reference`), `terms.motion_goal.timeout` (0.5 s) |
 | `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface` (`position`), `velocity_interface` (`velocity`, empty: none), `gains_controller` (empty: none), `gains_as_commands` (false) |
 | `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm | `topic` (`cmd_vel`), `timeout` (1.0 s, ≤ 0 disables) → linear.x, linear.y, angular.z; zero when absent or stale |
@@ -366,7 +415,8 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
 - `Preprocessor::observe` is called instead of `compute` while another policy is active: keep
   time-dependent memory (a history) current there.
 - `Postprocessor::initial_commands` writes what is known before the first step (e.g. gains);
-  `InterfaceExecutor::hold` computes the values that keep the robot still until then.
+  `InterfaceExecutor::hold` computes the values that keep the robot still until then, and
+  `InterfaceExecutor::damp` the values written after a fault with `on_fault: damp`.
 - A plugin that feeds user commands to a policy checks `CommandGate::open(state)` and uses its
   neutral command while it is false (`safety_entry`).
 - `InputSource` callbacks never touch the store: buffer the message (`LatestMessage`) and copy it
