@@ -210,6 +210,25 @@ TEST_F(PolicyRunnerTest, AWaitingGroupDoesNotBlockTheCommandsOfTheOthers)
   EXPECT_FALSE(runner.commands().received(runner.commands().index("j4/position")));
 }
 
+TEST(PolicyRunner, PoliciesOfDifferentGroupsCannotWriteTheSameCommand)
+{
+  auto params = group_params();
+  params.push_back({"wave.output_entries", StringArray{"j4/position", "j1/position"}});
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("runner_overlap", opts);
+  PolicyRunner runner;
+  try {
+    runner.configure(node);
+    FAIL() << "configured";
+  } catch (const std::runtime_error & e) {
+    const std::string what = e.what();
+    for (const auto * word : {"j1/position", "walk", "wave"}) {
+      EXPECT_NE(what.find(word), std::string::npos) << what;
+    }
+  }
+}
+
 TEST_F(PolicyRunnerTest, ReportsStateEntriesNoSourceProvides)
 {
   auto params = runner_params("/runner_js2");
