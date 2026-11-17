@@ -104,6 +104,14 @@ public:
     return entries_.at(active_.load()).policy.preprocessor->input_stamps();
   }
 
+  /// @return Model inputs of the active policy's last step. Read from the thread calling step().
+  const TensorMap & inputs() const {return entries_.at(active_.load()).inputs;}
+  /// @return Model outputs of the active policy's last step. Read from the thread calling step().
+  const TensorMap & outputs() const {return entries_.at(active_.load()).outputs;}
+  /// @return Successful steps of the active policy since it was activated. Read from the thread
+  ///         calling step().
+  size_t steps() const {return static_cast<size_t>(steps_);}
+
   /// @return Name of the active policy. Thread-safe.
   const std::string & active_policy() const {return entries_.at(active_.load()).policy.name;}
   /// @return All policies, in the order they were added.
