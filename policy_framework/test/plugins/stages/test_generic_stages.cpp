@@ -113,6 +113,67 @@ TEST(SplitPostprocessor, WritesEachOutputValueToItsEntry)
   EXPECT_DOUBLE_EQ(commands.get(commands.index("j2/position")), -0.5);
 }
 
+TEST(NullStages, MakeAPolicyWithoutAModel)
+{
+  policy_framework::NullInference inference;
+  inference.configure(make_context({}));
+  EXPECT_TRUE(inference.model().inputs.empty());
+  EXPECT_TRUE(inference.model().outputs.empty());
+  DataStore state;
+  policy_framework::NullPreprocessor pre;
+  pre.configure(make_context({}), inference.model(), state);
+  EXPECT_EQ(state.size(), 0u);
+  TensorMap in, out;
+  EXPECT_TRUE(pre.compute(state, out, in));  // never waits
+  EXPECT_TRUE(inference.run(in, out));
+}
+
+TEST(FixedPosePostprocessor, CommandsThePoseWithZeroVelocityAndItsGains)
+{
+  DataStore commands;
+  policy_framework::FixedPosePostprocessor post;
+  post.configure(
+    make_context({{"p.joints", std::vector<std::string>{"j1", "j2"}},
+        {"p.positions", std::vector<double>{0.5, -1.0}},
+        {"p.stiffness", std::vector<double>{40.0, 60.0}},
+        {"p.damping", std::vector<double>{2.0, 3.0}}}), ModelInfo(), commands);
+  auto value = [&](const std::string & n) {return commands.get(commands.index(n));};
+
+  // The gains are known before the first step, so that an executor can hold the robot.
+  post.initial_commands(commands);
+  EXPECT_DOUBLE_EQ(value("j2/stiffness"), 60.0);
+  EXPECT_DOUBLE_EQ(value("j1/damping"), 2.0);
+  EXPECT_FALSE(commands.received(commands.index("j1/position")));
+
+  ASSERT_TRUE(post.compute(TensorMap(), 7.0, commands));
+  EXPECT_DOUBLE_EQ(value("j1/position"), 0.5);
+  EXPECT_DOUBLE_EQ(value("j2/position"), -1.0);
+  EXPECT_TRUE(commands.received(commands.index("j2/velocity")));
+  EXPECT_DOUBLE_EQ(value("j2/velocity"), 0.0);
+  EXPECT_DOUBLE_EQ(commands.stamp(commands.index("j1/position")), 7.0);
+}
+
+TEST(FixedPosePostprocessor, WritesNoGainsUnlessConfigured)
+{
+  DataStore commands;
+  policy_framework::FixedPosePostprocessor post;
+  post.configure(
+    make_context({{"p.joints", std::vector<std::string>{"j1"}},
+        {"p.positions", std::vector<double>{0.5}}}), ModelInfo(), commands);
+  EXPECT_FALSE(commands.find("j1/stiffness").has_value());
+}
+
+TEST(FixedPosePostprocessor, RejectsArraysThatDoNotMatchTheJoints)
+{
+  DataStore commands;
+  policy_framework::FixedPosePostprocessor post;
+  EXPECT_THROW(
+    post.configure(
+      make_context({{"p.joints", std::vector<std::string>{"j1", "j2"}},
+          {"p.positions", std::vector<double>{0.5}}}), ModelInfo(), commands),
+    std::runtime_error);
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

@@ -60,6 +60,7 @@ foreach(path IN ITEMS
     params/plugins/sources/topic_parameters.yaml
     params/plugins/sources/twist_source_parameters.yaml
     params/plugins/stages/concat_preprocessor_parameters.yaml
+    params/plugins/stages/fixed_pose_postprocessor_parameters.yaml
     params/plugins/stages/split_postprocessor_parameters.yaml
   )
   get_filename_component(params ${path} NAME_WE)

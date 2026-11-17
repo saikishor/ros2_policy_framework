@@ -69,6 +69,61 @@ private:
   std::vector<size_t> indices_;
 };
 
+/**
+ * @brief Inference of a policy without a model: no tensors, always succeeds.
+ *
+ * With NullPreprocessor and a postprocessor that needs no model output (e.g.
+ * FixedPosePostprocessor) it makes a model-free policy, switched like any other.
+ */
+class NullInference : public Inference
+{
+public:
+  void configure(const PluginContext &) override {}
+  const ModelInfo & model() const override {return model_;}
+  bool run(const TensorMap &, TensorMap &) override {return true;}
+
+private:
+  ModelInfo model_;
+};
+
+/// Preprocessor of a policy without inputs: reads nothing and is always ready.
+class NullPreprocessor : public Preprocessor
+{
+public:
+  void configure(const PluginContext &, const ModelInfo &, DataStore &) override {}
+  bool compute(const DataStore &, const TensorMap &, TensorMap &) override {return true;}
+};
+
+/**
+ * @brief Postprocessor that commands a fixed joint pose, whatever the model answers.
+ *
+ * For a standby or stand-up policy: with NullInference and NullPreprocessor, and the policy's
+ * `transition_time`, switching to it moves the robot to the pose in that time.
+ *
+ * Parameters (under `<policy>.`):
+ * - `joints` (string array) and `positions` (double array, one per joint): written as
+ *   `<joint>/position`, with `<joint>/velocity` = 0.
+ * - `stiffness`, `damping` (double arrays, one per joint, default empty): written as
+ *   `<joint>/stiffness` and `<joint>/damping` (for PdEffortExecutor), also as initial commands.
+ */
+class FixedPosePostprocessor : public Postprocessor
+{
+public:
+  /// @throws std::runtime_error when an array does not have one value per joint.
+  void configure(const PluginContext & ctx, const ModelInfo & model, DataStore & commands) override;
+  void initial_commands(DataStore & commands) override;
+  bool compute(const TensorMap & outputs, double stamp, DataStore & commands) override;
+
+private:
+  struct Value
+  {
+    size_t index;
+    double value;
+  };
+  std::vector<Value> references_;  ///< Positions and zero velocities.
+  std::vector<Value> gains_;
+};
+
 }  // namespace policy_framework
 
 #endif  // POLICY_FRAMEWORK__PLUGINS__STAGES__GENERIC_STAGES_HPP_
