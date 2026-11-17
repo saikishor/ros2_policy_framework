@@ -161,7 +161,8 @@ public:
 
   /**
    * @brief Check the inputs of the step that just finished against their `max_age` (see
-   *        TopicTerm), and latch the reaction of the most severe stale one. Hosts call it right
+   *        TopicTerm), and latch the reaction of the most severe stale one. With groups: the
+   *        inputs of every group whose policy produced commands in that step. Hosts call it right
    *        after a successful step, in their own thread (with an inference thread: when they
    *        collect the step's result, before the next step starts).
    * @param now Current time in seconds, on the clock of the receive times.
@@ -345,10 +346,12 @@ private:
   std::string reason_;        ///< Of the most severe failing check of the current cycle.
   std::string check_reason_;  ///< Written by a failing check.
 
-  // Used only from step(), to log transitions once instead of every cycle; one per group.
+  // Used only from step(), to log transitions once instead of every cycle.
   CommandGate command_gate_;
   size_t neutral_idx_ = 0;  ///< kNeutralCommandsEntry in state_.
   bool commands_accepted_ = true;
+  // One per group, written by step(); last_status_ is also read by check_input_ages(), which
+  // hosts call after the step, never during one.
   std::vector<PolicyPipeline::Status> last_status_;
   std::vector<std::string> last_policy_;
 };

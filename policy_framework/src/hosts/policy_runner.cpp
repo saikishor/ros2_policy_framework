@@ -423,10 +423,13 @@ std::optional<size_t> PolicyRunner::stale_input(const InputStamps & stamps, doub
 
 std::optional<FaultReaction> PolicyRunner::check_input_ages(double now)
 {
-  // The inputs of the active policy of every group: the most severe stale one wins.
+  // The inputs of the active policy of every group that produced commands in the last step
+  // (a waiting group's stamps are those of an older step): the most severe stale one wins.
   const InputStamp * worst = nullptr;
   const PolicyPipeline * worst_pipeline = nullptr;
-  for (const auto & p : pipelines_) {
+  for (size_t g = 0; g < pipelines_.size(); ++g) {
+    if (last_status_[g] != PolicyPipeline::Status::OK) {continue;}
+    const auto & p = pipelines_[g];
     const auto & stamps = p->input_stamps();
     if (const auto i = stale_input(stamps, now);
       i && (!worst || stamps[*i].max_age_on_fault > worst->max_age_on_fault))

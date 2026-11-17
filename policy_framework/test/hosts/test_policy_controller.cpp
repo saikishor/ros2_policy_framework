@@ -502,6 +502,38 @@ TEST_F(PolicyControllerTest, AGroupWaitingAgainDoesNotHoldBackTheOtherGroup)
   EXPECT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));
 }
 
+TEST_F(PolicyControllerTest, AsyncInferenceAppliesTheOtherGroupsWhileOneWaitsAgain)
+{
+  with_reference_executor = false;
+  auto params = gated_group_params();
+  params.push_back({"policy_rate", 50.0});
+  params.push_back({"async_inference", true});
+  init(params, 100);
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  set_state("gate/value", 1.0);
+  for (int i = 0; i < 200 && command("j4/effort") <= 0.0; ++i) {  // both groups ran
+    ASSERT_EQ(update(), controller_interface::return_type::OK);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));
+
+  set_state("gate/value", 0.0);  // the arm waits again
+  set_state("j2/position", 3.0);
+  // walk's new j2 reference is 8.5; with the previous one (6.5) the effort would stay 35.
+  const double moved = 10.0 * (8.5 - 3.0);
+  for (int i = 0; i < 200 && command("j2/effort") != moved; ++i) {
+    ASSERT_EQ(update(), controller_interface::return_type::OK);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_DOUBLE_EQ(command("j2/effort"), moved);
+  EXPECT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));  // the arm's last references
+}
+
 TEST_F(PolicyControllerTest, AsyncInferenceAndIsAsyncAreExclusive)
 {
   init({{"async_inference", true}, {"is_async", true}});

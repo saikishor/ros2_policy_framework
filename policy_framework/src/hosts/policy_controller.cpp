@@ -361,7 +361,10 @@ controller_interface::return_type PolicyController::update(
       timing_.step_time_us =
         std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
       record_observation_age();
-      if (status == PolicyPipeline::Status::OK) {
+      // With groups, a step that waits for one group still applies the others' commands.
+      if (status == PolicyPipeline::Status::OK ||
+        (status == PolicyPipeline::Status::WAITING_FOR_DATA && policy_ready_))
+      {
         if (const auto r = runner_->check_input_ages(now)) {return react(*r);}
       }
     }
@@ -373,7 +376,11 @@ controller_interface::return_type PolicyController::update(
       timing_.step_time_us =
         std::chrono::duration<double, std::micro>(inference_->get_last_execution_time()).count();
       record_observation_age();
-      if (status == PolicyPipeline::Status::OK) {
+      // A group waiting for data wrote nothing, the others did. Not before the first commands:
+      // async_commands_ would overwrite the initial commands (e.g. the hold gains).
+      if (status == PolicyPipeline::Status::OK ||
+        (status == PolicyPipeline::Status::WAITING_FOR_DATA && policy_ready_))
+      {
         // Before taking its commands: a stale input must not be acted on.
         if (const auto r = runner_->check_input_ages(now)) {return react(*r);}
         runner_->commands().copy_values_from(async_commands_);
