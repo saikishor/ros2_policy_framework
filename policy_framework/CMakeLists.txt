@@ -51,6 +51,7 @@ foreach(path IN ITEMS
     params/core/kinematics_parameters.yaml
     params/hosts/policy_controller_parameters.yaml
     params/hosts/policy_node_parameters.yaml
+    params/hosts/policy_replay_parameters.yaml
     params/hosts/policy_runner_parameters.yaml
     params/plugins/executors/multi_dof_command_executor_parameters.yaml
     params/plugins/executors/pd_effort_executor_parameters.yaml
@@ -104,6 +105,14 @@ target_link_libraries(${PROJECT_NAME}
 add_executable(policy_node src/hosts/policy_node_main.cpp)
 target_link_libraries(policy_node ${PROJECT_NAME} policy_node_parameters)
 
+# Offline replay of recorded policy steps; the only part that reads bags (rosbag2_cpp is not a
+# dependency of the library).
+find_package(rosbag2_cpp REQUIRED)
+add_library(policy_replay_lib STATIC src/hosts/policy_replay.cpp)
+target_link_libraries(policy_replay_lib PUBLIC ${PROJECT_NAME} rosbag2_cpp::rosbag2_cpp)
+add_executable(policy_replay src/hosts/policy_replay_main.cpp)
+target_link_libraries(policy_replay policy_replay_lib policy_replay_parameters)
+
 # All plugin base classes live in this package, so every plugin type is exported against it.
 pluginlib_export_plugin_description_file(${PROJECT_NAME} plugins.xml)
 pluginlib_export_plugin_description_file(controller_interface controller_plugins.xml)
@@ -111,7 +120,7 @@ pluginlib_export_plugin_description_file(controller_interface controller_plugins
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 install(TARGETS ${PROJECT_NAME} EXPORT export_${PROJECT_NAME}
   LIBRARY DESTINATION lib ARCHIVE DESTINATION lib RUNTIME DESTINATION bin)
-install(TARGETS policy_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS policy_node policy_replay DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -141,6 +150,8 @@ if(BUILD_TESTING)
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/urdf/test_robot.urdf")
   ament_add_gtest(test_step_replayer test/core/test_step_replayer.cpp)
   target_link_libraries(test_step_replayer ${PROJECT_NAME})
+  ament_add_gtest(test_policy_replay test/hosts/test_policy_replay.cpp)
+  target_link_libraries(test_policy_replay policy_replay_lib)
   ament_add_gtest(test_generic_stages test/plugins/stages/test_generic_stages.cpp)
   target_link_libraries(test_generic_stages ${PROJECT_NAME})
   foreach(path IN ITEMS
