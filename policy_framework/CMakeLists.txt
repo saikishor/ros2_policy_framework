@@ -17,6 +17,7 @@ set(THIS_PACKAGE_DEPENDS
   rclcpp_lifecycle
   realtime_tools
   sensor_msgs
+  std_msgs
 )
 
 find_package(ament_cmake REQUIRED)
@@ -32,7 +33,10 @@ endforeach()
 
 rosidl_generate_interfaces(${PROJECT_NAME}_interfaces
   msg/MockFault.msg
+  msg/PolicyStep.msg
+  msg/Tensor.msg
   srv/SwitchPolicy.srv
+  DEPENDENCIES std_msgs
   LIBRARY_NAME ${PROJECT_NAME}
 )
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces rosidl_typesupport_cpp)
