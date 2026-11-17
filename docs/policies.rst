@@ -170,8 +170,10 @@ policy a ``group``: one policy of every group is active, and all groups step tog
   them write the same entry, for example the same joint reference, naming both policies.
   Policies of the same group may write the same commands, as before.
 - A step succeeds when every group produced commands. A group waiting for data does not stop
-  the others from writing theirs, but the controller holds the robot (see :doc:`safety`) until
-  every group has produced commands once.
+  the others from writing theirs. At start the controller holds the robot (see :doc:`safety`)
+  until every group has produced commands once; after that, a group that waits again keeps
+  its last commands while the other groups' new commands are applied, also with
+  ``async_inference``.
 - Without ``group`` every policy belongs to the same unnamed group: the behaviour described in
   the rest of this page.
 

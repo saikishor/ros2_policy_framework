@@ -199,8 +199,9 @@ stores. Switching (`switch_policy(wave)` changes the arms only), `max_steps` (ba
 first policy of the group) and `interruptible` apply within a group. Policies of different
 groups must write different command entries (configuration fails naming the entry and both
 policies). A step is OK once every group produced commands; a group waiting for data does
-not stop the others from writing theirs, but the controller holds the robot until every
-group produced commands. Limits: one thread and one `policy_rate` for all groups (the step
+not stop the others from writing theirs. At start the controller holds the robot until every
+group produced commands; after that a group that waits again keeps its last commands while
+the others' new ones apply, also with `async_inference`. Limits: one thread and one `policy_rate` for all groups (the step
 time adds up), no blending or arbitration between groups, and each policy only observes what
 its own preprocessor reads. Without `group`, all policies form one group. See
 [docs/policies.rst](docs/policies.rst).
