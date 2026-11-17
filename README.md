@@ -19,7 +19,7 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 
 | Package | Content |
 |---------|---------|
-| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`, `CommandTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck`, `JumpCheck` and `MockSafetyCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks), `SwitchPolicy` service, `MockFault` message |
+| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`, `CommandTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck`, `JumpCheck` and `MockSafetyCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks), `SwitchPolicy` service, `MockFault` and `PolicyStep` messages, the `policy_replay` tool |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` observation term and the Kangaroo deployment config/launch |
 
 ### Repository layout
@@ -30,8 +30,8 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 | Folder | Content | Example include |
 |--------|---------|-----------------|
 | `interfaces/` | Plugin base classes, one header per kind (`Inference`, `Preprocessor`, `Postprocessor`, `InputSource`, `Executor`, `InterfaceExecutor`, `SafetyCheck`, observation terms) and their shared types (`types.hpp`, `plugin_context.hpp`) | `policy_framework/interfaces/preprocessor.hpp` |
-| `core/` | What the hosts are built on: `DataStore`, `PolicyPipeline`, `Kinematics`, `SafetyMonitor`, `LatestMessage` | `policy_framework/core/data_store.hpp` |
-| `hosts/` | `PolicyRunner`, `PolicyNode` (standalone), `PolicyController` (ros2_control) | `policy_framework/hosts/policy_controller.hpp` |
+| `core/` | What the hosts are built on: `DataStore`, `PolicyPipeline`, `Kinematics`, `SafetyMonitor`, `LatestMessage`, `StepPublisher`, `StepReplayer` | `policy_framework/core/data_store.hpp` |
+| `hosts/` | `PolicyRunner`, `PolicyNode` (standalone), `PolicyController` (ros2_control), `policy_replay` (offline) | `policy_framework/hosts/policy_controller.hpp` |
 | `plugins/<kind>/` | The generic plugins: `sources/`, `inference/`, `stages/`, `executors/`, `safety/` | `policy_framework/plugins/sources/topic_sources.hpp` |
 
 `policy_framework/plugin_interfaces.hpp` includes every interface except the observation terms.
@@ -174,6 +174,38 @@ or, chaining into a pid_controller that closes the loop:
   `PolicyController::timing()`. So is the age of each input, per policy:
   `<controller>.input_age_ms.<policy>.<input>` (a term, or an entry for `ConcatPreprocessor`;
   0 for the inputs of an inactive policy), available as `PolicyController::input_age_ms()`.
+  With `publish_steps` every step is also published, see
+  [Recording and replay](#recording-and-replay).
+
+### Recording and replay
+
+With `publish_steps: true` the node and the controller publish a
+`policy_framework/msg/PolicyStep` on `~/policy_step` after every policy step: the active
+policy, its step count and status, the step duration, the stamp of every input, every model
+input and output tensor, and every command entry. It is built in the thread that ran the step
+(the inference thread with `async_inference`) and sent by a real-time publisher, which drops a
+message while the previous one is being sent; it allocates only when the layout changes.
+
+```bash
+ros2 bag record -s mcap -o walk_test /policy_controller/policy_step
+# run the recorded model inputs through a model and compare with the recorded outputs
+ros2 run policy_framework policy_replay --ros-args \
+  -p bag:=walk_test -p model.model_path:=/path/to/policy.onnx
+```
+
+| `policy_replay` parameter | Description |
+|---------------------------|-------------|
+| `bag` | Bag to read (required) |
+| `topic` | `PolicyStep` topic; empty (default): the only one of the bag |
+| `policy` | Replay only this policy's steps; empty (default): all |
+| `inference` | Inference plugin (default `policy_framework/OnnxInference`), its parameters under `model.` |
+| `tolerance` | Largest accepted difference (default 1e-4) |
+
+It prints the largest and mean difference of every output and the step of the largest; the
+exit code is 0 within `tolerance`, 1 above, 2 on an error. Steps whose model did not run are
+skipped. Only the model is replayed (the observation is taken as recorded). Uses: check a
+re-exported or converted model, compare a new policy version on real robot inputs, find the
+moment a policy went wrong. The Kangaroo launch records with `record:=<dir>`.
 
 ## Configuration
 
@@ -196,6 +228,7 @@ name. Write floating point values with a decimal point (`50.0`).
 | `<policy>.<plugin param>` | Parameters of the policy's plugins |
 | `<policy>.terms.<term>.max_age`, `.max_age_on_fault` | A `TopicTerm`: fault when its latest message arrived longer ago than this, in s, on the receive time (default 0: off), checked after each step of its policy; reaction `hold`, `damp`, `safe` or `error` (default `error`). Refused by a `CommandTerm` (it has its `timeout`). See [Writing plugins](#writing-plugins) |
 | `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
+| `publish_steps` | Publish every policy step on `~/policy_step` (default false), see [Recording and replay](#recording-and-replay) |
 | `kinematics.enabled`, `kinematics.joints` | Whole-body kinematics (default false), see below |
 | `safety_entry` | State entry that is 0 while user commands must be ignored (default empty: always accepted), see Safety |
 | `safety.max_tilt`, `safety.imu` | Fault when the IMU z axis tilts more than this from the vertical, in rad (default 0: off) |
@@ -395,6 +428,7 @@ ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPo
 | `loco_models`, `imitation_models` | comma-separated versions; default per robot type: `v315`, `v719` (lower body); `v265`, `v30` (4dof) |
 | `imitation_frames` | comma-separated steps of each imitation before returning to the first loco policy (the motion's frame count); may be omitted when every motion is known: `v719` 147, `v30` 300 |
 | `activate_impedance_controller` | `True`; `False` loads and configures the controllers inactive |
+| `record` | empty; a directory records every policy step, `/cmd_vel` and `/joint_states` in an MCAP bag (`publish_steps`) |
 | `use_sim_time` | `false` (node mode only) |
 
 The controller manager must be started with this workspace sourced to find the controller
