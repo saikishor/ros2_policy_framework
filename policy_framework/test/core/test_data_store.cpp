@@ -74,3 +74,15 @@ TEST(DataStore, AllReceivedChecksEveryIndex)
   store.set(b, 0.0, 0.0);
   EXPECT_TRUE(store.all_received({a, b}));
 }
+
+TEST(DataStore, ResetForgetsEveryValueButKeepsTheEntries)
+{
+  policy_framework::DataStore store;
+  const auto a = store.add("a");
+  store.set(a, 3.0, 5.0);
+  store.reset();
+  EXPECT_FALSE(store.received(a));
+  EXPECT_DOUBLE_EQ(store.get(a), 0.0);
+  EXPECT_DOUBLE_EQ(store.stamp(a), 0.0);
+  EXPECT_EQ(store.index("a"), a);
+}
