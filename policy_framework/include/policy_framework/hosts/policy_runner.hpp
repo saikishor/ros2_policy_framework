@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "pluginlib/class_loader.hpp"
+#include "policy_framework/core/command_blender.hpp"
 #include "policy_framework/core/data_store.hpp"
 #include "policy_framework/core/kinematics.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
@@ -97,7 +98,8 @@ public:
 
   /**
    * @brief Start over from the default policy with every policy cleared (at the next step()),
-   *        and write its initial commands. Hosts call it when they are activated.
+   *        and write its initial commands; forget executor_commands(). Hosts call it when they
+   *        are activated (allocates).
    */
   void restart();
 
@@ -193,7 +195,21 @@ public:
    */
   PolicyPipeline::Status step(const DataStore & state, DataStore & commands);
 
-  /// Send commands() through every executor.
+  /**
+   * @brief Compute executor_commands() from commands(), ramping them over the policy's
+   *        `transition_time` when a new policy took over. Real-time safe.
+   * @param stepped commands() hold the result of a step that just finished (synchronous: this
+   *        cycle's step; asynchronous: the step whose commands were just collected). A ramp
+   *        starts when that step's policy is not the one of the previous ramp: on the first
+   *        step after restart() (from the measured `<joint>/position` state entries) and after
+   *        a switch.
+   * @param dt Seconds since the previous call (the controller calls it on every update).
+   */
+  void blend_commands(bool stepped, double dt);
+  /// @return The commands the executors read: commands() through the transition ramp.
+  const DataStore & executor_commands() const {return blender_.output();}
+
+  /// Send executor_commands() through every executor.
   void write_executors();
 
   /// @return (name, plugin class) of each configured `executors` entry, loaded or not.
@@ -249,6 +265,10 @@ private:
   DataStore state_;
   DataStore commands_;
   rclcpp::Service<srv::SwitchPolicy>::SharedPtr switch_service_;
+  CommandBlender blender_;
+  int blend_policy_ = -1;  ///< Policy of the last ramp; -1: none since restart().
+  /// (command index, state index) of the `<joint>/position` commands that are measured.
+  std::vector<std::pair<size_t, size_t>> measured_positions_;
 
   /// A loaded `safety_checks` plugin.
   struct Check

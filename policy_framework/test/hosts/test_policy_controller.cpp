@@ -214,6 +214,32 @@ TEST_F(PolicyControllerTest, UpdateRunsPolicyFromStateToCommandInterfaces)
   EXPECT_DOUBLE_EQ(command("pid/j2/position"), 6.5);
 }
 
+TEST_F(PolicyControllerTest, CommandsRampFromTheMeasuredPositionsOnEveryUpdate)
+{
+  init({{"walk.transition_time", 0.1}, {"policy_rate", 25.0}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+
+  // 20 ms updates, a policy step every other one: the ramp advances on every update.
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_NEAR(command("pid/j1/position"), 1.0 + 0.2 * (4.5 - 1.0), 1e-9);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_NEAR(command("pid/j1/position"), 1.0 + 0.4 * (4.5 - 1.0), 1e-9);
+  for (int i = 0; i < 3; ++i) {ASSERT_EQ(update(), controller_interface::return_type::OK);}
+  EXPECT_NEAR(command("pid/j1/position"), 4.5, 1e-9);
+  EXPECT_NEAR(command("pid/j2/position"), 6.5, 1e-9);
+
+  // A new activation ramps again.
+  ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_NEAR(command("pid/j1/position"), 1.0 + 0.2 * (4.5 - 1.0), 1e-9);
+}
+
 TEST_F(PolicyControllerTest, MeasuresThePolicyStepAndTheAgeOfItsObservation)
 {
   init();
