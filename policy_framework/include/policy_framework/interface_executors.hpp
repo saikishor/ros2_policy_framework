@@ -33,6 +33,8 @@ namespace policy_framework
  * - `effort_interface` (default `effort`)
  * - `stiffness`, `damping` (double arrays, one per joint): fallback gains
  * - `effort_limits` (double array, one per joint, default empty = no clamping): |effort| bound
+ * - `fault_damping` (double array, one per joint, default empty = zero effort): damp() writes
+ *   effort = -fault_damping * velocity, within the effort limits
  *
  * A joint whose reference, measurement or gains are not received or not finite is left
  * unchanged. safe_values() is zero effort.
@@ -54,6 +56,7 @@ public:
     const DataStore & commands, const DataStore & state, std::vector<double> & values,
     bool start) override;
   void safe_values(std::vector<double> & values) override {values.assign(values.size(), 0.0);}
+  void damp(const DataStore & state, std::vector<double> & values) override;
 
 private:
   struct Joint
@@ -61,6 +64,7 @@ private:
     size_t ref_pos, q, dq;
     std::optional<size_t> ref_vel, kp_entry, kd_entry;
     double kp = 0.0, kd = 0.0, limit = 0.0;  // limit <= 0: none
+    double fault_kd = 0.0;                   // damp()
     bool has_kp = false, has_kd = false;     // the parameters give this gain
     double hold_q = 0.0;                     // NaN until hold() saw the position
   };
