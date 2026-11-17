@@ -52,7 +52,9 @@ void PolicyRunner::configure(
   checks_.clear();
   kinematics_ = KinematicsFeed();
   policy_kinematics_ = KinematicsFeed();
-  pipeline_ = std::make_unique<PolicyPipeline>();
+  pipelines_.clear();
+  policy_pipeline_.clear();
+  group_policies_.clear();
   state_ = DataStore();
   commands_ = DataStore();
   source_loader_ = make_loader<InputSource>("InputSource");
@@ -87,9 +89,18 @@ void PolicyRunner::configure(
     RCLCPP_INFO(logger, "Input source '%s' (%s)", name.c_str(), type.c_str());
   }
 
+  std::vector<std::string> groups;
   for (const auto & name : params.policies) {
     const PluginContext ctx{node, name, policy_kinematics_.model, safety};
     const auto & stages = params.policies_map.at(name);
+    const auto group = std::find(groups.begin(), groups.end(), stages.group);
+    const auto g = static_cast<size_t>(group - groups.begin());
+    if (group == groups.end()) {
+      groups.push_back(stages.group);
+      pipelines_.push_back(std::make_unique<PolicyPipeline>());
+      group_policies_.emplace_back();
+    }
+    group_policies_[g].push_back(policy_inputs_.size());  // its index in `policies`
     Policy p;
     p.name = name;
     p.inference = inference_loader_->createSharedInstance(stages.inference);
@@ -107,9 +118,10 @@ void PolicyRunner::configure(
     p.max_steps = static_cast<int>(stages.max_steps);
     p.interruptible = stages.interruptible;
     RCLCPP_INFO(
-      logger, "Policy '%s': max_steps=%d interruptible=%s", name.c_str(), p.max_steps,
-      p.interruptible ? "true" : "false");
-    pipeline_->add_policy(std::move(p));
+      logger, "Policy '%s': group='%s' max_steps=%d interruptible=%s", name.c_str(),
+      stages.group.c_str(), p.max_steps, p.interruptible ? "true" : "false");
+    pipelines_[g]->add_policy(std::move(p));
+    policy_pipeline_[name] = g;
   }
 
   if (load_executors) {
@@ -128,17 +140,49 @@ void PolicyRunner::configure(
     [this](
       const std::shared_ptr<srv::SwitchPolicy::Request> req,
       std::shared_ptr<srv::SwitchPolicy::Response> res) {
-      res->success = pipeline_->request_switch(req->policy_name, res->message);
+      res->success = request_switch(req->policy_name, res->message);
       RCLCPP_INFO(logger_, "switch_policy: %s", res->message.c_str());
     });
 
   latched_.reset();
   reported_.reset();
-  last_status_ = PolicyPipeline::Status::OK;
-  last_policy_.clear();
+  last_status_.assign(pipelines_.size(), PolicyPipeline::Status::OK);
+  last_policy_.assign(pipelines_.size(), "");
+  std::string active;
+  for (const auto & a : active_policies()) {active += " '" + a + "'";}
   RCLCPP_INFO(
-    logger, "%zu state entries, %zu command entries, active policy '%s'", state_.size(),
-    commands_.size(), pipeline_->active_policy().c_str());
+    logger, "%zu state entries, %zu command entries, active policies:%s", state_.size(),
+    commands_.size(), active.c_str());
+}
+
+bool PolicyRunner::request_switch(const std::string & name, std::string & message)
+{
+  const auto it = policy_pipeline_.find(name);
+  if (it == policy_pipeline_.end()) {
+    message = "Unknown policy '" + name + "'. Available: ";
+    for (const auto & p : pipelines_) {
+      for (const auto & n : p->policy_names()) {message += n + " ";}
+    }
+    return false;
+  }
+  return pipelines_[it->second]->request_switch(name, message);
+}
+
+std::vector<std::string> PolicyRunner::active_policies() const
+{
+  std::vector<std::string> active;
+  for (const auto & p : pipelines_) {active.push_back(p->active_policy());}
+  return active;
+}
+
+double PolicyRunner::observation_stamp() const
+{
+  double oldest = 0.0;
+  for (const auto & p : pipelines_) {
+    const double s = p->observation_stamp();
+    if (s > 0.0 && (oldest <= 0.0 || s < oldest)) {oldest = s;}
+  }
+  return oldest;
 }
 
 void PolicyRunner::configure_safety(
@@ -234,6 +278,8 @@ void PolicyRunner::configure_safety(
     }
     policy_safety_.push_back(std::move(p));
   }
+  // Sized now: update_safety() combines the groups' exemptions into it without allocating.
+  disabled_.checks.assign(checks_.size(), false);
   // Reserved now, so that a failing check does not allocate for its reason in most cases.
   reason_.reserve(256);
   check_reason_.reserve(256);
@@ -241,8 +287,10 @@ void PolicyRunner::configure_safety(
 
 void PolicyRunner::restart()
 {
-  pipeline_->restart();
-  pipeline_->write_initial_commands(commands_);
+  for (const auto & p : pipelines_) {
+    p->restart();
+    p->write_initial_commands(commands_);
+  }
   set_neutral_commands(false, 0.0);
   latched_.reset();
   reported_.reset();
@@ -279,10 +327,21 @@ std::vector<FaultReaction> PolicyRunner::fault_reactions() const
 std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stamp, double now)
 {
   std::optional<FaultReaction> worst;
-  // The policy whose commands are applied: a requested switch takes effect at the start of the
-  // next step, after this, so a new policy's exemptions apply from the cycle after its first
+  // The policies whose commands are applied: a requested switch takes effect at the start of
+  // the next step, after this, so a new policy's exemptions apply from the cycle after its first
   // step, and the checks it disabled come back from the cycle after the next policy's first step.
-  const auto & disabled = policy_safety_[pipeline_->active_index()];
+  // With groups, a check is skipped only while the active policy of every group disables it:
+  // the commands of a group that did not ask for the exemption are still checked.
+  auto & disabled = disabled_;
+  disabled.monitor.set();
+  std::fill(disabled.checks.begin(), disabled.checks.end(), true);
+  for (size_t g = 0; g < pipelines_.size(); ++g) {
+    const auto & d = policy_safety_[group_policies_[g][pipelines_[g]->active_index()]];
+    disabled.monitor &= d.monitor;
+    for (size_t i = 0; i < d.checks.size(); ++i) {
+      disabled.checks[i] = disabled.checks[i] && d.checks[i];
+    }
+  }
   if (const auto v = monitor_.check(state_, observation_stamp, now, disabled.monitor)) {
     worst = v->check == SafetyMonitor::Check::TILT ? tilt_on_fault_ :
       v->check == SafetyMonitor::Check::JOINT_POSITION ? position_on_fault_ :
@@ -346,13 +405,23 @@ std::optional<size_t> PolicyRunner::stale_input(const InputStamps & stamps, doub
 
 std::optional<FaultReaction> PolicyRunner::check_input_ages(double now)
 {
-  const auto & stamps = pipeline_->input_stamps();
-  if (const auto i = stale_input(stamps, now)) {
-    const auto & s = stamps[*i];
-    escalate(s.max_age_on_fault);
+  // The inputs of the active policy of every group: the most severe stale one wins.
+  const InputStamp * worst = nullptr;
+  const PolicyPipeline * worst_pipeline = nullptr;
+  for (const auto & p : pipelines_) {
+    const auto & stamps = p->input_stamps();
+    if (const auto i = stale_input(stamps, now);
+      i && (!worst || stamps[*i].max_age_on_fault > worst->max_age_on_fault))
+    {
+      worst = &stamps[*i];
+      worst_pipeline = p.get();
+    }
+  }
+  if (worst) {
+    escalate(worst->max_age_on_fault);
     report(
-      latched_, "input '" + s.name + "' of policy '" + pipeline_->active_policy() +
-      "': no message for " + std::to_string(now - s.receive_time) + " s, above its max_age");
+      latched_, "input '" + worst->name + "' of policy '" + worst_pipeline->active_policy() +
+      "': no message for " + std::to_string(now - worst->receive_time) + " s, above its max_age");
   }
   return latched_;
 }
@@ -466,29 +535,35 @@ PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & c
     commands_accepted_ = accepted;
   }
   if (policy_kinematics_.model != kinematics_.model) {update_kinematics(policy_kinematics_, state);}
-  PolicyPipeline::Status status;
-  try {
-    status = pipeline_->step(state, commands);
-  } catch (const std::exception & e) {
-    RCLCPP_ERROR(logger_, "Policy step failed: %s", e.what());
-    status = PolicyPipeline::Status::ERROR;
-  }
-  // ponytail: logs from the control cycle on transitions only (rare), not real-time safe; move
-  // to a realtime publisher if a robot ever shows jitter on switches.
-  const auto & active = pipeline_->active_policy();
-  if (active != last_policy_) {
-    RCLCPP_INFO(logger_, "Active policy: '%s'", active.c_str());
-    last_policy_ = active;
-  }
-  if (status != last_status_) {
-    if (status == PolicyPipeline::Status::WAITING_FOR_DATA) {
-      RCLCPP_WARN(logger_, "Waiting for input data of policy '%s'", active.c_str());
-    } else if (status == PolicyPipeline::Status::OK) {
-      RCLCPP_INFO(logger_, "Policy '%s' is running", active.c_str());
+  auto combined = PolicyPipeline::Status::OK;
+  for (size_t g = 0; g < pipelines_.size(); ++g) {
+    auto & pipeline = *pipelines_[g];
+    PolicyPipeline::Status status;
+    try {
+      status = pipeline.step(state, commands);
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(logger_, "Policy step failed: %s", e.what());
+      status = PolicyPipeline::Status::ERROR;
     }
-    last_status_ = status;
+    // ponytail: logs from the control cycle on transitions only (rare), not real-time safe;
+    // move to a realtime publisher if a robot ever shows jitter on switches.
+    const auto & active = pipeline.active_policy();
+    if (active != last_policy_[g]) {
+      RCLCPP_INFO(logger_, "Active policy: '%s'", active.c_str());
+      last_policy_[g] = active;
+    }
+    if (status != last_status_[g]) {
+      if (status == PolicyPipeline::Status::WAITING_FOR_DATA) {
+        RCLCPP_WARN(logger_, "Waiting for input data of policy '%s'", active.c_str());
+      } else if (status == PolicyPipeline::Status::OK) {
+        RCLCPP_INFO(logger_, "Policy '%s' is running", active.c_str());
+      }
+      last_status_[g] = status;
+    }
+    if (status == PolicyPipeline::Status::ERROR) {return status;}
+    if (status == PolicyPipeline::Status::WAITING_FOR_DATA) {combined = status;}
   }
-  return status;
+  return pipelines_.empty() ? PolicyPipeline::Status::ERROR : combined;
 }
 
 void PolicyRunner::write_executors()

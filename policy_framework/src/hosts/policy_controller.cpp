@@ -256,14 +256,17 @@ void PolicyController::update_input_ages(double now)
 {
   std::fill(input_ages_ms_.begin(), input_ages_ms_.end(), 0.0);  // inactive policies: unknown
   const auto & policies = runner_->policy_inputs();
-  const auto & active = runner_->pipeline().active_policy();
-  for (size_t k = 0; k < policies.size(); ++k) {
-    if (policies[k].policy != active) {continue;}
-    const auto & stamps = runner_->pipeline().input_stamps();
-    const size_t n = std::min(stamps.size(), input_age_offsets_[k + 1] - input_age_offsets_[k]);
-    for (size_t i = 0; i < n; ++i) {
-      input_ages_ms_[input_age_offsets_[k] + i] =
-        stamps[i].stamp > 0.0 ? (now - stamps[i].stamp) * 1e3 : 0.0;
+  for (size_t g = 0; g < runner_->groups(); ++g) {  // the active policy of every group
+    const auto & pipeline = runner_->pipeline(g);
+    const auto & active = pipeline.active_policy();
+    for (size_t k = 0; k < policies.size(); ++k) {
+      if (policies[k].policy != active) {continue;}
+      const auto & stamps = pipeline.input_stamps();
+      const size_t n = std::min(stamps.size(), input_age_offsets_[k + 1] - input_age_offsets_[k]);
+      for (size_t i = 0; i < n; ++i) {
+        input_ages_ms_[input_age_offsets_[k] + i] =
+          stamps[i].stamp > 0.0 ? (now - stamps[i].stamp) * 1e3 : 0.0;
+      }
     }
   }
 }
@@ -343,7 +346,7 @@ controller_interface::return_type PolicyController::update(
   std::optional<PolicyPipeline::Status> status;  // of a step whose result arrived now
   // Called right after a step finished, before the next one may start in the inference thread.
   auto record_observation_age = [&]() {
-      const double stamp = runner_->pipeline().observation_stamp();
+      const double stamp = runner_->observation_stamp();
       timing_.observation_age_ms =
         status == PolicyPipeline::Status::OK && stamp > 0.0 ? (now - stamp) * 1e3 : 0.0;
       if (status == PolicyPipeline::Status::OK) {

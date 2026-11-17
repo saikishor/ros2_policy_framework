@@ -89,7 +89,7 @@ void PolicyNode::update()
     return;
   }
   if (status == PolicyPipeline::Status::OK) {
-    observation_stamp_ = runner_->pipeline().observation_stamp();
+    observation_stamp_ = runner_->observation_stamp();
     if (runner_->check_input_ages(t)) {return;}  // a stale input: not sent
     runner_->write_executors();
   }
