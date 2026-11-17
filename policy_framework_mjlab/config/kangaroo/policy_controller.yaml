@@ -8,6 +8,7 @@ policy_controller:
     policy_rate: 50.0
     # true: inference in its own real-time thread, the PD law stays in the control loop.
     async_inference: @ASYNC_INFERENCE@
+    publish_steps: @PUBLISH_STEPS@  # record:=<dir> of the launch file
     executors: [pd]
     pd:
       type: policy_framework/PdEffortExecutor
