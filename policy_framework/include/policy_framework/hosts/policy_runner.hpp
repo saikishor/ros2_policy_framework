@@ -28,6 +28,7 @@
 #include "policy_framework/core/policy_pipeline.hpp"
 #include "policy_framework/core/safety_monitor.hpp"
 #include "policy_framework/srv/switch_policy.hpp"
+#include "policy_framework/core/step_publisher.hpp"
 
 namespace policy_runner
 {
@@ -65,6 +66,8 @@ namespace policy_framework
  * - `on_policy_failure` (string, default `error`): reaction to a failed policy step (hold, damp,
  *   safe or error).
  * - `executors` (string array): executor names; each needs `<executor>.type` (plugin class).
+ * - `publish_steps` (bool, default false): publish every policy step on `~/policy_step`, see
+ *   StepPublisher.
  * - `kinematics.enabled`, `kinematics.joints`: optional whole-body Kinematics model, fed from
  *   the `<joint>/position` and `<joint>/velocity` state entries (registered here). The host
  *   updates kinematics() with update_kinematics(). The policies' plugins get
@@ -249,6 +252,7 @@ private:
   DataStore state_;
   DataStore commands_;
   rclcpp::Service<srv::SwitchPolicy>::SharedPtr switch_service_;
+  std::unique_ptr<StepPublisher> step_publisher_;  ///< Null unless `publish_steps`.
 
   /// A loaded `safety_checks` plugin.
   struct Check

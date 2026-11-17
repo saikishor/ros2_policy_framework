@@ -159,6 +159,11 @@ policy_runner:
       read_only: true
       validation:
         one_of<>: [["neutral_commands", "hold", "damp", "safe", "error"]]
+  publish_steps:
+    type: bool
+    default_value: false
+    description: "Publish every policy step (model inputs and outputs, input stamps, commands) as a policy_framework/msg/PolicyStep on ~/policy_step, to record it and to replay it through a model (policy_replay)."
+    read_only: true
   executors:
     type: string_array
     default_value: []

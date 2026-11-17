@@ -81,6 +81,7 @@ add_library(${PROJECT_NAME} SHARED
   src/plugins/executors/multi_dof_command_executor.cpp
   src/plugins/stages/generic_stages.cpp
   src/plugins/executors/interface_executors.cpp
+  src/core/step_publisher.cpp
   src/hosts/policy_runner.cpp
   src/hosts/policy_node.cpp
   src/hosts/policy_controller.cpp
