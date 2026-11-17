@@ -90,6 +90,8 @@ void PolicyRunner::configure(
   }
 
   std::vector<std::string> groups;
+  // Group and policy that first registered each command entry: groups write disjoint ones.
+  std::unordered_map<size_t, std::pair<size_t, std::string>> writers;
   for (const auto & name : params.policies) {
     const PluginContext ctx{node, name, policy_kinematics_.model, safety};
     const auto & stages = params.policies_map.at(name);
@@ -114,7 +116,23 @@ void PolicyRunner::configure(
     }
     policy_inputs_.push_back(std::move(inputs));
     p.postprocessor = postprocessor_loader_->createSharedInstance(stages.postprocessor);
-    p.postprocessor->configure(ctx, p.inference->model(), commands_);
+    std::vector<size_t> written;
+    commands_.log_adds(&written);
+    try {
+      p.postprocessor->configure(ctx, p.inference->model(), commands_);
+    } catch (...) {
+      commands_.log_adds(nullptr);
+      throw;
+    }
+    commands_.log_adds(nullptr);
+    for (const auto i : written) {
+      const auto [it, first] = writers.try_emplace(i, g, name);
+      if (!first && it->second.first != g) {
+        throw std::runtime_error(
+                "Command entry '" + commands_.names()[i] + "' is written by policies '" +
+                it->second.second + "' and '" + name + "' of different groups");
+      }
+    }
     p.max_steps = static_cast<int>(stages.max_steps);
     p.interruptible = stages.interruptible;
     RCLCPP_INFO(
