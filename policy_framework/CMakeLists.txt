@@ -89,6 +89,12 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   set(TEST_MODELS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test/models")
 
+  # Test-only plugins, loaded by name like any other (installed so that pluginlib finds them).
+  add_library(gated_preprocessor SHARED test/gated_preprocessor.cpp)
+  target_link_libraries(gated_preprocessor ${PROJECT_NAME})
+  install(TARGETS gated_preprocessor DESTINATION lib)
+  pluginlib_export_plugin_description_file(${PROJECT_NAME} test/test_plugins.xml)
+
   ament_add_gtest(test_data_store test/test_data_store.cpp)
   target_link_libraries(test_data_store ${PROJECT_NAME})
   ament_add_gtest(test_policy_pipeline test/test_policy_pipeline.cpp)
