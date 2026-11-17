@@ -4,6 +4,7 @@
 #include "policy_framework/policy_runner.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <memory>
 #include <stdexcept>
@@ -106,6 +107,8 @@ void PolicyRunner::configure(
       RCLCPP_INFO(logger_, "switch_policy: %s", res->message.c_str());
     });
 
+  step_publisher_ = params.publish_steps ? std::make_unique<StepPublisher>(node) : nullptr;
+
   last_status_ = PolicyPipeline::Status::OK;
   last_policy_.clear();
   RCLCPP_INFO(
@@ -196,11 +199,17 @@ PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & c
   }
   if (policy_kinematics_.model != kinematics_.model) {update_kinematics(policy_kinematics_, state);}
   PolicyPipeline::Status status;
+  const auto start = std::chrono::steady_clock::now();
   try {
     status = pipeline_->step(state, commands);
   } catch (const std::exception & e) {
     RCLCPP_ERROR(logger_, "Policy step failed: %s", e.what());
     status = PolicyPipeline::Status::ERROR;
+  }
+  if (step_publisher_) {
+    step_publisher_->publish(
+      *pipeline_, status, commands,
+      std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count());
   }
   // ponytail: logs from the control cycle on transitions only (rare), not real-time safe; move
   // to a realtime publisher if a robot ever shows jitter on switches.

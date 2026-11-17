@@ -15,6 +15,7 @@
 #include "policy_framework/plugin_interfaces.hpp"
 #include "policy_framework/policy_pipeline.hpp"
 #include "policy_framework/srv/switch_policy.hpp"
+#include "policy_framework/step_publisher.hpp"
 
 namespace policy_framework
 {
@@ -36,6 +37,8 @@ namespace policy_framework
  * - `safety_entry` (string, default empty): state entry that is 0 while user commands must be
  *   ignored (see CommandGate), registered here and handed to the plugins.
  * - `executors` (string array): executor names; each needs `<executor>.type` (plugin class).
+ * - `publish_steps` (bool, default false): publish every policy step on `~/policy_step`, see
+ *   StepPublisher.
  * - `kinematics.enabled`, `kinematics.joints`: optional whole-body Kinematics model, fed from
  *   the `<joint>/position` and `<joint>/velocity` state entries (registered here). The host
  *   updates kinematics() with update_kinematics(). The policies' plugins get
@@ -148,6 +151,7 @@ private:
   DataStore state_;
   DataStore commands_;
   rclcpp::Service<srv::SwitchPolicy>::SharedPtr switch_service_;
+  std::unique_ptr<StepPublisher> step_publisher_;  ///< Null unless `publish_steps`.
 
   // Used only from step(), to log transitions once instead of every cycle.
   CommandGate command_gate_;

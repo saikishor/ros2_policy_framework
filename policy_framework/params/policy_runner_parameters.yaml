@@ -57,6 +57,11 @@ policy_runner:
     default_value: ""
     description: "State entry (a state interface in PolicyController, e.g. rl_safety_controller/safe) that is 0 while user commands (velocity command, motion reference) must be ignored and replaced by neutral ones. Empty: always accepted."
     read_only: true
+  publish_steps:
+    type: bool
+    default_value: false
+    description: "Publish every policy step (model inputs and outputs, input stamps, commands) as a policy_framework/msg/PolicyStep on ~/policy_step, to record it and to replay it through a model (policy_replay)."
+    read_only: true
   executors:
     type: string_array
     default_value: []

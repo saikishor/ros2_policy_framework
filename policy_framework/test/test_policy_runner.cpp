@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "policy_framework/msg/policy_step.hpp"
 #include "policy_framework/policy_runner.hpp"
 #include "policy_framework/srv/switch_policy.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -121,6 +122,69 @@ TEST_F(PolicyRunnerTest, RunsPolicyFedByTopicSourceAndSwitchesViaService)
   EXPECT_DOUBLE_EQ(command("j1/position"), 3.0 + 1.0 + 0.5);
   runner.step();  // max_steps reached on the previous step: back to the default
   EXPECT_EQ(runner.pipeline().active_policy(), "walk");
+}
+
+TEST_F(PolicyRunnerTest, PublishesEveryPolicyStepWhenAskedTo)
+{
+  using policy_framework::msg::PolicyStep;
+  auto params = runner_params("/runner_steps_js");
+  params.emplace_back("publish_steps", true);
+  configure(params);
+  std::vector<PolicyStep> steps;
+  auto sub = helper->create_subscription<PolicyStep>(
+    "/runner/policy_step", 10, [&](const PolicyStep & msg) {steps.push_back(msg);});
+  auto pub = helper->create_publisher<sensor_msgs::msg::JointState>("/runner_steps_js", 10);
+  sensor_msgs::msg::JointState js;
+  js.name = {"j1", "j2", "j3"};
+  js.position = {1.0, 2.0, 3.0};
+  for (int i = 0; i < 100 &&
+    (pub->get_subscription_count() == 0 || sub->get_publisher_count() == 0); ++i)
+  {
+    spin_for(std::chrono::milliseconds(10));
+  }
+
+  runner.read_sources(5.0);
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::WAITING_FOR_DATA);
+  spin_for(std::chrono::milliseconds(100));
+  ASSERT_EQ(steps.size(), 1u);
+  EXPECT_EQ(steps[0].status, PolicyStep::STATUS_WAITING_FOR_DATA);
+  EXPECT_EQ(steps[0].step, 0u);
+
+  pub->publish(js);
+  spin_for(std::chrono::milliseconds(100));
+  runner.read_sources(5.0);
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
+  spin_for(std::chrono::milliseconds(100));
+  ASSERT_EQ(steps.size(), 2u);
+  const auto & step = steps[1];
+  EXPECT_EQ(step.status, PolicyStep::STATUS_OK);
+  EXPECT_EQ(step.policy, "walk");
+  EXPECT_EQ(step.step, 1u);
+  EXPECT_GT(step.step_time_us, 0.0);
+  EXPECT_GT(rclcpp::Time(step.header.stamp).seconds(), 0.0);
+  // The affine model also echoes a time_step input; tensors are in name order.
+  ASSERT_EQ(step.inputs.size(), 2u);
+  EXPECT_EQ(step.inputs[0].name, "obs");
+  EXPECT_EQ(step.inputs[0].shape, (std::vector<int64_t>{1, 3}));
+  EXPECT_EQ(step.inputs[0].data, (std::vector<float>{1.0F, 2.0F, 3.0F}));
+  EXPECT_EQ(step.inputs[1].name, "time_step");
+  ASSERT_EQ(step.outputs.size(), 2u);
+  EXPECT_EQ(step.outputs[0].name, "actions");
+  EXPECT_EQ(step.outputs[0].data, (std::vector<float>{4.5F, 6.5F}));
+  EXPECT_EQ(step.outputs[1].name, "echo");
+  EXPECT_EQ(step.input_names, (StringArray{"j1/position", "j2/position", "j3/position"}));
+  ASSERT_EQ(step.input_stamps.size(), 3u);
+  EXPECT_GT(step.input_stamps[0], 0.0);
+  EXPECT_DOUBLE_EQ(step.observation_stamp, step.input_stamps[0]);
+  EXPECT_EQ(step.command_names, (StringArray{"j1/position", "j2/position"}));
+  EXPECT_EQ(step.commands, (std::vector<double>{4.5, 6.5}));
+}
+
+TEST_F(PolicyRunnerTest, DoesNotPublishPolicyStepsByDefault)
+{
+  configure(runner_params("/runner_no_steps_js"));
+  spin_for(std::chrono::milliseconds(100));
+  EXPECT_EQ(helper->count_publishers("/runner/policy_step"), 0u);
 }
 
 TEST_F(PolicyRunnerTest, ReportsStateEntriesNoSourceProvides)
