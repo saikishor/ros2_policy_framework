@@ -41,8 +41,9 @@ Hold
 
 Between the activation of the controller and the first commands of the policy there is a
 gap. It is short when everything is ready (one inference), and it can be long when the
-policy is waiting for an input that has not arrived yet. During that gap the executors
-*hold* the robot:
+policy is waiting for an input that has not arrived yet. With :ref:`policy groups
+<policy-groups>` the gap lasts until the active policy of every group produced commands.
+During that gap the executors *hold* the robot:
 
 - ``PdEffortExecutor`` runs its PD law around the joint positions measured at activation,
   with a zero velocity reference. It uses the gains the policy provides before its first
@@ -341,6 +342,12 @@ What can be listed
    leave a check running unnoticed; for the same reason a ``safety_checks`` entry may not be
    named like a monitor check. A source's or a term's ``max_age`` cannot be disabled: a stale
    input is a fault whatever the policy does.
+
+With groups of policies
+   With :ref:`policy groups <policy-groups>` one policy of each group is active at once. A
+   check is skipped only while the active policy of every group disables it: the checks keep
+   watching the joints of a group that did not ask for the exemption. The term ``max_age``
+   of the active policy of every group is checked.
 
 Looser limits instead of none
    Configure the check twice, with the strict and the loose limits, and let each policy

@@ -2,8 +2,9 @@ Policies and switching
 ======================
 
 Several policies can be loaded at once, for example one that walks and one that plays a jump
-motion. Exactly one is *active* at any time. The others stay loaded and ready, so switching
-never loads a model or allocates memory.
+motion. Exactly one is *active* at any time (one per group, see
+:ref:`policy-groups`). The others stay loaded and ready, so switching never loads a model or
+allocates memory.
 
 .. code-block:: yaml
 
@@ -113,3 +114,75 @@ Gains follow the policy
 Different policies are usually trained with different joint gains. Each mjlab policy carries
 its gains in the model file, and they are applied when the policy becomes active. See
 :doc:`mjlab` for the two ways they reach the joint loop.
+
+.. _policy-groups:
+
+Policies running together: groups
+---------------------------------
+
+Some robots run several policies at the same time on different parts of the body, for
+example a locomotion policy on the legs and a manipulation policy on the arms. Give each
+policy a ``group``: one policy of every group is active, and all groups step together.
+
+.. code-block:: yaml
+
+   policies: [loco, reach, jump, wave]   # the first policy of each group is its default
+   loco:
+     group: legs
+     # ... stages and model of a lower-body policy, writing the leg joints
+   jump:
+     group: legs
+     max_steps: 147          # back to 'loco', the default of 'legs'
+   reach:
+     group: arms
+     # ... stages and model of an upper-body policy, writing the arm joints
+   wave:
+     group: arms
+
+.. graphviz::
+
+   digraph groups {
+     rankdir=LR;
+     node [shape=box, style="rounded,filled", fillcolor="#eef3fb", fontname="Helvetica", fontsize=11];
+     edge [fontname="Helvetica", fontsize=10];
+     state [label="State store", shape=cylinder, fillcolor="#fff6d9"];
+     subgraph cluster_legs {
+       label="Group legs"; style="rounded,dashed"; fontname="Helvetica";
+       loco [label="loco (active)", fillcolor="#e8f5e9"];
+       jump [label="jump"];
+     }
+     subgraph cluster_arms {
+       label="Group arms"; style="rounded,dashed"; fontname="Helvetica";
+       reach [label="reach (active)", fillcolor="#e8f5e9"];
+       wave [label="wave"];
+     }
+     commands [label="Command store\nlegs: leg joints\narms: arm joints", shape=cylinder, fillcolor="#fff6d9"];
+     state -> loco;
+     state -> reach;
+     loco -> commands;
+     reach -> commands;
+   }
+
+- Each group behaves like the single pipeline described above: switching, ``max_steps``,
+  ``interruptible`` and the memory rules all apply within the group. ``switch_policy(wave)``
+  changes the arms and leaves the legs walking.
+- Groups step one after the other in the order they first appear in ``policies``, on the same
+  state and command stores, in the same thread (the inference thread with
+  ``async_inference``) and at the same ``policy_rate``.
+- Policies of different groups must write different commands. Configuration fails when two of
+  them write the same entry, for example the same joint reference, naming both policies.
+  Policies of the same group may write the same commands, as before.
+- A step succeeds when every group produced commands. A group waiting for data does not stop
+  the others from writing theirs, but the controller holds the robot (see :doc:`safety`) until
+  every group has produced commands once.
+- Without ``group`` every policy belongs to the same unnamed group: the behaviour described in
+  the rest of this page.
+
+What groups do not do:
+
+- There is no blending or arbitration between groups: each one owns its joints.
+- Each policy observes only what its own preprocessor reads; a lower-body policy trained with
+  the arms still in its observation sees the arms moved by the other group, which it may not
+  have seen in training.
+- The groups share one inference thread and one rate, so the step time is the sum of the
+  groups' step times.
