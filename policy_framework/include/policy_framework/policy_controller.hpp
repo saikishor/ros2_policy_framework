@@ -51,6 +51,12 @@ namespace policy_framework
  * held). A tick that finds the previous step still running is skipped with a warning.
  * Exclusive with is_async.
  *
+ * Faults (a failed policy step, e.g. a non-finite model output; state interfaces unreadable
+ * for more than `max_failed_reads` updates; a violated `safety.*` check, see SafetyMonitor)
+ * are handled per `on_fault`: `stop` (default) writes every executor's safe_values() and
+ * returns ERROR; `damp` keeps the controller active, stops following the policy and writes
+ * every executor's damp() values on every update until the controller is reactivated.
+ *
  * Safety: from activation until the active policy produced its first commands (it may wait for
  * its inputs, or for its first inference) the executors hold() the robot where it is
  * (PdEffortExecutor: a PD around the position at activation); after that, a step waiting for
@@ -103,6 +109,11 @@ private:
   void load_executors();
   /// Write the executors' safe values.
   void write_safe_values();
+  /**
+   * @brief Handle a fault per `on_fault`: safe values and ERROR, or latch the fault, write the
+   *        executors' damping values and keep going. Logs @p reason (once when latched).
+   */
+  controller_interface::return_type fault(const std::string & reason);
   /// Write values[k] of executor k to its loaned interfaces (NaN: leave unchanged).
   void apply_values();
 
@@ -122,6 +133,9 @@ private:
   std::vector<std::vector<double>> values_;           ///< Per executor, one per interface.
   std::vector<std::vector<size_t>> loaned_command_;   ///< Per executor, loaned interface index.
   bool policy_ready_ = false;  ///< The policy produced commands since activation.
+  bool damp_on_fault_ = false;  ///< `on_fault: damp`.
+  bool faulted_ = false;        ///< A fault latched with `on_fault: damp` since activation.
+  double observation_stamp_ = 0.0;  ///< Of the last successful policy step since activation.
   bool hold_start_ = true;     ///< No update since activation yet.
   unsigned int max_failed_reads_ = 5;
   unsigned int failed_reads_ = 0;  ///< Consecutive updates with an unreadable state interface.

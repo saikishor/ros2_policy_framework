@@ -183,6 +183,53 @@ TEST(PolicyNode, ReactivationRestartsTheDefaultPolicy)
   EXPECT_DOUBLE_EQ(wait_for_j2(6.5), 6.5);  // back to the default, although jump is not interruptible
 }
 
+TEST(PolicyNode, StopsSendingCommandsOnASafetyViolationUntilReactivated)
+{
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  auto params = node_params({});
+  params.push_back({"robot_description", urdf.str()});
+  params.push_back({"safety.joint_position_limits", true});  // j1, j2 within [-3.2, 3.2]
+  params.push_back({"ref.topic", "/node_reference_safety"});
+  params.push_back({"js.topic", "/node_js_safety"});
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  auto node = std::make_shared<policy_framework::PolicyNode>(opts);
+  ASSERT_EQ(node->configure().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(node->activate().id(), State::PRIMARY_STATE_ACTIVE);
+
+  auto helper = std::make_shared<rclcpp::Node>("node_safety_helper");
+  int received = 0;
+  auto sub = helper->create_subscription<control_msgs::msg::MultiDOFCommand>(
+    "/node_reference_safety", 10, [&](control_msgs::msg::MultiDOFCommand::SharedPtr) {++received;});
+  auto pub = helper->create_publisher<sensor_msgs::msg::JointState>("/node_js_safety", 10);
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(node->get_node_base_interface());
+  exec.add_node(helper);
+  auto publish_for = [&](double j1, std::chrono::milliseconds d) {
+      sensor_msgs::msg::JointState js;
+      js.name = {"j1", "j2", "j3"};
+      js.position = {j1, 2.0, 3.0};
+      const auto end = std::chrono::steady_clock::now() + d;
+      while (std::chrono::steady_clock::now() < end) {
+        pub->publish(js);
+        exec.spin_some();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+    };
+
+  publish_for(4.0, std::chrono::milliseconds(500));  // j1 beyond its limit
+  EXPECT_EQ(received, 0);
+  publish_for(1.0, std::chrono::milliseconds(300));  // back within: the fault stays
+  EXPECT_EQ(received, 0);
+
+  ASSERT_EQ(node->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(node->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  publish_for(1.0, std::chrono::milliseconds(300));
+  EXPECT_GT(received, 0);
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
