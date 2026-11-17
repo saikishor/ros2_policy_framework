@@ -268,7 +268,11 @@ controller_interface::return_type PolicyController::update(
       timing_.step_time_us =
         std::chrono::duration<double, std::micro>(inference_->get_last_execution_time()).count();
       record_observation_age();
-      if (status == PolicyPipeline::Status::OK) {
+      // A group waiting for data wrote nothing, the others did. Not before the first commands:
+      // async_commands_ would overwrite the initial commands (e.g. the hold gains).
+      if (status == PolicyPipeline::Status::OK ||
+        (status == PolicyPipeline::Status::WAITING_FOR_DATA && policy_ready_))
+      {
         runner_->commands().copy_values_from(async_commands_);
       }
     }
