@@ -291,11 +291,12 @@ controller_interface::return_type PolicyController::update(
     return controller_interface::return_type::ERROR;
   }
   if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
+  runner_->blend_commands(status == PolicyPipeline::Status::OK, period.seconds());
   // Before the first commands since activation the command store may still hold the previous
   // activation's references: the executors hold the robot instead of following them.
   for (size_t k = 0; k < executors_.size(); ++k) {
     if (policy_ready_) {
-      executors_[k]->write(runner_->commands(), state, values_[k]);
+      executors_[k]->write(runner_->executor_commands(), state, values_[k]);
     } else {
       executors_[k]->hold(runner_->commands(), state, values_[k], hold_start_);
     }
