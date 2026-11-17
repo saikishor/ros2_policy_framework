@@ -37,7 +37,8 @@ void PolicyRunner::configure(
   executors_.clear();
   kinematics_ = KinematicsFeed();
   policy_kinematics_ = KinematicsFeed();
-  pipeline_ = std::make_unique<PolicyPipeline>();
+  pipelines_.clear();
+  policy_pipeline_.clear();
   state_ = DataStore();
   commands_ = DataStore();
   source_loader_ = make_loader<InputSource>("InputSource");
@@ -69,9 +70,16 @@ void PolicyRunner::configure(
     RCLCPP_INFO(logger, "Input source '%s' (%s)", name.c_str(), type.c_str());
   }
 
+  std::vector<std::string> groups;
   for (const auto & name : params.policies) {
     const PluginContext ctx{node, name, policy_kinematics_.model, safety};
     const auto & stages = params.policies_map.at(name);
+    const auto group = std::find(groups.begin(), groups.end(), stages.group);
+    const auto g = static_cast<size_t>(group - groups.begin());
+    if (group == groups.end()) {
+      groups.push_back(stages.group);
+      pipelines_.push_back(std::make_unique<PolicyPipeline>());
+    }
     Policy p;
     p.name = name;
     p.inference = inference_loader_->createSharedInstance(stages.inference);
@@ -83,9 +91,10 @@ void PolicyRunner::configure(
     p.max_steps = static_cast<int>(stages.max_steps);
     p.interruptible = stages.interruptible;
     RCLCPP_INFO(
-      logger, "Policy '%s': max_steps=%d interruptible=%s", name.c_str(), p.max_steps,
-      p.interruptible ? "true" : "false");
-    pipeline_->add_policy(std::move(p));
+      logger, "Policy '%s': group='%s' max_steps=%d interruptible=%s", name.c_str(),
+      stages.group.c_str(), p.max_steps, p.interruptible ? "true" : "false");
+    pipelines_[g]->add_policy(std::move(p));
+    policy_pipeline_[name] = g;
   }
 
   if (load_executors) {
@@ -102,15 +111,47 @@ void PolicyRunner::configure(
     [this](
       const std::shared_ptr<srv::SwitchPolicy::Request> req,
       std::shared_ptr<srv::SwitchPolicy::Response> res) {
-      res->success = pipeline_->request_switch(req->policy_name, res->message);
+      res->success = request_switch(req->policy_name, res->message);
       RCLCPP_INFO(logger_, "switch_policy: %s", res->message.c_str());
     });
 
-  last_status_ = PolicyPipeline::Status::OK;
-  last_policy_.clear();
+  last_status_.assign(pipelines_.size(), PolicyPipeline::Status::OK);
+  last_policy_.assign(pipelines_.size(), "");
+  std::string active;
+  for (const auto & a : active_policies()) {active += " '" + a + "'";}
   RCLCPP_INFO(
-    logger, "%zu state entries, %zu command entries, active policy '%s'", state_.size(),
-    commands_.size(), pipeline_->active_policy().c_str());
+    logger, "%zu state entries, %zu command entries, active policies:%s", state_.size(),
+    commands_.size(), active.c_str());
+}
+
+bool PolicyRunner::request_switch(const std::string & name, std::string & message)
+{
+  const auto it = policy_pipeline_.find(name);
+  if (it == policy_pipeline_.end()) {
+    message = "Unknown policy '" + name + "'. Available: ";
+    for (const auto & p : pipelines_) {
+      for (const auto & n : p->policy_names()) {message += n + " ";}
+    }
+    return false;
+  }
+  return pipelines_[it->second]->request_switch(name, message);
+}
+
+std::vector<std::string> PolicyRunner::active_policies() const
+{
+  std::vector<std::string> active;
+  for (const auto & p : pipelines_) {active.push_back(p->active_policy());}
+  return active;
+}
+
+double PolicyRunner::observation_stamp() const
+{
+  double oldest = 0.0;
+  for (const auto & p : pipelines_) {
+    const double s = p->observation_stamp();
+    if (s > 0.0 && (oldest <= 0.0 || s < oldest)) {oldest = s;}
+  }
+  return oldest;
 }
 
 std::vector<std::string> PolicyRunner::unprovided_state() const
@@ -195,29 +236,35 @@ PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & c
     commands_accepted_ = accepted;
   }
   if (policy_kinematics_.model != kinematics_.model) {update_kinematics(policy_kinematics_, state);}
-  PolicyPipeline::Status status;
-  try {
-    status = pipeline_->step(state, commands);
-  } catch (const std::exception & e) {
-    RCLCPP_ERROR(logger_, "Policy step failed: %s", e.what());
-    status = PolicyPipeline::Status::ERROR;
-  }
-  // ponytail: logs from the control cycle on transitions only (rare), not real-time safe; move
-  // to a realtime publisher if a robot ever shows jitter on switches.
-  const auto & active = pipeline_->active_policy();
-  if (active != last_policy_) {
-    RCLCPP_INFO(logger_, "Active policy: '%s'", active.c_str());
-    last_policy_ = active;
-  }
-  if (status != last_status_) {
-    if (status == PolicyPipeline::Status::WAITING_FOR_DATA) {
-      RCLCPP_WARN(logger_, "Waiting for input data of policy '%s'", active.c_str());
-    } else if (status == PolicyPipeline::Status::OK) {
-      RCLCPP_INFO(logger_, "Policy '%s' is running", active.c_str());
+  auto combined = PolicyPipeline::Status::OK;
+  for (size_t g = 0; g < pipelines_.size(); ++g) {
+    auto & pipeline = *pipelines_[g];
+    PolicyPipeline::Status status;
+    try {
+      status = pipeline.step(state, commands);
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(logger_, "Policy step failed: %s", e.what());
+      status = PolicyPipeline::Status::ERROR;
     }
-    last_status_ = status;
+    // ponytail: logs from the control cycle on transitions only (rare), not real-time safe;
+    // move to a realtime publisher if a robot ever shows jitter on switches.
+    const auto & active = pipeline.active_policy();
+    if (active != last_policy_[g]) {
+      RCLCPP_INFO(logger_, "Active policy: '%s'", active.c_str());
+      last_policy_[g] = active;
+    }
+    if (status != last_status_[g]) {
+      if (status == PolicyPipeline::Status::WAITING_FOR_DATA) {
+        RCLCPP_WARN(logger_, "Waiting for input data of policy '%s'", active.c_str());
+      } else if (status == PolicyPipeline::Status::OK) {
+        RCLCPP_INFO(logger_, "Policy '%s' is running", active.c_str());
+      }
+      last_status_[g] = status;
+    }
+    if (status == PolicyPipeline::Status::ERROR) {return status;}
+    if (status == PolicyPipeline::Status::WAITING_FOR_DATA) {combined = status;}
   }
-  return status;
+  return pipelines_.empty() ? PolicyPipeline::Status::ERROR : combined;
 }
 
 void PolicyRunner::write_executors()

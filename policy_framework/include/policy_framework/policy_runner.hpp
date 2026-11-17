@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -25,14 +26,23 @@ namespace policy_framework
  *
  * Parameters:
  * - `sources` (string array): input source names; each needs `<source>.type` (plugin class).
- * - `policies` (string array, required): policy names; the first one is active at start.
- *   Per policy:
+ * - `policies` (string array, required): policy names; the first one of each group is active
+ *   at start. Per policy:
  *   - `<policy>.preprocessor` (plugin class, required)
  *   - `<policy>.inference` (plugin class, default `policy_framework/OnnxInference`)
  *   - `<policy>.postprocessor` (plugin class, required)
- *   - `<policy>.max_steps` (int, default 0): > 0 returns to the first policy after N steps.
+ *   - `<policy>.max_steps` (int, default 0): > 0 returns to the first policy of its group after
+ *     N steps.
  *   - `<policy>.interruptible` (bool, default true)
+ *   - `<policy>.group` (string, default empty): see below.
  *   plus the parameters of each of its plugins, also under `<policy>.`.
+ *
+ * Groups: each group of policies is a PolicyPipeline with exactly one active policy, and every
+ * group steps on every step(), in the order the groups first appear in `policies`, all on the
+ * same stores (e.g. a `legs` and an `arms` group on disjoint joints). Switching, `max_steps`
+ * and `interruptible` apply within a group. Policies of different groups must write different
+ * command entries (checked while configuring). Without `group` there is a single group, the
+ * behaviour of a single pipeline.
  * - `safety_entry` (string, default empty): state entry that is 0 while user commands must be
  *   ignored (see CommandGate), registered here and handed to the plugins.
  * - `executors` (string array): executor names; each needs `<executor>.type` (plugin class).
@@ -66,14 +76,35 @@ public:
   std::vector<std::string> unprovided_state() const;
 
   /**
-   * @brief Start over from the default policy with every policy cleared (at the next step()),
-   *        and write its initial commands. Hosts call it when they are activated.
+   * @brief Start over from the default policy of every group with every policy cleared (at the
+   *        next step()), and write their initial commands. Hosts call it when they are
+   *        activated.
    */
   void restart()
   {
-    pipeline_->restart();
-    pipeline_->write_initial_commands(commands_);
+    for (const auto & p : pipelines_) {
+      p->restart();
+      p->write_initial_commands(commands_);
+    }
   }
+
+  /**
+   * @brief Ask to activate @p name in its group at the next step(). Thread-safe.
+   * @param[out] message Human readable outcome.
+   * @return false when @p name is unknown or the active policy of its group is not
+   *         interruptible.
+   */
+  bool request_switch(const std::string & name, std::string & message);
+
+  /// @return The active policy of each group, in group order. Allocates: not for the cycle.
+  std::vector<std::string> active_policies() const;
+
+  /**
+   * @return Stamp of the observation of the last step: the oldest of the groups' observation
+   *         stamps (PolicyPipeline::observation_stamp(); 0 when unknown). Read it from the
+   *         thread calling step().
+   */
+  double observation_stamp() const;
 
   /// Copy the latest data of every input source into state(). @p now in seconds.
   void read_sources(double now);
@@ -85,7 +116,13 @@ public:
    */
   void update_kinematics();
 
-  /// Run one step of the active policy. Never throws; exceptions are reported as ERROR.
+  /**
+   * @brief Run one step of the active policy of every group. Never throws; exceptions are
+   *        reported as ERROR.
+   * @return ERROR when a group failed (the following groups do not step); else
+   *         WAITING_FOR_DATA when a group waits for data (the others wrote their commands);
+   *         else OK.
+   */
   PolicyPipeline::Status step() {return step(state_, commands_);}
   /**
    * @brief The same on other stores with the layout of state() and commands() (copies of
@@ -109,7 +146,6 @@ public:
 
   DataStore & state() {return state_;}
   DataStore & commands() {return commands_;}
-  PolicyPipeline & pipeline() {return *pipeline_;}
 
 private:
   /// A kinematics model with the buffers to feed it from a store, one per feeding thread.
@@ -143,17 +179,20 @@ private:
   std::vector<std::shared_ptr<InputSource>> sources_;
   std::vector<std::shared_ptr<Executor>> executors_;
   std::vector<std::pair<std::string, std::string>> executor_types_;
-  // unique_ptr: the pipeline holds atomics, so it is replaced rather than reassigned.
-  std::unique_ptr<PolicyPipeline> pipeline_ = std::make_unique<PolicyPipeline>();
+  // One per group, in group order. unique_ptr: a pipeline holds atomics, so it is replaced
+  // rather than reassigned.
+  std::vector<std::unique_ptr<PolicyPipeline>> pipelines_;
+  /// Pipeline (index in pipelines_) of each policy, to route switch requests.
+  std::unordered_map<std::string, size_t> policy_pipeline_;
   DataStore state_;
   DataStore commands_;
   rclcpp::Service<srv::SwitchPolicy>::SharedPtr switch_service_;
 
-  // Used only from step(), to log transitions once instead of every cycle.
+  // Used only from step(), to log transitions once instead of every cycle; one per group.
   CommandGate command_gate_;
   bool commands_accepted_ = true;
-  PolicyPipeline::Status last_status_ = PolicyPipeline::Status::OK;
-  std::string last_policy_;
+  std::vector<PolicyPipeline::Status> last_status_;
+  std::vector<std::string> last_policy_;
 };
 
 }  // namespace policy_framework
