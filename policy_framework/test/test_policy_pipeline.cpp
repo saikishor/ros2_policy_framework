@@ -238,6 +238,25 @@ TEST_F(PolicyPipelineTest, NonInterruptiblePolicyRejectsSwitchAndReturnsToDefaul
   EXPECT_TRUE(pipeline.request_switch("jump", msg));
 }
 
+TEST_F(PolicyPipelineTest, ExposesTheTensorsAndTheStepCountOfTheLastStep)
+{
+  Fakes a(1.0F), b(10.0F);
+  pipeline.add_policy(a.policy("a"));
+  pipeline.add_policy(b.policy("b"));
+  pipeline.step(state, commands);
+  pipeline.step(state, commands);
+  EXPECT_FLOAT_EQ(pipeline.inputs().at("obs").data[0], 1.0F);  // a's previous action
+  EXPECT_FLOAT_EQ(pipeline.outputs().at("actions").data[0], 2.0F);
+  EXPECT_EQ(pipeline.steps(), 2u);
+
+  std::string msg;
+  ASSERT_TRUE(pipeline.request_switch("b", msg));
+  pipeline.step(state, commands);
+  EXPECT_FLOAT_EQ(pipeline.inputs().at("obs").data[0], 0.0F);
+  EXPECT_FLOAT_EQ(pipeline.outputs().at("actions").data[0], 10.0F);
+  EXPECT_EQ(pipeline.steps(), 1u);  // counted since the policy was activated
+}
+
 TEST_F(PolicyPipelineTest, AddPolicyRejectsDuplicateNames)
 {
   Fakes a(1.0F);

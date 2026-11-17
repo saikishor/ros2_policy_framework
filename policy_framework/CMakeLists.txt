@@ -17,6 +17,7 @@ set(THIS_PACKAGE_DEPENDS
   rclcpp_lifecycle
   realtime_tools
   sensor_msgs
+  std_msgs
 )
 
 find_package(ament_cmake REQUIRED)
@@ -31,7 +32,10 @@ foreach(dep IN ITEMS ${THIS_PACKAGE_DEPENDS})
 endforeach()
 
 rosidl_generate_interfaces(${PROJECT_NAME}_interfaces
+  msg/PolicyStep.msg
+  msg/Tensor.msg
   srv/SwitchPolicy.srv
+  DEPENDENCIES std_msgs
   LIBRARY_NAME ${PROJECT_NAME}
 )
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces rosidl_typesupport_cpp)
@@ -44,7 +48,7 @@ set(PARAMETER_LIBRARIES)
 foreach(params IN ITEMS
     policy_runner policy_node policy_controller onnx_inference topic joint_state_source
     imu_source twist_source multi_dof_command_executor concat_preprocessor split_postprocessor
-    pd_effort_executor reference_interface_executor kinematics)
+    pd_effort_executor reference_interface_executor kinematics policy_replay)
   generate_parameter_library(${params}_parameters params/${params}_parameters.yaml)
   list(APPEND PARAMETER_LIBRARIES ${params}_parameters)
 endforeach()
@@ -57,6 +61,8 @@ add_library(${PROJECT_NAME} SHARED
   src/multi_dof_command_executor.cpp
   src/generic_stages.cpp
   src/interface_executors.cpp
+  src/step_publisher.cpp
+  src/step_replayer.cpp
   src/policy_runner.cpp
   src/policy_node.cpp
   src/policy_controller.cpp
@@ -73,6 +79,14 @@ target_link_libraries(${PROJECT_NAME}
   PUBLIC "${cpp_typesupport_target}" Eigen3::Eigen
   PRIVATE onnxruntime::onnxruntime pinocchio::pinocchio ${PARAMETER_LIBRARIES})
 
+# Offline replay of recorded policy steps; the only part that reads bags (rosbag2_cpp is not a
+# dependency of the library).
+find_package(rosbag2_cpp REQUIRED)
+add_library(policy_replay_lib STATIC src/policy_replay.cpp)
+target_link_libraries(policy_replay_lib PUBLIC ${PROJECT_NAME} rosbag2_cpp::rosbag2_cpp)
+add_executable(policy_replay src/policy_replay_main.cpp)
+target_link_libraries(policy_replay policy_replay_lib policy_replay_parameters)
+
 add_executable(policy_node src/policy_node_main.cpp)
 target_link_libraries(policy_node ${PROJECT_NAME} policy_node_parameters)
 
@@ -83,7 +97,7 @@ pluginlib_export_plugin_description_file(controller_interface controller_plugins
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 install(TARGETS ${PROJECT_NAME} EXPORT export_${PROJECT_NAME}
   LIBRARY DESTINATION lib ARCHIVE DESTINATION lib RUNTIME DESTINATION bin)
-install(TARGETS policy_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS policy_node policy_replay DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -105,6 +119,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_kinematics ${PROJECT_NAME})
   target_compile_definitions(test_kinematics PRIVATE
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
+  ament_add_gtest(test_step_replayer test/test_step_replayer.cpp)
+  target_link_libraries(test_step_replayer ${PROJECT_NAME})
+  ament_add_gtest(test_policy_replay test/test_policy_replay.cpp)
+  target_link_libraries(test_policy_replay policy_replay_lib)
   ament_add_gtest(test_generic_stages test/test_generic_stages.cpp)
   target_link_libraries(test_generic_stages ${PROJECT_NAME})
   foreach(test IN ITEMS test_onnx_inference test_policy_runner test_policy_controller test_policy_node)

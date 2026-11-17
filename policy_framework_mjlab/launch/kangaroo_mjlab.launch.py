@@ -15,6 +15,9 @@ robot_type:=lower_body | full_body_4dof selects the models and the impedance con
 Switch to the imitation policy with:
   ros2 service call /<policy_node|policy_controller>/switch_policy \
     policy_framework/srv/SwitchPolicy "{policy_name: imitation}"
+
+record:=<directory> publishes every policy step (publish_steps) and records it with the user
+commands in an MCAP bag, to look at later or to run through a model with policy_replay.
 """
 
 import os
@@ -22,9 +25,12 @@ import tempfile
 
 from ament_index_python.packages import get_package_share_directory, PackageNotFoundError
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction, Shutdown
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+# Recorded with record:=<directory>, besides the policy steps of the host.
+RECORDED_TOPICS = ['/cmd_vel', '/joint_states']
 
 # Default (loco model, imitation model, imitation frames) per robot type, as deployed by
 # pal_policy_deployer.
@@ -84,6 +90,14 @@ def launch_setup(context):
             models_dir, robot_type, 'imitation', arg('imitation_model') or imitation),
         'IMITATION_FRAMES': int(arg('imitation_frames') or frames),
     })
+    host = 'policy_node' if mode == 'node' else 'policy_controller'
+    record = arg('record')
+    recording = [
+        ExecuteProcess(
+            cmd=['ros2', 'bag', 'record', '--storage', 'mcap', '--output', record,
+                 f'/{host}/policy_step'] + RECORDED_TOPICS,
+            output='screen'),
+    ] if record else []
     # Inactive: load and configure only, e.g. to be activated later by a supervisor.
     activation = ['--unload-on-kill'] if arg('activate_impedance_controller') == 'True' \
         else ['--inactive']
@@ -98,15 +112,17 @@ def launch_setup(context):
                 package='policy_framework', executable='policy_node', name='policy_node',
                 output='screen',
                 parameters=[policies, os.path.join(config, 'kangaroo_policy_node.yaml'),
-                            {'use_sim_time': LaunchConfiguration('use_sim_time')}],
+                            {'use_sim_time': LaunchConfiguration('use_sim_time'),
+                             'publish_steps': bool(record)}],
                 # Without its policy the robot must not keep a stale reference: stop the
                 # launch, which unloads the impedance controller (as pal_policy_deployer).
                 on_exit=Shutdown(reason='policy_node exited'),
             ),
-        ]
+        ] + recording
 
     controller = render(os.path.join(config, 'kangaroo_policy_controller.yaml'), {
-        'ASYNC_INFERENCE': 'true' if mode == 'controller_async' else 'false'})
+        'ASYNC_INFERENCE': 'true' if mode == 'controller_async' else 'false',
+        'PUBLISH_STEPS': 'true' if record else 'false'})
     return [
         Node(
             package='controller_manager', executable='spawner', output='screen',
@@ -114,7 +130,7 @@ def launch_setup(context):
             arguments=['policy_controller', '--param-file', policies,
                        '--param-file', controller] + activation,
         ),
-    ]
+    ] + recording
 
 
 def generate_launch_description():
@@ -134,6 +150,9 @@ def generate_launch_description():
         DeclareLaunchArgument('activate_impedance_controller', default_value='True',
                               choices=['True', 'False'],
                               description='False: load and configure the controllers inactive'),
+        DeclareLaunchArgument('record', default_value='',
+                              description='Directory of an MCAP bag recording every policy step '
+                                          'and the user commands; empty: no recording'),
         DeclareLaunchArgument('use_sim_time', default_value='false',
                               description='Node mode only; controllers use the manager time'),
         OpaqueFunction(function=launch_setup),

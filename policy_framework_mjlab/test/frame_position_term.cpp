@@ -31,7 +31,7 @@ public:
     const policy_framework::DataStore &, const policy_framework::TensorMap &,
     float * out) override
   {
-    const auto & p = kinematics_->transform(frame_).translation();
+    const Eigen::Vector3d p = kinematics_->transform(frame_).translation();
     for (int i = 0; i < 3; ++i) {out[i] = static_cast<float>(p[i]);}
     return kinematics_->stamp();
   }

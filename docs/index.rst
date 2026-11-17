@@ -26,6 +26,7 @@ reference: every parameter, every plugin and the commands to run the Kangaroo ex
    hosts
    policies
    safety
+   observability
    kinematics
    mjlab
    extending
