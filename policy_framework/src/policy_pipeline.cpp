@@ -4,6 +4,7 @@
 #include "policy_framework/policy_pipeline.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <utility>
 
@@ -87,6 +88,12 @@ PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore &
   }
   if (!e.policy.inference->run(e.inputs, e.outputs)) {
     return Status::ERROR;
+  }
+  // A diverged model must not command the robot: NaN would go through every comparison below.
+  for (const auto & [name, t] : e.outputs) {
+    for (const float v : t.data) {
+      if (!std::isfinite(v)) {return Status::ERROR;}
+    }
   }
   if (!e.policy.postprocessor->compute(e.outputs, observation_stamp_, commands)) {
     return Status::ERROR;
