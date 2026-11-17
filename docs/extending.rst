@@ -204,7 +204,11 @@ the situations described in the other pages:
      - Every update until the policy's first commands: keep the robot where it is
        (:doc:`safety`).
    * - ``InterfaceExecutor::safe_values()``
-     - On deactivation and failure: the values that stop commanding.
+     - On deactivation, and on a fault with ``on_fault: stop``: the values that stop
+       commanding.
+   * - ``InterfaceExecutor::damp()``
+     - Every update after a fault with ``on_fault: damp``: values that let the robot down
+       gently, such as a joint damping (:doc:`safety`). Default: the safe values.
    * - ``CommandGate::open()``
      - Check it in any plugin that feeds user commands, and use a neutral command while it
        is false (:doc:`safety`).

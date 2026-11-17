@@ -52,11 +52,57 @@ policy_runner:
       default_value: true
       description: "false: switch requests are rejected while this policy is active."
       read_only: true
+    transition_time:
+      type: double
+      default_value: 0.0
+      description: "Seconds over which the commands the executors read ramp from where they are to this policy's commands when it takes over (after an activation: from the measured joint positions). 0: at once."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
   safety_entry:
     type: string
     default_value: ""
     description: "State entry (a state interface in PolicyController, e.g. rl_safety_controller/safe) that is 0 while user commands (velocity command, motion reference) must be ignored and replaced by neutral ones. Empty: always accepted."
     read_only: true
+  safety:
+    max_tilt:
+      type: double
+      default_value: 0.0
+      description: "Fault when the IMU z axis is tilted more than this (rad) from the vertical; 0: off. Needs safety.imu."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
+    imu:
+      type: string
+      default_value: ""
+      description: "State entry prefix of the IMU orientation for safety.max_tilt: <imu>/orientation.{x,y,z,w}."
+      read_only: true
+    max_joint_velocity:
+      type: double
+      default_value: 0.0
+      description: "Fault when the |velocity| of a commanded joint (state entry <joint>/velocity) exceeds this; 0: off."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
+    joint_position_limits:
+      type: bool
+      default_value: false
+      description: "Fault when the position of a commanded joint leaves its robot description limits minus safety.position_margin."
+      read_only: true
+    position_margin:
+      type: double
+      default_value: 0.0
+      description: "Margin (rad or m) inside the joint limits for safety.joint_position_limits."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
+    max_input_age:
+      type: double
+      default_value: 0.0
+      description: "Fault when the observation of the last policy step (its oldest input) is older than this (s), e.g. a topic that stopped; 0: off."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
   executors:
     type: string_array
     default_value: []

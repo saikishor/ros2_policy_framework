@@ -1,0 +1,28 @@
+fixed_pose_postprocessor:
+  joints:
+    type: string_array
+    description: "Joints of the pose."
+    read_only: true
+    validation:
+      not_empty<>: null
+      unique<>: null
+  positions:
+    type: double_array
+    description: "Position of each joint, written as <joint>/position (with <joint>/velocity = 0)."
+    read_only: true
+    validation:
+      not_empty<>: null
+  stiffness:
+    type: double_array
+    default_value: []
+    description: "Kp per joint, written as <joint>/stiffness; empty: not written."
+    read_only: true
+    validation:
+      lower_element_bounds<>: [0.0]
+  damping:
+    type: double_array
+    default_value: []
+    description: "Kd per joint, written as <joint>/damping; empty: not written."
+    read_only: true
+    validation:
+      lower_element_bounds<>: [0.0]

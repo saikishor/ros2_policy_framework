@@ -170,6 +170,31 @@ TEST_F(PdEffortExecutorTest, SafeValuesAreZeroEffort)
   EXPECT_EQ(values, (Doubles{0.0, 0.0}));
 }
 
+TEST_F(PdEffortExecutorTest, DampingIsTheFaultDampingAgainstTheVelocityWithinTheLimits)
+{
+  configure({
+    {"pd.stiffness", Doubles{10.0, 10.0}}, {"pd.damping", Doubles{1.0, 1.0}},
+    {"pd.fault_damping", Doubles{4.0, 2.0}}, {"pd.effort_limits", Doubles{1.0, 0.0}}});
+  set_robot_and_references();
+  pd.damp(state, values);
+  EXPECT_DOUBLE_EQ(values[0], -1.0);  // -4 * 0.5, clamped
+  EXPECT_DOUBLE_EQ(values[1], 2.0);   // -2 * -1
+  set(state, "b/velocity", std::nan(""));
+  pd.damp(state, values);
+  EXPECT_DOUBLE_EQ(values[1], 0.0);  // no valid velocity: no effort
+}
+
+TEST_F(PdEffortExecutorTest, DampingWithoutFaultDampingIsZeroEffort)
+{
+  configure({{"pd.stiffness", Doubles{10.0, 10.0}}, {"pd.damping", Doubles{1.0, 1.0}}});
+  set_robot_and_references();
+  pd.damp(state, values);
+  EXPECT_EQ(values, (Doubles{0.0, 0.0}));
+  EXPECT_THROW(
+    configure({{"pd.stiffness", Doubles{10.0, 10.0}}, {"pd.damping", Doubles{1.0, 1.0}},
+        {"pd.fault_damping", Doubles{1.0}}}), std::runtime_error);
+}
+
 TEST_F(PdEffortExecutorTest, RejectsNegativeGainsAndLimits)
 {
   EXPECT_ANY_THROW(

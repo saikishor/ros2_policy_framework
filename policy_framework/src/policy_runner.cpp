@@ -82,11 +82,26 @@ void PolicyRunner::configure(
     p.postprocessor->configure(ctx, p.inference->model(), commands_);
     p.max_steps = static_cast<int>(stages.max_steps);
     p.interruptible = stages.interruptible;
+    p.transition_time = stages.transition_time;
     RCLCPP_INFO(
-      logger, "Policy '%s': max_steps=%d interruptible=%s", name.c_str(), p.max_steps,
-      p.interruptible ? "true" : "false");
+      logger, "Policy '%s': max_steps=%d interruptible=%s transition_time=%.3f", name.c_str(),
+      p.max_steps, p.interruptible ? "true" : "false", p.transition_time);
     pipeline_->add_policy(std::move(p));
   }
+
+  SafetyMonitor::Config safety_config;
+  safety_config.max_tilt = params.safety.max_tilt;
+  safety_config.imu = params.safety.imu;
+  safety_config.max_joint_velocity = params.safety.max_joint_velocity;
+  safety_config.position_margin = params.safety.position_margin;
+  safety_config.max_input_age = params.safety.max_input_age;
+  if (params.safety.joint_position_limits) {
+    if (robot_description.empty()) {
+      throw std::runtime_error("safety.joint_position_limits needs a robot description");
+    }
+    safety_config.joint_limits = SafetyMonitor::joint_limits(robot_description);
+  }
+  safety_.configure(safety_config, commands_, state_);
 
   if (load_executors) {
     for (const auto & [name, type] : executor_types_) {
@@ -106,11 +121,48 @@ void PolicyRunner::configure(
       RCLCPP_INFO(logger_, "switch_policy: %s", res->message.c_str());
     });
 
+  blender_.configure(commands_);
   last_status_ = PolicyPipeline::Status::OK;
   last_policy_.clear();
   RCLCPP_INFO(
     logger, "%zu state entries, %zu command entries, active policy '%s'", state_.size(),
     commands_.size(), pipeline_->active_policy().c_str());
+}
+
+void PolicyRunner::restart()
+{
+  pipeline_->restart();
+  pipeline_->write_initial_commands(commands_);
+  blender_.reset();
+  blend_policy_ = -1;
+  // Here rather than in configure(): the controller's executors register their feedback
+  // entries (e.g. <joint>/position) after the runner was configured.
+  measured_positions_.clear();
+  const std::string suffix = "/position";
+  for (size_t c = 0; c < commands_.size(); ++c) {
+    const auto & name = commands_.names()[c];
+    if (name.size() > suffix.size() &&
+      name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0)
+    {
+      if (const auto s = state_.find(name)) {measured_positions_.emplace_back(c, *s);}
+    }
+  }
+}
+
+void PolicyRunner::blend_commands(bool stepped, double dt)
+{
+  if (stepped) {
+    const auto active = pipeline_->active_index();
+    if (static_cast<int>(active) != blend_policy_) {
+      blender_.start(pipeline_->policy(active).transition_time);
+      // Nothing was commanded since the activation: start from where the joints are.
+      for (const auto & [c, s] : measured_positions_) {
+        if (!blender_.has_start(c) && state_.received(s)) {blender_.set_start(c, state_.get(s));}
+      }
+      blend_policy_ = static_cast<int>(active);
+    }
+  }
+  blender_.update(commands_, dt);
 }
 
 std::vector<std::string> PolicyRunner::unprovided_state() const
@@ -222,7 +274,7 @@ PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & c
 
 void PolicyRunner::write_executors()
 {
-  for (const auto & e : executors_) {e->write(commands_);}
+  for (const auto & e : executors_) {e->write(blender_.output());}
 }
 
 }  // namespace policy_framework

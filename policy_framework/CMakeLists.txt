@@ -44,6 +44,7 @@ set(PARAMETER_LIBRARIES)
 foreach(params IN ITEMS
     policy_runner policy_node policy_controller onnx_inference topic joint_state_source
     imu_source twist_source multi_dof_command_executor concat_preprocessor split_postprocessor
+    fixed_pose_postprocessor
     pd_effort_executor reference_interface_executor kinematics)
   generate_parameter_library(${params}_parameters params/${params}_parameters.yaml)
   list(APPEND PARAMETER_LIBRARIES ${params}_parameters)
@@ -52,6 +53,7 @@ endforeach()
 add_library(${PROJECT_NAME} SHARED
   src/policy_pipeline.cpp
   src/kinematics.cpp
+  src/safety_monitor.cpp
   src/onnx_inference.cpp
   src/topic_sources.cpp
   src/multi_dof_command_executor.cpp
@@ -91,6 +93,12 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_data_store test/test_data_store.cpp)
   target_link_libraries(test_data_store ${PROJECT_NAME})
+  ament_add_gtest(test_command_blender test/test_command_blender.cpp)
+  target_link_libraries(test_command_blender ${PROJECT_NAME})
+  ament_add_gtest(test_safety_monitor test/test_safety_monitor.cpp)
+  target_link_libraries(test_safety_monitor ${PROJECT_NAME})
+  target_compile_definitions(test_safety_monitor PRIVATE
+    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
   ament_add_gtest(test_policy_pipeline test/test_policy_pipeline.cpp)
   target_link_libraries(test_policy_pipeline ${PROJECT_NAME})
   ament_add_gtest(test_topic_sources test/test_topic_sources.cpp)
