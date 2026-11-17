@@ -52,6 +52,11 @@ policy_runner:
       default_value: true
       description: "false: switch requests are rejected while this policy is active."
       read_only: true
+    group:
+      type: string
+      default_value: ""
+      description: "Group of the policy. One policy per group is active and every group steps together (e.g. legs and arms); the first policy of a group is its default. Policies of different groups must write different commands."
+      read_only: true
   safety_entry:
     type: string
     default_value: ""

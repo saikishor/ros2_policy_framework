@@ -248,7 +248,7 @@ controller_interface::return_type PolicyController::update(
   std::optional<PolicyPipeline::Status> status;  // of a step whose result arrived now
   // Called right after a step finished, before the next one may start in the inference thread.
   auto record_observation_age = [&]() {
-      const double stamp = runner_->pipeline().observation_stamp();
+      const double stamp = runner_->observation_stamp();
       timing_.observation_age_ms =
         status == PolicyPipeline::Status::OK && stamp > 0.0 ? (now - stamp) * 1e3 : 0.0;
     };
@@ -268,7 +268,11 @@ controller_interface::return_type PolicyController::update(
       timing_.step_time_us =
         std::chrono::duration<double, std::micro>(inference_->get_last_execution_time()).count();
       record_observation_age();
-      if (status == PolicyPipeline::Status::OK) {
+      // A group waiting for data wrote nothing, the others did. Not before the first commands:
+      // async_commands_ would overwrite the initial commands (e.g. the hold gains).
+      if (status == PolicyPipeline::Status::OK ||
+        (status == PolicyPipeline::Status::WAITING_FOR_DATA && policy_ready_))
+      {
         runner_->commands().copy_values_from(async_commands_);
       }
     }

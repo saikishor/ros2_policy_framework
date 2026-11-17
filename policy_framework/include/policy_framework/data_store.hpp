@@ -47,8 +47,16 @@ public:
       stamps_.push_back(0.0);
       received_.push_back(0);
     }
+    if (add_log_) {add_log_->push_back(it->second);}
     return it->second;
   }
+
+  /**
+   * @brief Append the index of every following add() to @p log, also of entries that already
+   *        existed, to learn which entries a plugin registers while it configures.
+   * @param log Must outlive its use; nullptr stops logging (do so before copying the store).
+   */
+  void log_adds(std::vector<size_t> * log) {add_log_ = log;}
 
   /**
    * @brief Copy the values, stamps and received flags of @p other, which must have the same
@@ -120,6 +128,7 @@ private:
   std::vector<double> stamps_;
   // uint8_t instead of bool: std::vector<bool> is a bitset with proxy references.
   std::vector<uint8_t> received_;
+  std::vector<size_t> * add_log_ = nullptr;  ///< See log_adds().
 };
 
 }  // namespace policy_framework

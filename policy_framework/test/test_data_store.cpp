@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "policy_framework/data_store.hpp"
 
 using policy_framework::DataStore;
@@ -25,6 +27,20 @@ TEST(DataStore, FindReturnsEmptyForUnknownNames)
   EXPECT_TRUE(store.find("a").has_value());
   EXPECT_FALSE(store.find("b").has_value());
   EXPECT_THROW((void)store.index("b"), std::out_of_range);
+}
+
+TEST(DataStore, LogsEveryRegistrationWhileALogIsSet)
+{
+  DataStore store;
+  const auto a = store.add("a");
+  std::vector<size_t> log;
+  store.log_adds(&log);
+  const auto b = store.add("b");
+  store.add("a");  // already registered: still logged, whoever asked uses it
+  EXPECT_EQ(log, (std::vector<size_t>{b, a}));
+  store.log_adds(nullptr);
+  store.add("c");
+  EXPECT_EQ(log.size(), 2u);
 }
 
 TEST(DataStore, ValuesStartUnreceivedAndTrackStamp)
