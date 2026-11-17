@@ -1,0 +1,31 @@
+policy_replay:
+  bag:
+    type: string
+    description: "Path of the bag holding the recorded policy steps."
+    read_only: true
+    validation:
+      not_empty<>: null
+  topic:
+    type: string
+    default_value: ""
+    description: "policy_framework/msg/PolicyStep topic of the bag; empty: the only one of that type."
+    read_only: true
+  policy:
+    type: string
+    default_value: ""
+    description: "Replay only the steps of this policy; empty: every step."
+    read_only: true
+  inference:
+    type: string
+    default_value: "policy_framework/OnnxInference"
+    description: "Inference plugin class; its parameters live under model. (e.g. model.model_path)."
+    read_only: true
+    validation:
+      not_empty<>: null
+  tolerance:
+    type: double
+    default_value: 0.0001
+    description: "Largest accepted absolute difference between a replayed and a recorded output value; the exit code is 1 above it."
+    read_only: true
+    validation:
+      gt_eq<>: [0.0]
