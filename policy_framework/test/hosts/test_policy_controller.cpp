@@ -472,6 +472,36 @@ TEST_F(PolicyControllerTest, AsyncInferenceStepsEveryGroup)
   EXPECT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));
 }
 
+// The same, with the arm policy waiting for data while the state interface gate/value is 0.
+std::vector<rclcpp::Parameter> gated_group_params()
+{
+  auto params = two_group_params();
+  params.push_back({"arm.preprocessor", "policy_framework_test/GatedPreprocessor"});
+  return params;
+}
+
+TEST_F(PolicyControllerTest, AGroupWaitingAgainDoesNotHoldBackTheOtherGroup)
+{
+  with_reference_executor = false;
+  init(gated_group_params());
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  set_state("gate/value", 1.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  ASSERT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));
+
+  set_state("gate/value", 0.0);  // the arm waits again
+  set_state("j2/position", 3.0);  // walk: j2 reference 2 * 3 + 3 - 0.5 = 8.5 (was 6.5)
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j2/effort"), 10.0 * (8.5 - 3.0));
+  // The arm keeps its last references (4.5 for j4; 2 * 3 + 1 - 0.5 = 6.5 had it run).
+  EXPECT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));
+}
+
 TEST_F(PolicyControllerTest, AsyncInferenceAndIsAsyncAreExclusive)
 {
   init({{"async_inference", true}, {"is_async", true}});

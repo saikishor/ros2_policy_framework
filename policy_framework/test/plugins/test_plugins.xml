@@ -1,0 +1,7 @@
+<library path="gated_preprocessor">
+  <class name="policy_framework_test/GatedPreprocessor"
+    type="policy_framework_test::GatedPreprocessor"
+    base_class_type="policy_framework::Preprocessor">
+    <description>Test only: a ConcatPreprocessor waiting while its gate entry is not above 0.</description>
+  </class>
+</library>
