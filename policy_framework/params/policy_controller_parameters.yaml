@@ -6,6 +6,13 @@ policy_controller:
     read_only: true
     validation:
       gt_eq<>: [0.0]
+  on_fault:
+    type: string
+    default_value: "stop"
+    description: "What a fault (a failed policy step, unreadable state interfaces, a safety.* check) does. stop: write the executors' safe values and return an error. damp: stay active, stop following the policy and write the executors' damping values on every update until the controller is reactivated."
+    read_only: true
+    validation:
+      one_of<>: [["stop", "damp"]]
   max_failed_reads:
     type: int
     default_value: 5

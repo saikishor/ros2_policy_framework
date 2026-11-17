@@ -327,6 +327,92 @@ TEST_F(PolicyControllerTest, FailsWhenAStateInterfaceCannotBeReadForTooLong)
   EXPECT_EQ(update(), controller_interface::return_type::OK);
 }
 
+TEST_F(PolicyControllerTest, ASafetyViolationStopsTheControllerByDefault)
+{
+  init({{"safety.max_joint_velocity", 5.0}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  EXPECT_EQ(
+    controller.state_interface_configuration().names,
+    (StringArray{"j1/position", "j2/position", "j3/position", "j1/velocity", "j2/velocity"}));
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  set_state("j2/velocity", -6.0);
+  EXPECT_EQ(update(), controller_interface::return_type::ERROR);
+}
+
+TEST_F(PolicyControllerTest, OnFaultDampDampsTheJointsUntilReactivated)
+{
+  with_reference_executor = false;
+  init({
+    {"on_fault", "damp"},
+    {"safety.max_joint_velocity", 5.0},
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{0.0, 0.0}},
+    {"pd.fault_damping", std::vector<double>{2.0, 3.0}},
+    {"pd.effort_limits", std::vector<double>{100.0, 4.0}}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+
+  set_state("j1/velocity", 6.0);
+  set_state("j2/velocity", -1.0);
+  // The controller stays active and only damps: effort = -fault_damping * velocity, clamped.
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 6.0);
+  EXPECT_DOUBLE_EQ(command("j2/effort"), 3.0);
+  // The fault is latched: back within the limits it keeps damping.
+  set_state("j1/velocity", 0.5);
+  set_state("j2/velocity", -2.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 0.5);
+  EXPECT_DOUBLE_EQ(command("j2/effort"), 4.0);  // clamped by effort_limits
+
+  // Only a reactivation clears it.
+  ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/velocity", 0.0);
+  set_state("j2/velocity", 0.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+}
+
+TEST_F(PolicyControllerTest, OnFaultDampAlsoCoversAFailedPolicyStep)
+{
+  with_reference_executor = false;
+  init({
+    {"on_fault", "damp"},
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{0.0, 0.0}}});  // no fault_damping: zero effort
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", std::nan(""));  // the model answers NaN
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+  EXPECT_DOUBLE_EQ(command("j2/effort"), 0.0);
+}
+
+TEST_F(PolicyControllerTest, OnFaultAcceptsOnlyStopOrDamp)
+{
+  init({{"on_fault", "explode"}});
+  EXPECT_NE(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+}
+
 TEST_F(PolicyControllerTest, PolicyRunsAtPolicyRateAndExecutorsOnEveryUpdate)
 {
   with_reference_executor = false;

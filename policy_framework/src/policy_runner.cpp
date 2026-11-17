@@ -88,6 +88,20 @@ void PolicyRunner::configure(
     pipeline_->add_policy(std::move(p));
   }
 
+  SafetyMonitor::Config safety_config;
+  safety_config.max_tilt = params.safety.max_tilt;
+  safety_config.imu = params.safety.imu;
+  safety_config.max_joint_velocity = params.safety.max_joint_velocity;
+  safety_config.position_margin = params.safety.position_margin;
+  safety_config.max_input_age = params.safety.max_input_age;
+  if (params.safety.joint_position_limits) {
+    if (robot_description.empty()) {
+      throw std::runtime_error("safety.joint_position_limits needs a robot description");
+    }
+    safety_config.joint_limits = SafetyMonitor::joint_limits(robot_description);
+  }
+  safety_.configure(safety_config, commands_, state_);
+
   if (load_executors) {
     for (const auto & [name, type] : executor_types_) {
       auto executor = executor_loader_->createSharedInstance(type);
