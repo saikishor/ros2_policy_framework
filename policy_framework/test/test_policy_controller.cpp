@@ -344,6 +344,63 @@ TEST_F(PolicyControllerTest, ASafetyViolationStopsTheControllerByDefault)
   EXPECT_EQ(update(), controller_interface::return_type::ERROR);
 }
 
+std::vector<rclcpp::Parameter> motor_check_params()
+{
+  return {
+    {"safety_checks", StringArray{"motors"}},
+    {"motors.type", "policy_framework/StateBoundsCheck"},
+    {"motors.prefixes", StringArray{"j1", "j2"}},
+    {"motors.interfaces", StringArray{"temperature"}},
+    {"motors.temperature.max", 80.0}};
+}
+
+TEST_F(PolicyControllerTest, ClaimsTheStateInterfacesOfASafetyCheckAndStopsWhenItFails)
+{
+  init(motor_check_params());
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  const auto names = controller.state_interface_configuration().names;
+  for (const auto * n : {"j1/temperature", "j2/temperature"}) {
+    EXPECT_NE(std::find(names.begin(), names.end(), n), names.end()) << n;
+  }
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  set_state("j1/temperature", 60.0);
+  set_state("j2/temperature", 60.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  set_state("j2/temperature", 95.0);
+  EXPECT_EQ(update(), controller_interface::return_type::ERROR);
+}
+
+TEST_F(PolicyControllerTest, AFailingSafetyCheckDampsWithOnFaultDamp)
+{
+  with_reference_executor = false;
+  auto params = motor_check_params();
+  params.insert(params.end(), {
+    {"on_fault", "damp"},
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{0.0, 0.0}},
+    {"pd.fault_damping", std::vector<double>{2.0, 3.0}}});
+  init(params);
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+
+  set_state("j1/temperature", 95.0);
+  set_state("j1/velocity", 1.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);  // damp stays active
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 1.0);
+}
+
 TEST_F(PolicyControllerTest, OnFaultDampDampsTheJointsUntilReactivated)
 {
   with_reference_executor = false;
