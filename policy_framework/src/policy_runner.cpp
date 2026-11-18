@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -35,6 +36,7 @@ void PolicyRunner::configure(
   // Reconfiguration starts from scratch: drop plugins before their loaders.
   sources_.clear();
   executors_.clear();
+  safety_checks_.clear();
   kinematics_ = KinematicsFeed();
   policy_kinematics_ = KinematicsFeed();
   pipeline_ = std::make_unique<PolicyPipeline>();
@@ -45,6 +47,7 @@ void PolicyRunner::configure(
   inference_loader_ = make_loader<Inference>("Inference");
   postprocessor_loader_ = make_loader<Postprocessor>("Postprocessor");
   executor_loader_ = make_loader<Executor>("Executor");
+  safety_check_loader_ = make_loader<SafetyCheck>("SafetyCheck");
 
   // Declares and validates sources, policies, executors and their per-name parameters.
   const auto params = policy_runner::ParamListener(node).get_params();
@@ -102,6 +105,15 @@ void PolicyRunner::configure(
   }
   safety_.configure(safety_config, commands_, state_);
 
+  // After the policies: a check may look at the commanded entries.
+  for (const auto & name : params.safety_checks) {
+    const auto & type = params.safety_checks_map.at(name).type;
+    auto check = safety_check_loader_->createSharedInstance(type);
+    check->configure({node, name, kinematics_.model, safety}, commands_, state_);
+    safety_checks_.emplace_back(name, check);
+    RCLCPP_INFO(logger, "Safety check '%s' (%s)", name.c_str(), type.c_str());
+  }
+
   if (load_executors) {
     for (const auto & [name, type] : executor_types_) {
       auto executor = executor_loader_->createSharedInstance(type);
@@ -125,6 +137,16 @@ void PolicyRunner::configure(
   RCLCPP_INFO(
     logger, "%zu state entries, %zu command entries, active policy '%s'", state_.size(),
     commands_.size(), pipeline_->active_policy().c_str());
+}
+
+std::optional<std::string> PolicyRunner::check_safety(double observation_stamp, double now)
+{
+  if (const auto v = safety_.check(state_, observation_stamp, now)) {return v->describe();}
+  for (const auto & [name, check] : safety_checks_) {
+    std::string reason;  // empty: no allocation while the check passes
+    if (!check->check(state_, now, reason)) {return name + ": " + reason;}
+  }
+  return std::nullopt;
 }
 
 std::vector<std::string> PolicyRunner::unprovided_state() const

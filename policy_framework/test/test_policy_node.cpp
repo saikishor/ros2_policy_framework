@@ -230,6 +230,51 @@ TEST(PolicyNode, StopsSendingCommandsOnASafetyViolationUntilReactivated)
   EXPECT_GT(received, 0);
 }
 
+TEST(PolicyNode, StopsSendingCommandsWhenASafetyCheckFails)
+{
+  auto params = node_params({});
+  params.push_back({"safety_checks", StringArray{"motors"}});
+  params.push_back({"motors.type", "policy_framework/StateBoundsCheck"});
+  params.push_back({"motors.prefixes", StringArray{"j1"}});
+  params.push_back({"motors.interfaces", StringArray{"effort"}});  // provided by JointStateSource
+  params.push_back({"motors.effort.max", 10.0});
+  params.push_back({"ref.topic", "/node_reference_check"});
+  params.push_back({"js.topic", "/node_js_check"});
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  auto node = std::make_shared<policy_framework::PolicyNode>(opts);
+  ASSERT_EQ(node->configure().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(node->activate().id(), State::PRIMARY_STATE_ACTIVE);
+
+  auto helper = std::make_shared<rclcpp::Node>("node_check_helper");
+  int received = 0;
+  auto sub = helper->create_subscription<control_msgs::msg::MultiDOFCommand>(
+    "/node_reference_check", 10, [&](control_msgs::msg::MultiDOFCommand::SharedPtr) {++received;});
+  auto pub = helper->create_publisher<sensor_msgs::msg::JointState>("/node_js_check", 10);
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(node->get_node_base_interface());
+  exec.add_node(helper);
+  auto publish_for = [&](double effort, std::chrono::milliseconds d) {
+      sensor_msgs::msg::JointState js;
+      js.name = {"j1", "j2", "j3"};
+      js.position = {1.0, 2.0, 3.0};
+      js.effort = {effort, 0.0, 0.0};
+      const auto end = std::chrono::steady_clock::now() + d;
+      while (std::chrono::steady_clock::now() < end) {
+        pub->publish(js);
+        exec.spin_some();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+    };
+
+  publish_for(1.0, std::chrono::milliseconds(300));
+  EXPECT_GT(received, 0);
+  publish_for(20.0, std::chrono::milliseconds(200));  // j1 effort above its bound
+  received = 0;
+  publish_for(1.0, std::chrono::milliseconds(300));  // back within: the fault stays
+  EXPECT_EQ(received, 0);
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

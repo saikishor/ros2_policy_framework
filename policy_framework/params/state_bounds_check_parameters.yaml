@@ -1,0 +1,33 @@
+state_bounds_check:
+  prefixes:
+    type: string_array
+    description: "Prefixes of the checked state entries <prefix>/<interface>, e.g. joint or actuator names."
+    read_only: true
+    validation:
+      not_empty<>: null
+      unique<>: null
+  interfaces:
+    type: string_array
+    description: "Interfaces checked for every prefix, e.g. temperature, error_code; each needs <interface>.min and/or <interface>.max."
+    read_only: true
+    validation:
+      not_empty<>: null
+      unique<>: null
+  __map_interfaces:
+    min:
+      type: double
+      default_value: -1.0e+300
+      description: "Lowest allowed value; default: unbounded."
+      read_only: true
+    max:
+      type: double
+      default_value: 1.0e+300
+      description: "Highest allowed value; default: unbounded."
+      read_only: true
+  trigger_cycles:
+    type: int
+    default_value: 1
+    description: "Consecutive violations of an entry before the check fails."
+    read_only: true
+    validation:
+      gt_eq<>: [1]

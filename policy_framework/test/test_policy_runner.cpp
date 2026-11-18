@@ -224,9 +224,33 @@ TEST_F(PolicyRunnerTest, ChecksTheSafetyOfTheStateItReads)
   state.set(state.index("j2/position"), 3.1, 0.0);  // limit 3.2 minus the margin
   const auto v = runner.check_safety(0.0, 0.0);
   ASSERT_TRUE(v);
-  EXPECT_EQ(v->check, policy_framework::SafetyMonitor::Check::JOINT_POSITION);
+  EXPECT_NE(v->find("joint j2"), std::string::npos) << *v;
   state.set(state.index("j2/position"), 0.0, 0.0);
   EXPECT_TRUE(runner.check_safety(1.0, 2.0));  // a one second old observation
+}
+
+TEST_F(PolicyRunnerTest, RunsTheSafetyCheckPluginsAndResetsThemOnRestart)
+{
+  auto params = runner_params("/runner_js10");
+  params.push_back({"safety_checks", StringArray{"motors"}});
+  params.push_back({"motors.type", "policy_framework/StateBoundsCheck"});
+  params.push_back({"motors.prefixes", StringArray{"j1"}});
+  params.push_back({"motors.interfaces", StringArray{"effort"}});
+  params.push_back({"motors.effort.max", 10.0});
+  params.push_back({"motors.trigger_cycles", 2});
+  configure(params);
+  runner.restart();
+  auto & state = runner.state();
+  EXPECT_FALSE(runner.check_safety(0.0, 0.0));
+
+  state.set(state.index("j1/effort"), 20.0, 0.0);
+  EXPECT_FALSE(runner.check_safety(0.0, 0.0));  // the first violation
+  const auto v = runner.check_safety(0.0, 0.0);
+  ASSERT_TRUE(v);
+  EXPECT_EQ(v->rfind("motors: j1/effort", 0), 0u) << *v;
+
+  runner.restart();  // a reactivation starts the count again
+  EXPECT_FALSE(runner.check_safety(0.0, 0.0));
 }
 
 TEST(PolicyRunner, JointPositionLimitsNeedARobotDescription)

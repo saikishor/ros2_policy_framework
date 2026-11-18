@@ -96,6 +96,20 @@ policy_runner:
       read_only: true
       validation:
         gt_eq<>: [0.0]
+  safety_checks:
+    type: string_array
+    default_value: []
+    description: "SafetyCheck plugin names; each needs <check>.type. The first failing check is a fault."
+    read_only: true
+    validation:
+      unique<>: null
+  __map_safety_checks:
+    type:
+      type: string
+      description: "SafetyCheck plugin class of the check."
+      read_only: true
+      validation:
+        not_empty<>: null
   executors:
     type: string_array
     default_value: []
