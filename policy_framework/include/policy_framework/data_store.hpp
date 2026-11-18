@@ -62,6 +62,17 @@ public:
     std::copy(other.received_.begin(), other.received_.end(), received_.begin());
   }
 
+  /**
+   * @brief Forget every value: all entries are zero and not received again, as right after
+   *        add(). Does not allocate.
+   */
+  void reset()
+  {
+    std::fill(values_.begin(), values_.end(), 0.0);
+    std::fill(stamps_.begin(), stamps_.end(), 0.0);
+    std::fill(received_.begin(), received_.end(), 0);
+  }
+
   /// @return Index of @p name, or std::nullopt when it was never registered.
   [[nodiscard]] std::optional<size_t> find(const std::string & name) const
   {

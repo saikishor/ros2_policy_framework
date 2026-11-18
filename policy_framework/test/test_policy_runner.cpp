@@ -10,6 +10,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "policy_framework/policy_runner.hpp"
@@ -204,6 +205,58 @@ TEST_F(PolicyRunnerTest, HasNoKinematicsByDefault)
 {
   configure(runner_params("/runner_js4"));
   EXPECT_EQ(runner.kinematics(), nullptr);
+}
+
+TEST_F(PolicyRunnerTest, ExecutorCommandsRampToEachNewPolicyOverItsTransitionTime)
+{
+  auto params = runner_params("/runner_js7");
+  params.push_back({"walk.transition_time", 1.0});
+  params.push_back({"jump.transition_time", 0.5});
+  configure(params);
+  runner.restart();
+  auto & state = runner.state();
+  for (const auto & [n, v] : {std::pair{"j1/position", 1.0}, {"j2/position", 2.0}, {"j3/position", 3.0}}) {
+    state.set(state.index(n), v, 0.0);
+  }
+  auto executor_command = [&](const std::string & n) {
+      return runner.executor_commands().get(runner.executor_commands().index(n));
+    };
+
+  // First commands after activation (walk: 4.5, 6.5): from the measured joint positions.
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
+  runner.blend_commands(true, 0.5);
+  EXPECT_DOUBLE_EQ(executor_command("j1/position"), 1.0 + 0.5 * (4.5 - 1.0));
+  EXPECT_DOUBLE_EQ(executor_command("j2/position"), 2.0 + 0.5 * (6.5 - 2.0));
+  EXPECT_DOUBLE_EQ(command("j1/position"), 4.5);  // the policy's own commands are untouched
+  runner.blend_commands(false, 0.5);
+  EXPECT_DOUBLE_EQ(executor_command("j2/position"), 6.5);
+
+  // Another step of the same policy does not start a ramp.
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
+  runner.blend_commands(true, 0.1);
+  EXPECT_DOUBLE_EQ(executor_command("j2/position"), 6.5);
+
+  // A new policy (jump: j2 = 4.5) ramps from the commands of the previous one.
+  std::string msg;
+  ASSERT_TRUE(runner.pipeline().request_switch("jump", msg));
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
+  runner.blend_commands(true, 0.25);
+  EXPECT_DOUBLE_EQ(executor_command("j2/position"), 6.5 + 0.5 * (4.5 - 6.5));
+}
+
+TEST_F(PolicyRunnerTest, ExecutorCommandsFollowThePolicyWithoutTransitionTime)
+{
+  configure(runner_params("/runner_js8"));
+  runner.restart();
+  auto & state = runner.state();
+  for (const auto * n : {"j1/position", "j2/position", "j3/position"}) {
+    state.set(state.index(n), 1.0, 0.0);
+  }
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
+  runner.blend_commands(true, 0.02);
+  EXPECT_DOUBLE_EQ(
+    runner.executor_commands().get(runner.executor_commands().index("j1/position")),
+    command("j1/position"));
 }
 
 TEST(PolicyRunner, ConfigureFailsWithoutPolicies)

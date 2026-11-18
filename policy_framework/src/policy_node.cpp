@@ -64,6 +64,7 @@ void PolicyNode::update()
   runner_->read_sources(now().seconds());
   runner_->update_kinematics();
   if (runner_->step() == PolicyPipeline::Status::OK) {
+    runner_->blend_commands(true, 1.0 / update_rate_);
     runner_->write_executors();
   }
 }
