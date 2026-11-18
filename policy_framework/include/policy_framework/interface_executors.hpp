@@ -4,6 +4,7 @@
 #ifndef POLICY_FRAMEWORK__INTERFACE_EXECUTORS_HPP_
 #define POLICY_FRAMEWORK__INTERFACE_EXECUTORS_HPP_
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
@@ -33,8 +34,9 @@ namespace policy_framework
  * - `effort_interface` (default `effort`)
  * - `stiffness`, `damping` (double arrays, one per joint): fallback gains
  * - `effort_limits` (double array, one per joint, default empty = no clamping): |effort| bound
- * - `fault_damping` (double array, one per joint, default empty = zero effort): damp() writes
- *   effort = -fault_damping * velocity, within the effort limits
+ * - `fault_damping` (double array, one per joint, default empty): damp() writes
+ *   effort = -fault_damping * velocity, within the effort limits. Every value must be above
+ *   zero for the controller to accept `on_fault: damp` (see damping_configured())
  *
  * A joint whose reference, measurement or gains are not received or not finite is left
  * unchanged. safe_values() is zero effort.
@@ -57,6 +59,12 @@ public:
     bool start) override;
   void safe_values(std::vector<double> & values) override {values.assign(values.size(), 0.0);}
   void damp(const DataStore & state, std::vector<double> & values) override;
+  /// @return true when every joint has a `fault_damping` above zero.
+  bool damping_configured() const override
+  {
+    return !joints_.empty() && std::all_of(
+      joints_.begin(), joints_.end(), [](const Joint & j) {return j.fault_kd > 0.0;});
+  }
 
 private:
   struct Joint

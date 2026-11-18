@@ -41,6 +41,10 @@ void PolicyController::load_executors()
     }
     auto executor = executor_loader_->createSharedInstance(type);
     executor->configure({node, name}, runner_->commands(), runner_->state());
+    if (damp_on_fault_ && !executor->damping_configured()) {
+      throw std::runtime_error(
+              "Executor '" + name + "': on_fault: damp needs its fault damping set, above zero");
+    }
     executors_.push_back(executor);
     RCLCPP_INFO(node->get_logger(), "Executor '%s' (%s)", name.c_str(), type.c_str());
   }

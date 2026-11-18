@@ -395,7 +395,8 @@ TEST_F(PolicyControllerTest, OnFaultDampAlsoCoversAFailedPolicyStep)
     {"executors", StringArray{"pd"}},
     {"pd.type", "policy_framework/PdEffortExecutor"},
     {"pd.stiffness", std::vector<double>{10.0, 10.0}},
-    {"pd.damping", std::vector<double>{0.0, 0.0}}});  // no fault_damping: zero effort
+    {"pd.damping", std::vector<double>{0.0, 0.0}},
+    {"pd.fault_damping", std::vector<double>{2.0, 3.0}}});
   ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
   assign();
   ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
@@ -405,6 +406,32 @@ TEST_F(PolicyControllerTest, OnFaultDampAlsoCoversAFailedPolicyStep)
   ASSERT_EQ(update(), controller_interface::return_type::OK);
   EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
   EXPECT_DOUBLE_EQ(command("j2/effort"), 0.0);
+}
+
+TEST_F(PolicyControllerTest, OnFaultDampNeedsAFaultDampingAboveZeroForEveryJoint)
+{
+  with_reference_executor = false;
+  for (const auto & fault_damping : {std::vector<double>{}, std::vector<double>{2.0, 0.0}}) {
+    init({
+      {"on_fault", "damp"},
+      {"executors", StringArray{"pd"}},
+      {"pd.type", "policy_framework/PdEffortExecutor"},
+      {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+      {"pd.damping", std::vector<double>{0.0, 0.0}},
+      {"pd.fault_damping", fault_damping}});
+    EXPECT_NE(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  }
+}
+
+TEST_F(PolicyControllerTest, OnFaultStopDoesNotNeedAFaultDamping)
+{
+  with_reference_executor = false;
+  init({
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{0.0, 0.0}}});
+  EXPECT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
 }
 
 TEST_F(PolicyControllerTest, OnFaultAcceptsOnlyStopOrDamp)

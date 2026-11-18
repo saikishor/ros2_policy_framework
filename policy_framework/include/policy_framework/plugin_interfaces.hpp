@@ -364,6 +364,13 @@ public:
     (void)state;
     safe_values(values);
   }
+
+  /**
+   * @return false when damp() would write nothing useful with this configuration (e.g. zero
+   *         effort because no damping was given). The controller then refuses to configure
+   *         with `on_fault: damp`. Default: true.
+   */
+  virtual bool damping_configured() const {return true;}
 };
 
 }  // namespace policy_framework
