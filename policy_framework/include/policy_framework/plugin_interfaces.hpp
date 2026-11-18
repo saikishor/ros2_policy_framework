@@ -83,9 +83,9 @@ struct PluginContext
   rclcpp_lifecycle::LifecycleNode::SharedPtr node;
   /// Name of the policy, source, executor or term; plugin parameters live under `<name>.`.
   std::string name;
-  /// Whole-body kinematics (null unless `kinematics.enabled`) of the state the policy step
-  /// reads, updated before every step; given to the policy stages and their observation terms
-  /// only.
+  /// Whole-body kinematics (null unless `kinematics.enabled`), given to the policy stages and
+  /// their observation terms (the state the policy step reads, updated before every step) and
+  /// to the SafetyCheck plugins (the host's state, updated on every cycle).
   std::shared_ptr<Kinematics> kinematics = nullptr;
   /// State entry that is 0 while user commands must be ignored (see CommandGate); empty: none.
   std::string safety_entry = "";
@@ -371,6 +371,43 @@ public:
    *         with `on_fault: damp`. Default: true.
    */
   virtual bool damping_configured() const {return true;}
+};
+
+/**
+ * @brief A check of the measured state that faults the host when it fails (e.g. an actuator
+ *        reporting an error, a motor too hot, the centre of mass outside the feet).
+ *
+ * Listed in the runner's `safety_checks`, each with `<name>.type`. Every state entry it reads
+ * is registered in configure(): the controller claims those as state interfaces, the node
+ * needs an InputSource providing them. The hosts run check() on every cycle, after reading
+ * the state and updating the kinematics; the first failing check is a fault (the controller's
+ * `on_fault`, the node stops sending commands), latched until the host is reactivated.
+ */
+class SafetyCheck
+{
+public:
+  virtual ~SafetyCheck() = default;
+
+  /**
+   * @brief Register the state entries the check reads (state.add()).
+   * @param ctx ctx.kinematics is the host's whole-body model (null unless
+   *        `kinematics.enabled`), updated from the state before every check().
+   * @param commands Command entries of the policies (e.g. to find the commanded joints).
+   * @throws std::exception on invalid parameters.
+   */
+  virtual void configure(
+    const PluginContext & ctx, const DataStore & commands, DataStore & state) = 0;
+
+  /**
+   * @brief Called on every cycle from the control loop: must not allocate while it passes.
+   * @param now Current time in seconds, on the clock of the state stamps.
+   * @param[out] reason Why it failed; written only on failure.
+   * @return false when the state is unsafe.
+   */
+  virtual bool check(const DataStore & state, double now, std::string & reason) = 0;
+
+  /// On every activation of the host: forget filters and counters.
+  virtual void reset() {}
 };
 
 }  // namespace policy_framework
