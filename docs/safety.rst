@@ -132,6 +132,34 @@ that was never received is not checked.
 *Commanded joints* are those the policies write a ``<joint>/position`` command for. The state
 entries the checks read are claimed as state interfaces by the controller, like any input.
 
+Your own checks
+~~~~~~~~~~~~~~~
+
+Checks specific to a robot, such as an actuator reporting an error or a motor running hot,
+are ``SafetyCheck`` plugins listed in ``safety_checks``. Each one registers the state entries
+it reads in ``configure()`` and receives the host's kinematics (when ``kinematics.enabled``),
+so it can also check, for example, the centre of mass against the feet. The host runs every
+check on every cycle, after the ``safety.*`` checks, and the first one that fails is a fault
+like any other, logged with the check's name and its reason.
+
+.. code-block:: yaml
+
+   safety_checks: [motors]
+   motors:
+     type: policy_framework/StateBoundsCheck
+     prefixes: [leg_left_1_joint, leg_left_2_joint]
+     interfaces: [temperature, error_code]
+     temperature: {max: 85.0}
+     error_code: {min: 0.0, max: 0.0}   # any error code but 0 is a fault
+     trigger_cycles: 3                  # consecutive violations before the fault
+
+``StateBoundsCheck`` checks every ``<prefix>/<interface>`` entry against the bounds of its
+interface. A non-finite value is out of bounds; an entry never received is not checked. In
+the controller the entries are claimed as state interfaces (here
+``leg_left_1_joint/temperature``, ...), so the hardware must export them; in the node an
+input source must provide them. ``check()`` runs in the control loop: it must not allocate
+while the state is safe.
+
 The safety entry
 ----------------
 

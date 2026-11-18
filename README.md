@@ -137,6 +137,24 @@ or, chaining into a pid_controller that closes the loop:
     within the robot description limits minus `position_margin` (`joint_position_limits`), and
     the age of the last step's observation (`max_input_age`, e.g. a topic that stopped). The
     entries they read are claimed as state interfaces.
+  - *Safety check plugins* (`safety_checks`): your own checks of the state (an actuator error,
+    a motor temperature, the centre of mass from the kinematics), run on every cycle after
+    the `safety.*` ones; a failing one is a fault, like them. `StateBoundsCheck` keeps
+    `<prefix>/<interface>` entries within bounds:
+
+    ```yaml
+    safety_checks: [motors]
+    motors:
+      type: policy_framework/StateBoundsCheck
+      prefixes: [leg_left_1_joint, leg_left_2_joint]
+      interfaces: [temperature, error_code]
+      temperature: {max: 85.0}
+      error_code: {min: 0.0, max: 0.0}   # any error code but 0 is a fault
+      trigger_cycles: 3                  # ride out a single noisy reading
+    ```
+
+    The controller claims those entries as state interfaces; the node needs an input source
+    that provides them.
   - *Safety entry* (`safety_entry`, e.g. `rl_safety_controller/safe`): a state entry, claimed
     as a state interface, that is 0 while user commands must be ignored. The policy keeps
     running (the robot keeps balancing) with neutral commands: zero velocity (`TwistSource`,
@@ -171,6 +189,7 @@ name. Write floating point values with a decimal point (`50.0`).
 | `safety.max_joint_velocity` | Fault above this \|velocity\| of a commanded joint (default 0: off) |
 | `safety.joint_position_limits`, `safety.position_margin` | Fault outside the robot description joint limits minus the margin (default false, 0) |
 | `safety.max_input_age` | Fault when the last step's observation is older than this, in s (default 0: off) |
+| `safety_checks` | SafetyCheck plugin names, each with `<check>.type` (default empty), see Safety |
 | `on_fault` | Controller: `stop` (default: safe values, `ERROR`) or `damp` (damping until reactivated), see Safety |
 | `policy_rate` | Controller: policy rate in Hz (default 0 = every update) |
 | `max_failed_reads` | Controller: consecutive updates with an unreadable state interface that are tolerated (default 5) |
@@ -225,6 +244,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/OdometrySource` | InputSource | `topic` → `<name>/position.*`, `orientation.*`, `linear.*`, `angular.*` |
 | `policy_framework/MultiDofCommandExecutor` | Executor (node) | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`, empty: 0); drops a message while the previous one is being published |
 | `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, above zero; required with `on_fault: damp`); a joint with a missing or non-finite value is left unchanged |
+| `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `trigger_cycles` (1); a non-finite value is out of bounds, an entry never received is not checked |
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
@@ -384,6 +404,8 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
 - `Postprocessor::initial_commands` writes what is known before the first step (e.g. gains);
   `InterfaceExecutor::hold` computes the values that keep the robot still until then, and
   `InterfaceExecutor::damp` the values written after a fault with `on_fault: damp`.
+- `SafetyCheck::check` runs on every cycle in the control loop: return false with a reason to
+  fault, and register what it reads with `state.add()` in `configure`.
 - A plugin that feeds user commands to a policy checks `CommandGate::open(state)` and uses its
   neutral command while it is false (`safety_entry`).
 - `InputSource` callbacks never touch the store: buffer the message (`LatestMessage`) and copy it
