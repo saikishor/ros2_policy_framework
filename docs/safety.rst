@@ -17,12 +17,15 @@ From activation to deactivation
      hold [label="Hold\nexecutors keep the robot\nwhere it is", fillcolor="#fff6d9"];
      run [label="Run\nexecutors follow\nthe policy's commands", fillcolor="#e8f5e9"];
      safe [label="Safe values\nzero effort", fillcolor="#fde8e8"];
+     damp [label="Damping\nuntil reactivated", fillcolor="#fde8e8"];
      start -> hold [label="activate"];
      hold -> run [label="first commands\nfrom the policy"];
      run -> run [label="policy waits for data:\nkeep the last commands"];
-     run -> safe [label="a stage fails, or\ninterfaces unreadable"];
+     run -> safe [label="fault\n(on_fault: stop)"];
+     run -> damp [label="fault\n(on_fault: damp)"];
      hold -> safe [label="deactivate"];
      run -> safe [label="deactivate"];
+     damp -> safe [label="deactivate"];
    }
 
 Hold
@@ -46,13 +49,31 @@ Run
 Once the policy has produced commands, the executors follow them on every update. If a later
 step has to wait for data, the last commands stay applied.
 
-Safe values
-~~~~~~~~~~~
+Faults
+~~~~~~
 
-When the controller is deactivated, when a stage of the policy fails, or when the state
-interfaces cannot be read (below), every executor writes its *safe values*: zero effort for
-``PdEffortExecutor``, nothing for ``ReferenceInterfaceExecutor``. In the failure cases
-``update()`` also returns an error to the controller manager.
+A *fault* is any of:
+
+- a stage of the policy fails, including a model that answers a non-finite value (NaN or
+  infinity): those values never reach the executors;
+- the state interfaces cannot be read (below);
+- a safety check is violated (below).
+
+The parameter ``on_fault`` decides what happens:
+
+``stop`` (default)
+   Every executor writes its *safe values*: zero effort for ``PdEffortExecutor``, nothing for
+   ``ReferenceInterfaceExecutor``. ``update()`` returns an error to the controller manager.
+
+``damp``
+   The controller stays active but stops following the policy. On every update every
+   executor writes its *damping values*: ``PdEffortExecutor`` writes
+   ``effort = -fault_damping * velocity`` per joint (within ``effort_limits``; zero effort
+   without ``fault_damping``), so a falling robot goes down slowly instead of limp. The fault
+   is latched: it is cleared only by deactivating and activating the controller again, never
+   by itself.
+
+When the controller is deactivated every executor writes its safe values.
 
 Inputs that are missing or late
 -------------------------------
@@ -78,6 +99,38 @@ Inputs that are missing or late
        failure writes the safe values and returns an error.
    * - Inference is slower than ``policy_rate`` (``async_inference``)
      - The policy tick is skipped and a warning is logged. The executors keep running.
+   * - An input stops arriving although it was received before (``safety.max_input_age``)
+     - The policy keeps stepping on the last values; once the observation of the last step is
+       older than the limit, it is a fault.
+
+Safety checks
+-------------
+
+The parameters ``safety.*`` add checks on the measured state, all off by default. They run on
+every controller update (every node tick) and the first one violated is a fault (in the node:
+no more commands are sent until it is reactivated, and the reason is logged once). A value
+that was never received is not checked.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Parameter
+     - Fault when
+   * - ``safety.max_tilt``, ``safety.imu``
+     - the IMU z axis is tilted more than ``max_tilt`` (rad) from the vertical: the robot is
+       falling. Reads ``<imu>/orientation.{x,y,z,w}``.
+   * - ``safety.max_joint_velocity``
+     - the absolute velocity of a commanded joint exceeds it (``<joint>/velocity``).
+   * - ``safety.joint_position_limits``, ``safety.position_margin``
+     - the position of a commanded joint leaves the limits of the robot description, narrowed
+       by the margin. Continuous joints have no limits.
+   * - ``safety.max_input_age``
+     - the observation of the last policy step (its oldest input) is older than this many
+       seconds: a topic stopped, so the policy acts on the past.
+
+*Commanded joints* are those the policies write a ``<joint>/position`` command for. The state
+entries the checks read are claimed as state interfaces by the controller, like any input.
 
 The safety entry
 ----------------
@@ -116,6 +169,7 @@ Without ``safety_entry`` commands are always accepted.
 What the framework does not do
 ------------------------------
 
-It does not limit joint positions or velocities, detect falls, or decide when to stop a
-policy. ``PdEffortExecutor`` can clamp efforts (``effort_limits``). Anything beyond that
-belongs to the robot's safety layer.
+The safety checks detect a state the robot must not be in; they do not prevent it: the
+commands are not clamped to the joint limits, and nothing decides when to switch policies.
+``PdEffortExecutor`` can clamp efforts (``effort_limits``). The framework is not a safety
+system: an emergency stop and the robot's own protections stay in charge.
