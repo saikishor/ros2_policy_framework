@@ -318,7 +318,7 @@ controller_interface::return_type PolicyController::update(
   }
   if (status == PolicyPipeline::Status::ERROR) {return fault("The policy step failed");}
   if (const auto violation = runner_->check_safety(observation_stamp_, now)) {
-    return fault("Safety: " + violation->describe());
+    return fault("Safety: " + *violation);
   }
   if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
   // Before the first commands since activation the command store may still hold the previous

@@ -74,7 +74,7 @@ void PolicyNode::update()
   if (const auto v = runner_->check_safety(observation_stamp_, t)) {
     RCLCPP_ERROR(
       get_logger(), "Safety: %s: no more commands until the node is reactivated",
-      v->describe().c_str());
+      v->c_str());
     faulted_ = true;
     return;
   }

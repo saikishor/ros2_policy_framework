@@ -40,6 +40,9 @@ namespace policy_framework
  * - `safety.*`: the checks of a SafetyMonitor, all off by default: `max_tilt` with `imu`,
  *   `max_joint_velocity`, `joint_position_limits` with `position_margin` (limits from the
  *   robot description), `max_input_age`. Their state entries are registered here.
+ * - `safety_checks` (string array): SafetyCheck plugin names; each needs `<check>.type`
+ *   (plugin class), plus its parameters under `<check>.`. They get kinematics() and register
+ *   the state entries they read.
  * - `executors` (string array): executor names; each needs `<executor>.type` (plugin class).
  * - `kinematics.enabled`, `kinematics.joints`: optional whole-body Kinematics model, fed from
  *   the `<joint>/position` and `<joint>/velocity` state entries (registered here). The host
@@ -78,6 +81,7 @@ public:
   {
     pipeline_->restart();
     pipeline_->write_initial_commands(commands_);
+    for (const auto & c : safety_checks_) {c.second->reset();}
   }
 
   /// Copy the latest data of every input source into state(). @p now in seconds.
@@ -99,15 +103,14 @@ public:
   PolicyPipeline::Status step(const DataStore & state, DataStore & commands);
 
   /**
-   * @return The first violated `safety.*` check on state(), or nothing. Real-time safe unless
-   *         a check is violated.
+   * @brief Run the `safety.*` checks, then every `safety_checks` plugin, on state(). Call it
+   *        from the host's control loop after update_kinematics().
+   * @return Why the first failing check failed (a plugin's reason is prefixed with its name),
+   *         or nothing. Real-time safe unless a check fails.
    * @param observation_stamp Stamp of the observation of the last policy step (0: none yet).
    * @param now Current time in seconds.
    */
-  std::optional<SafetyMonitor::Violation> check_safety(double observation_stamp, double now) const
-  {
-    return safety_.check(state_, observation_stamp, now);
-  }
+  std::optional<std::string> check_safety(double observation_stamp, double now);
 
   /// Send commands() through every executor.
   void write_executors();
@@ -150,6 +153,7 @@ private:
   std::unique_ptr<pluginlib::ClassLoader<Inference>> inference_loader_;
   std::unique_ptr<pluginlib::ClassLoader<Postprocessor>> postprocessor_loader_;
   std::unique_ptr<pluginlib::ClassLoader<Executor>> executor_loader_;
+  std::unique_ptr<pluginlib::ClassLoader<SafetyCheck>> safety_check_loader_;
 
   KinematicsFeed kinematics_;         ///< Of state(), fed by update_kinematics().
   KinematicsFeed policy_kinematics_;  ///< Of the step's state; may share kinematics_'s model.
@@ -165,6 +169,7 @@ private:
   DataStore commands_;
   rclcpp::Service<srv::SwitchPolicy>::SharedPtr switch_service_;
   SafetyMonitor safety_;
+  std::vector<std::pair<std::string, std::shared_ptr<SafetyCheck>>> safety_checks_;  ///< (name, check)
 
   // Used only from step(), to log transitions once instead of every cycle.
   CommandGate command_gate_;
