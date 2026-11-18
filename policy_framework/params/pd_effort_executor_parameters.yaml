@@ -30,7 +30,7 @@ pd_effort_executor:
   fault_damping:
     type: double_array
     default_value: []
-    description: "Damping per joint after a fault with on_fault: damp (effort = -fault_damping * velocity, within effort_limits); empty: zero effort."
+    description: "Damping per joint after a fault with on_fault: damp (effort = -fault_damping * velocity, within effort_limits); Must be above zero for every joint when the controller runs with on_fault: damp (it refuses to configure otherwise)."
     read_only: true
     validation:
       lower_element_bounds<>: [0.0]

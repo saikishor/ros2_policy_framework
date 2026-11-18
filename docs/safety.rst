@@ -68,10 +68,10 @@ The parameter ``on_fault`` decides what happens:
 ``damp``
    The controller stays active but stops following the policy. On every update every
    executor writes its *damping values*: ``PdEffortExecutor`` writes
-   ``effort = -fault_damping * velocity`` per joint (within ``effort_limits``; zero effort
-   without ``fault_damping``), so a falling robot goes down slowly instead of limp. The fault
-   is latched: it is cleared only by deactivating and activating the controller again, never
-   by itself.
+   ``effort = -fault_damping * velocity`` per joint (within ``effort_limits``), so a falling
+   robot goes down slowly instead of limp. Every joint needs a ``fault_damping`` above zero:
+   the controller refuses to configure with ``on_fault: damp`` otherwise. The fault is latched:
+   it is cleared only by deactivating and activating the controller again, never by itself.
 
 When the controller is deactivated every executor writes its safe values.
 
