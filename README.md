@@ -71,12 +71,12 @@ Test models and URDF are in `policy_framework/test/fixtures/`.
   (`PdEffortExecutor`) or references of a chained controller (`ReferenceInterfaceExecutor`).
 
 One cycle: [controller: state interfaces] → sources → kinematics → safety checks →
-preprocessor → inference → postprocessor → term input ages (`max_age`) → executors. While an
-input was never received the preprocessor skips the step: the node sends nothing, the
-controller keeps the last commands (see Safety). A failing safety check applies its reaction
-(see `docs/safety.rst`); while one other than `neutral_commands` is latched the policy is not
-stepped. A stale term input latches its reaction too, and that step's commands are not
-applied.
+preprocessor → inference → postprocessor → term input ages (`max_age`) → transition
+ramp → executors. While an input was never received the preprocessor skips the step: the
+node sends nothing, the controller keeps the last commands (see Safety). A failing safety
+check applies its reaction (see `docs/safety.rst`); while one other than `neutral_commands` is
+latched the policy is not stepped. A stale term input latches its reaction too, and that
+step's commands are not applied.
 
 ## Running
 
@@ -149,6 +149,9 @@ or, chaining into a pid_controller that closes the loop:
     the policy provides before its first step (`gains_as_commands`) or its `stiffness`/`damping`
     parameters; `ReferenceInterfaceExecutor` writes nothing (the chained controller holds).
     After that, a step waiting for data keeps the last commands.
+  - *Transition*: with the policy's `transition_time` the commands ramp from the joint
+    positions measured when its first commands arrive, instead of jumping to them (see
+    Policy switching).
   - *Safe values*: on deactivation each executor writes its safe values: zero effort for
     `PdEffortExecutor`, nothing for `ReferenceInterfaceExecutor`.
   - *Fault reactions*: the safety checks run on every update, before the policy. A failing
@@ -191,7 +194,7 @@ name. Write floating point values with a decimal point (`50.0`).
 | `policies` | Policy names (required); the first one is the default |
 | `<policy>.preprocessor` / `.postprocessor` | Plugin classes (required) |
 | `<policy>.inference` | Plugin class, default `policy_framework/OnnxInference` |
-| `<policy>.max_steps`, `.interruptible` | Switching, see below |
+| `<policy>.max_steps`, `.interruptible`, `.transition_time` | Switching, see below |
 | `<policy>.disabled_safety_checks` | Safety checks skipped while this policy is active (default none), e.g. a joint velocity bound for a jump: names from `safety_checks`, or the monitor checks `tilt`, `joint_position_limits`, `max_input_age`; an unknown name is refused. A disabled check is reset when it applies again; a latched fault stays latched across switches; a source's or term's `max_age` always applies. See [Checks per policy](docs/safety.rst) |
 | `<policy>.<plugin param>` | Parameters of the policy's plugins |
 | `<policy>.terms.<term>.max_age`, `.max_age_on_fault` | A `TopicTerm`: fault when its latest message arrived longer ago than this, in s, on the receive time (default 0: off), checked after each step of its policy; reaction `hold`, `damp`, `safe` or `error` (default `error`). Refused by a `CommandTerm` (it has its `timeout`). See [Writing plugins](#writing-plugins) |
@@ -227,6 +230,32 @@ policy. Per policy, `max_steps` (default 0 = unlimited) returns to the first pol
 after N steps (e.g. a jump motion), and `interruptible: false` rejects switches while it runs.
 All models are loaded at configuration: switching never loads or allocates.
 
+`<policy>.transition_time` (seconds, default 0: at once): when the policy takes over (its first
+commands after an activation, or after a switch) the commands the executors read ramp linearly
+to its commands, from the previous commands, or after an activation from the measured joint
+positions. Every command is blended (references and gains); the policy keeps running and the
+ramp ends at its latest commands. The controller advances it on every update, also with
+`async_inference`.
+
+A policy without a model (`NullInference`, `NullPreprocessor`, `FixedPosePostprocessor`)
+commands a fixed pose, e.g. to stand up on activation and stand by between motions:
+
+```yaml
+policies: [stand, walk]
+stand:
+  inference: policy_framework/NullInference
+  preprocessor: policy_framework/NullPreprocessor
+  postprocessor: policy_framework/FixedPosePostprocessor
+  joints: [leg_left_1_joint, leg_left_2_joint]
+  positions: [0.0, -0.3]
+  stiffness: [150.0, 150.0]   # optional, for PdEffortExecutor
+  damping: [5.0, 5.0]
+  transition_time: 2.0
+walk:
+  # ...
+  transition_time: 0.5
+```
+
 ### Kinematics
 
 ```yaml
@@ -250,6 +279,7 @@ must be revolute, continuous or prismatic (lock the others).
 
 | Plugin | Type | Parameters (under `<name>.`) |
 |--------|------|------------------------------|
+| `policy_framework/NullInference` | Inference | none: no model, no tensors |
 | `policy_framework/OnnxInference` | Inference | `model_path` (file, or directory: its first `.onnx` by name), `num_threads` (1); float32 tensors, dynamic dimensions fixed to 1 |
 | `policy_framework/JointStateSource` | InputSource | `topic`, `joints` (empty = any) → `<joint>/position\|velocity\|effort` |
 | `policy_framework/ImuSource` | InputSource | `topic`, `sensor_name` (source name) → `<sensor>/orientation.*`, `angular_velocity.*`, `linear_acceleration.*` |
@@ -263,6 +293,8 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
+| `policy_framework/NullPreprocessor` | Preprocessor | none: no inputs, always ready |
+| `policy_framework/FixedPosePostprocessor` | Postprocessor | `joints`, `positions` → `<joint>/position`, `<joint>/velocity` = 0; `stiffness`, `damping` (optional) → `<joint>/stiffness\|damping`, also before the first step |
 | `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `imu_frame` (URDF link of the IMU, for the base terms of pal_mjlab exports), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type` |
 | `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface` (`position`), `velocity_interface` (`velocity`, empty: none), `gains_controller` (empty: none), `gains_as_commands` (false) |
 | `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm (a `CommandTerm`) | `topic` (`cmd_vel`), `timeout` (1.0 s, above zero; on the receive time) → linear.x, linear.y, angular.z, stamped with its receive time; zero (stamped now) when absent, stale or gated; a user command |
