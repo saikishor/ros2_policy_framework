@@ -1,36 +1,29 @@
-# Kangaroo policies (any robot_type), shared by the standalone node and the controller.
-# Placeholders @...@ are filled by launch/kangaroo_mjlab.launch.py.
-/**:
-  ros__parameters:
-    # The first policy is active at start and is the one max_steps returns to.
-    policies: [loco, imitation]
+# Kangaroo policy settings per kind (any robot_type), shared by the standalone node and the
+# controller. launch/kangaroo_mjlab.launch.py makes one policy per model version from them,
+# named loco_<version> and imitation_<version>, adding model_path and (imitation) max_steps.
+loco:
+  preprocessor: policy_framework_mjlab/MjlabPreprocessor
+  inference: policy_framework/OnnxInference
+  postprocessor: policy_framework_mjlab/MjlabPostprocessor
+  imu_name: torso_imu_sensor
+  # Velocity command read directly from its topic, zero when older than timeout.
+  terms:
+    command:
+      type: policy_framework_mjlab/TwistCommandTerm
+      topic: /cmd_vel
+      timeout: 1.0
+  # Passive joints of the leg closed chains: observed, but not actuated by the policy.
+  excluded_joints: [leg_left_femur_joint, leg_left_knee_joint,
+                    leg_right_femur_joint, leg_right_knee_joint]
+  gains_controller: /rl_impedance_controller
 
-    loco:
-      preprocessor: policy_framework_mjlab/MjlabPreprocessor
-      inference: policy_framework/OnnxInference
-      postprocessor: policy_framework_mjlab/MjlabPostprocessor
-      model_path: "@LOCO_MODEL_DIR@"
-      imu_name: torso_imu_sensor
-      # Velocity command read directly from its topic, zero when older than timeout.
-      terms:
-        command:
-          type: policy_framework_mjlab/TwistCommandTerm
-          topic: /cmd_vel
-          timeout: 1.0
-      # Passive joints of the leg closed chains: observed, but not actuated by the policy.
-      excluded_joints: [leg_left_femur_joint, leg_left_knee_joint,
-                        leg_right_femur_joint, leg_right_knee_joint]
-      gains_controller: /rl_impedance_controller
-
-    imitation:
-      preprocessor: policy_framework_mjlab/MjlabPreprocessor
-      inference: policy_framework/OnnxInference
-      postprocessor: policy_framework_mjlab/MjlabPostprocessor
-      model_path: "@IMITATION_MODEL_DIR@"
-      imu_name: torso_imu_sensor
-      excluded_joints: [leg_left_femur_joint, leg_left_knee_joint,
-                        leg_right_femur_joint, leg_right_knee_joint]
-      gains_controller: /rl_impedance_controller
-      # Number of frames of the motion; then back to 'loco'. Not interruptible meanwhile.
-      max_steps: @IMITATION_FRAMES@
-      interruptible: false
+imitation:
+  preprocessor: policy_framework_mjlab/MjlabPreprocessor
+  inference: policy_framework/OnnxInference
+  postprocessor: policy_framework_mjlab/MjlabPostprocessor
+  imu_name: torso_imu_sensor
+  excluded_joints: [leg_left_femur_joint, leg_left_knee_joint,
+                    leg_right_femur_joint, leg_right_knee_joint]
+  gains_controller: /rl_impedance_controller
+  # After max_steps (the motion's frames) back to the first loco policy; not interruptible.
+  interruptible: false

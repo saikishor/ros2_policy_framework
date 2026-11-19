@@ -23,6 +23,7 @@ pluginlib_export_plugin_description_file(policy_framework plugins.xml)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
   # Test-only term plugin (installed and registered only with BUILD_TESTING).
   add_library(frame_position_term SHARED test/frame_position_term.cpp)
   target_link_libraries(frame_position_term ${PROJECT_NAME})
@@ -42,6 +43,7 @@ if(BUILD_TESTING)
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/../policy_framework/test/urdf/test_robot.urdf")
   ament_add_gtest(test_shipped_models test/test_shipped_models.cpp TIMEOUT 300)
   target_link_libraries(test_shipped_models ${PROJECT_NAME})
+  ament_add_pytest_test(test_kangaroo_launch test/test_kangaroo_launch.py)
 endif()
 
 ament_auto_package(USE_SCOPED_HEADER_INSTALL_DIR INSTALL_TO_SHARE config launch)

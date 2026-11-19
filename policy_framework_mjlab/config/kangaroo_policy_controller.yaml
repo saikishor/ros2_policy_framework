@@ -11,10 +11,3 @@ policy_controller:
     executors: [pd]
     pd:
       type: policy_framework/PdEffortExecutor
-    # Gains go to the PD law as commands instead of to rl_impedance_controller parameters.
-    loco:
-      gains_controller: ""
-      gains_as_commands: true
-    imitation:
-      gains_controller: ""
-      gains_as_commands: true
