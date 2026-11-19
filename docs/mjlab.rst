@@ -210,8 +210,12 @@ These are *references* for a joint PD loop. The gains of that loop are part of t
 The Kangaroo example
 --------------------
 
-``kangaroo_mjlab.launch.py`` runs a walking policy (``loco``) and a jump motion
-(``imitation``) in three modes:
+``kangaroo_mjlab.launch.py`` runs walking policies (``loco_<version>``) and motion policies
+(``imitation_<version>``), one per version given in ``loco_models`` and ``imitation_models``.
+The first loco version is the default policy: every imitation returns to it after its
+``imitation_frames``, even when another loco version was active before the motion.
+
+It runs in three modes:
 
 .. list-table::
    :header-rows: 1
@@ -228,5 +232,5 @@ The Kangaroo example
      - ``policy_node`` publishing references to a ``pid_controller`` that receives the gains
        as parameters
 
-The policies are configured once, in ``kangaroo_policies.yaml``, and shared by the three
-modes. Only the host-specific file differs. The README has the commands.
+The settings of each kind of policy are written once, in ``kangaroo_policies.yaml``, and
+shared by the three modes; the launch copies them into one policy per version. Only the host-specific file differs. The README has the commands.

@@ -166,7 +166,7 @@ name. Write floating point values with a decimal point (`50.0`).
 ### Policy switching
 
 ```bash
-ros2 service call /<node or controller>/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: imitation}"
+ros2 service call /<node or controller>/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: jump}"
 ```
 
 A switch applies at the start of the next step and calls `reset()` on the activated policy's
@@ -328,7 +328,18 @@ ros2 launch kangaroo_mujoco kangaroo_mujoco.launch.py arm_type:=no-arm moveit:=F
 ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py mode:=controller
 # walk, jump
 ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.6}}"
-ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: imitation}"
+ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: imitation_v719}"
+```
+
+Several versions are loaded side by side from comma-separated lists, one policy each, named
+`loco_<version>` and `imitation_<version>`. The first loco version is active at start, and every
+imitation returns to it when its motion ends, whichever loco policy was active before:
+
+```bash
+ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py robot_type:=full_body_4dof \
+  loco_models:=v265,v700 imitation_models:=v30,v31 imitation_frames:=300,250
+ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: loco_v700}"
+ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: imitation_v31}"
 ```
 
 | `mode` | What runs |
@@ -341,14 +352,15 @@ ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPo
 |-----------------|---------|
 | `robot_type` | `lower_body` (`full_body_4dof`) |
 | `models_dir` | `models` of `pal_policy_deployer` when installed; layout `<models_dir>/<robot_type>/<task>/<task>_<version>_mjlab` |
-| `loco_model`, `imitation_model`, `imitation_frames` | versions and motion length per robot type: `v315`, `v719`, 147 (lower body); `v265`, `v30`, 300 (4dof) |
+| `loco_models`, `imitation_models` | comma-separated versions; default per robot type: `v315`, `v719` (lower body); `v265`, `v30` (4dof) |
+| `imitation_frames` | comma-separated steps of each imitation before returning to the first loco policy (the motion's frame count); may be omitted when every motion is known: `v719` 147, `v30` 300 |
 | `activate_impedance_controller` | `True`; `False` loads and configures the controllers inactive |
 | `use_sim_time` | `false` (node mode only) |
 
 The controller manager must be started with this workspace sourced to find the controller
 plugin. In node mode the launch shuts down (unloading `rl_impedance_controller`) when the
 policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_policies.yaml`
-(policies, shared by both hosts), `kangaroo_policy_controller.yaml`, `kangaroo_policy_node.yaml`,
+(settings per policy kind, shared by both hosts; the launch makes one policy per version), `kangaroo_policy_controller.yaml`, `kangaroo_policy_node.yaml`,
 `kangaroo_<robot_type>_impedance.yaml` (pid_controller, node mode).
 
 ## Writing plugins
