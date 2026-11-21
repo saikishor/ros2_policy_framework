@@ -49,7 +49,8 @@ public:
   {
     OK,                ///< Commands were written.
     WAITING_FOR_DATA,  ///< The preprocessor is still missing inputs; no command written.
-    ERROR              ///< A stage failed or there is no policy; no command written.
+    ERROR              ///< A stage failed, the model answered a non-finite value, or there is
+                       ///< no policy; no command written.
   };
 
   /**
