@@ -120,7 +120,9 @@ or, chaining into a pid_controller that closes the loop:
     the policy provides before its first step (`gains_as_commands`) or its `stiffness`/`damping`
     parameters; `ReferenceInterfaceExecutor` writes nothing (the chained controller holds).
     After that, a step waiting for data keeps the last commands.
-  - *Safe values*: on deactivation and when a stage fails (`update()` returns `ERROR`) each
+  - *Safe values*: on deactivation and when a stage fails, including a model answering a
+    non-finite value (NaN or infinity), which never reaches the commands (`update()` returns
+    `ERROR`), each
     executor writes its safe values: zero effort for `PdEffortExecutor`, nothing for
     `ReferenceInterfaceExecutor`.
   - *Unreadable state interfaces* (locked by their writer, e.g. an asynchronous hardware
