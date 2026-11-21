@@ -187,6 +187,46 @@ limit per interface and only on the joints you list:
 
 The node and the controller do not run the monitor yet: a violation has no effect.
 
+Fault reactions (not used yet)
+------------------------------
+
+What to do about a fault depends on what went wrong: after an actuator error it is wiser to let
+the robot down gently, while a joint going far too fast is better stopped at once. Each check
+will therefore get its own reaction in the configuration, next to its ``type``, with a default
+for every other fault (a failed policy step, unreadable state interfaces). The reactions, from
+the most control kept to the least:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 14 43 43
+
+   * - Reaction
+     - ``PdEffortExecutor``
+     - ``ReferenceInterfaceExecutor``
+   * - ``HOLD``
+     - PD law around the position at the fault; zero effort for a joint without gains
+     - not supported
+   * - ``DAMP``
+     - ``effort = -fault_damping * velocity`` within ``effort_limits``; needs a
+       ``fault_damping`` above zero on every joint
+     - not supported
+   * - ``SAFE``
+     - zero effort
+     - nothing written: the chained controller keeps its last reference
+   * - ``ERROR``
+     - the controller returns an error: the controller manager deactivates it (it writes its
+       safe values) and activates its ``fallback_controllers``
+     - same
+
+A faulted controller only ever escalates to a later reaction, never back, until it is
+reactivated: it damps after an actuator error, and returns an error if a joint then goes far
+too fast. A reaction that an executor does not support with its configuration will be refused
+while configuring, not discovered during a fall. Going to a predefined pose, or any other
+recovery, is the job of a fallback controller (for example a joint trajectory controller):
+use ``ERROR``.
+
+The executors implement these reactions; the node and the controller do not use them yet.
+
 What the framework does not do
 ------------------------------
 
