@@ -354,6 +354,47 @@ public:
   }
 };
 
+/**
+ * @brief A check of the measured state that tells whether the robot is in a state it must not
+ *        be in (e.g. an actuator reporting an error, a motor too hot, the centre of mass outside
+ *        the feet).
+ *
+ * The contract: configure() registers every state entry the check reads, check() is then
+ * called with the state on every cycle of the control loop and returns false when the state is
+ * unsafe, and reset() forgets what the check accumulated (filters, counters).
+ *
+ * The hosts do not load SafetyCheck plugins yet: this is only the interface and its plugins.
+ */
+class SafetyCheck
+{
+public:
+  virtual ~SafetyCheck() = default;
+
+  /**
+   * @brief Register the state entries the check reads (state.add()).
+   * @param ctx Parameters live under `<ctx.name>.`; ctx.kinematics is a whole-body model of the
+   *        state (null when there is none).
+   * @param commands Command entries of the policies (e.g. to find the commanded joints).
+   * @param state Store the checked entries are registered in.
+   * @throws std::exception on invalid parameters.
+   */
+  virtual void configure(
+    const PluginContext & ctx, const DataStore & commands, DataStore & state) = 0;
+
+  /**
+   * @brief Check the state. Runs in the control loop: must not allocate while it passes.
+   * @param state The store given to configure(), with the current values.
+   * @param now Current time in seconds, on the clock of the state stamps.
+   * @param[out] reason Why it failed; written only on failure (so that passing never
+   *             allocates).
+   * @return false when the state is unsafe.
+   */
+  virtual bool check(const DataStore & state, double now, std::string & reason) = 0;
+
+  /// Forget filters and counters, so that a new run does not inherit the previous one's.
+  virtual void reset() {}
+};
+
 }  // namespace policy_framework
 
 #endif  // POLICY_FRAMEWORK__PLUGIN_INTERFACES_HPP_
