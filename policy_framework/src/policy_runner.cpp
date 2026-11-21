@@ -55,6 +55,8 @@ void PolicyRunner::configure(
 
   const auto & safety = params.safety_entry;
   if (!safety.empty()) {state_.add(safety);}
+  // Before the plugins, so that their CommandGate finds it.
+  neutral_idx_ = state_.add(kNeutralCommandsEntry);
   command_gate_ = CommandGate(PluginContext{node, "", nullptr, safety});
   commands_accepted_ = true;
 
@@ -117,6 +119,7 @@ std::vector<std::string> PolicyRunner::unprovided_state() const
 {
   std::vector<std::string> missing;
   for (const auto & name : state_.names()) {
+    if (name == kNeutralCommandsEntry) {continue;}  // written by the runner itself
     if (std::none_of(
         sources_.begin(), sources_.end(), [&](const auto & s) {return s->provides(name);}))
     {
@@ -190,8 +193,9 @@ PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & c
 {
   if (const bool accepted = command_gate_.open(state); accepted != commands_accepted_) {
     // Logged on transitions only, like the ones below.
-    RCLCPP_WARN_EXPRESSION(logger_, !accepted, "Safety entry is 0: ignoring user commands");
-    RCLCPP_INFO_EXPRESSION(logger_, accepted, "Safety entry is set: accepting user commands");
+    RCLCPP_WARN_EXPRESSION(
+      logger_, !accepted, "Ignoring user commands (safety entry 0 or neutral commands)");
+    RCLCPP_INFO_EXPRESSION(logger_, accepted, "Accepting user commands");
     commands_accepted_ = accepted;
   }
   if (policy_kinematics_.model != kinematics_.model) {update_kinematics(policy_kinematics_, state);}

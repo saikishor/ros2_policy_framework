@@ -131,6 +131,21 @@ TEST_F(PolicyRunnerTest, ReportsStateEntriesNoSourceProvides)
   EXPECT_EQ(runner.unprovided_state(), StringArray{"j3/position"});
 }
 
+TEST_F(PolicyRunnerTest, SetsNeutralCommandsInTheStateUntilRestarted)
+{
+  configure(runner_params("/runner_js_neutral"));
+  const auto i = runner.state().find(policy_framework::kNeutralCommandsEntry);
+  ASSERT_TRUE(i.has_value());  // registered for the plugins, but provided by the runner itself
+  EXPECT_TRUE(runner.unprovided_state().empty());
+  runner.set_neutral_commands(true, 1.0);
+  EXPECT_DOUBLE_EQ(runner.state().get(*i), 1.0);
+  runner.set_neutral_commands(false, 2.0);
+  EXPECT_DOUBLE_EQ(runner.state().get(*i), 0.0);
+  runner.set_neutral_commands(true, 3.0);
+  runner.restart();
+  EXPECT_DOUBLE_EQ(runner.state().get(*i), 0.0);
+}
+
 TEST_F(PolicyRunnerTest, UpdatesTheKinematicsOnceEveryJointWasReceived)
 {
   auto params = runner_params("/runner_js3");

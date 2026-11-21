@@ -73,7 +73,16 @@ public:
   {
     pipeline_->restart();
     pipeline_->write_initial_commands(commands_);
+    set_neutral_commands(false, 0.0);
   }
+
+  /**
+   * @brief Make the user command plugins use their neutral command (@p on true) or accept the
+   *        commands again (see CommandGate), e.g. while a fault with the NEUTRAL_COMMANDS
+   *        reaction is active. Writes kNeutralCommandsEntry in state(); real-time safe.
+   * @param now Stamp of the entry, in seconds.
+   */
+  void set_neutral_commands(bool on, double now) {state_.set(neutral_idx_, on ? 1.0 : 0.0, now);}
 
   /// Copy the latest data of every input source into state(). @p now in seconds.
   void read_sources(double now);
@@ -151,6 +160,7 @@ private:
 
   // Used only from step(), to log transitions once instead of every cycle.
   CommandGate command_gate_;
+  size_t neutral_idx_ = 0;  ///< kNeutralCommandsEntry in state_.
   bool commands_accepted_ = true;
   PolicyPipeline::Status last_status_ = PolicyPipeline::Status::OK;
   std::string last_policy_;
