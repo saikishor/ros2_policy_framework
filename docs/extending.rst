@@ -59,7 +59,7 @@ Which plugin to write
      - ``PdEffortExecutor``, ``ReferenceInterfaceExecutor``
    * - ``SafetyCheck``
      - state entries (and the kinematics) into a verdict: safe or not, and why
-     - ``StateBoundsCheck``
+     - ``StateBoundsCheck``, ``JumpCheck``
 
 The hosts do not run ``SafetyCheck`` plugins yet (:doc:`safety`).
 

@@ -134,6 +134,19 @@ interface. A non-finite value is out of bounds; an entry never received is not c
      error_code: {min: 0.0, max: 0.0}   # any error code but 0 fails
      trigger_cycles: 3                  # consecutive violations before it fails
 
+``JumpCheck`` fails when an entry changes more than ``<interface>.max_delta`` between two
+cycles, for example an encoder glitch, or when it is not finite. The first value is never a
+jump. Do not use it on values that wrap, such as the position of a continuous joint in
+[-pi, pi]:
+
+.. code-block:: yaml
+
+   encoders:
+     type: policy_framework/JumpCheck
+     prefixes: [leg_left_1_joint, leg_left_2_joint]
+     interfaces: [position]
+     position: {max_delta: 0.2}
+
 The node and the controller do not load these plugins yet: a failing check has no effect.
 
 What the framework does not do
