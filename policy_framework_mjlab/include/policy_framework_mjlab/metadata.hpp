@@ -86,16 +86,19 @@ inline Joints joints(const std::map<std::string, std::string> & metadata, const 
 }
 
 /**
+ * @param min Smallest accepted count.
  * @return metadata[key] as @p size counts (pal_mjlab writes them as "3.000").
- * @throws std::runtime_error on another size or a value that is not a positive integer.
+ * @throws std::runtime_error on another size or a value that is not an integer >= @p min.
  */
 inline std::vector<size_t> parse_counts(
-  const std::map<std::string, std::string> & metadata, const std::string & key, size_t size)
+  const std::map<std::string, std::string> & metadata, const std::string & key, size_t size,
+  size_t min = 1)
 {
   std::vector<size_t> out;
   for (const double v : parse_doubles(require(metadata, key))) {
-    if (v < 1.0 || std::trunc(v) < v) {
-      throw std::runtime_error("Model metadata '" + key + "' must hold positive integers");
+    if (v < static_cast<double>(min) || std::trunc(v) < v) {
+      throw std::runtime_error(
+              "Model metadata '" + key + "' must hold integers >= " + std::to_string(min));
     }
     out.push_back(static_cast<size_t>(v));
   }
