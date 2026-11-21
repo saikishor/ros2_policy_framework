@@ -291,6 +291,20 @@ public:
 };
 
 /**
+ * @brief What a host does about a fault (a failed safety check, a failed policy step...).
+ *
+ * Ordered from the most control kept to the least: once faulted, a host only ever escalates to
+ * a later reaction, until it is reactivated. The hosts do not react to faults with these yet.
+ */
+enum class FaultReaction
+{
+  HOLD,   ///< Keep the pose of the fault, e.g. a PD law around it.
+  DAMP,   ///< Let the robot down gently, e.g. a pure joint damping.
+  SAFE,   ///< The safe values, e.g. zero effort.
+  ERROR   ///< Stop: the host returns an error and is deactivated (fallback controllers take over).
+};
+
+/**
  * @brief Turns the commands into ros2_control command interface values, inside
  *        PolicyController (the controller's counterpart of the topic Executor, which only
  *        runs in the standalone node).
@@ -351,6 +365,37 @@ public:
   virtual void safe_values(std::vector<double> & values)
   {
     values.assign(values.size(), std::numeric_limits<double>::quiet_NaN());
+  }
+
+  /**
+   * @return true when fault() can apply @p reaction with this configuration (e.g. DAMP needs a
+   *         damping). Meant for hosts to refuse, while configuring, a reaction that their
+   *         configuration uses but an executor cannot apply. Default: SAFE and ERROR only.
+   */
+  virtual bool supports_fault_reaction(FaultReaction reaction) const
+  {
+    return reaction == FaultReaction::SAFE || reaction == FaultReaction::ERROR;
+  }
+
+  /**
+   * @brief Values written on every update while a host is faulted with an internal reaction
+   *        (HOLD, DAMP or SAFE; with ERROR the host is deactivated, which writes
+   *        safe_values()). Called from the control loop, only with a supported reaction.
+   *        Default: safe_values().
+   * @param commands Latest command entries, e.g. the gains the policy wrote.
+   * @param state Latest values of the state entries registered in configure().
+   * @param reaction The reaction of the fault.
+   * @param start true on the first call with this @p reaction, e.g. to capture the pose to hold.
+   */
+  virtual void fault(
+    const DataStore & commands, const DataStore & state, std::vector<double> & values,
+    FaultReaction reaction, bool start)
+  {
+    (void)commands;
+    (void)state;
+    (void)reaction;
+    (void)start;
+    safe_values(values);
   }
 };
 
