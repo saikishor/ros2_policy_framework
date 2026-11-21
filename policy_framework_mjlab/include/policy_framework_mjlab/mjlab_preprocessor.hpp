@@ -50,7 +50,8 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  *
  * History: each term is laid out as its own block, oldest first and newest last (matching
  * mjlab's per-term history with flattening). Its length is the term's
- * `observation_terms_history_length`; without that metadata, the same for every term: the
+ * `observation_terms_history_length` (0, mjlab's "no history", counts as 1); without that
+ * metadata, the same for every term: the
  * input size divided by the single observation size. As mjlab's CircularBuffer does, the first step after
  * clear() (first activation, host restart) back-fills the whole history with the current
  * value. The history is kept when the policy is switched away and back (reset() only) and,

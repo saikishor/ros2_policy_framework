@@ -250,7 +250,7 @@ activation.
 |----------|--------|
 | `observation_joint_names` | joints of `joint_pos` / `joint_vel` (a subset of `joint_names`) |
 | `observation_terms_dim` | checked against the size of every term |
-| `observation_terms_history_length` | history length of each term |
+| `observation_terms_history_length` | history length of each term (0, mjlab's "no history", is read as 1: the current frame only) |
 | `goal_root_body` | the base link of the policy, wherever the IMU is mounted |
 
 | Term | Source |
