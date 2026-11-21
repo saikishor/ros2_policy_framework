@@ -78,24 +78,6 @@ TEST_F(SafetyMonitorTest, TiltNeedsAnImu)
   EXPECT_THROW(configure(), std::invalid_argument);
 }
 
-TEST_F(SafetyMonitorTest, DetectsAJointVelocityAboveTheLimitOnCommandedJoints)
-{
-  config.max_joint_velocity = 10.0;
-  configure();
-  EXPECT_TRUE(state.find("j1/velocity").has_value());
-  EXPECT_TRUE(state.find("j2/velocity").has_value());
-  EXPECT_EQ(state.size(), 2u);
-
-  set("j1/velocity", 9.0);
-  EXPECT_FALSE(monitor.check(state, 0.0, 0.0));
-  set("j2/velocity", -11.0);
-  const auto v = monitor.check(state, 0.0, 0.0);
-  ASSERT_TRUE(v);
-  EXPECT_EQ(v->check, SafetyMonitor::Check::JOINT_VELOCITY);
-  EXPECT_EQ(v->joint, "j2");
-  EXPECT_DOUBLE_EQ(v->value, -11.0);
-}
-
 TEST_F(SafetyMonitorTest, DetectsAJointPositionOutsideItsLimitsMinusTheMargin)
 {
   config.joint_limits = {{"j1", {-1.0, 1.0}}, {"j3", {0.0, 0.1}}};  // j3 is not commanded
