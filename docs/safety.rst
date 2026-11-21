@@ -149,6 +149,35 @@ jump. Do not use it on values that wrap, such as the position of a continuous jo
 
 The node and the controller do not load these plugins yet: a failing check has no effect.
 
+Safety monitor (not run yet)
+----------------------------
+
+Besides the plugins, ``SafetyMonitor`` has built-in checks of the measured state, each off
+until it is given a limit. ``check()`` returns the first one violated; a value that was never
+received is not checked.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Check
+     - Violated when
+   * - Tilt (``max_tilt``, ``imu``)
+     - the IMU z axis is tilted more than ``max_tilt`` (rad) from the vertical: the robot is
+       falling. Reads ``<imu>/orientation.{x,y,z,w}``.
+   * - Joint velocity (``max_joint_velocity``)
+     - the absolute velocity of a commanded joint exceeds it (``<joint>/velocity``).
+   * - Joint position (``joint_limits``, ``position_margin``)
+     - the position of a commanded joint leaves its limits, narrowed by the margin. The limits
+       can be read from the robot description; continuous joints have none.
+   * - Input age (``max_input_age``)
+     - the observation of the last policy step (its oldest input) is older than this many
+       seconds: a topic stopped, so the policy acts on the past.
+
+*Commanded joints* are those the policies write a ``<joint>/position`` command for.
+
+The node and the controller do not run the monitor yet: a violation has no effect.
+
 What the framework does not do
 ------------------------------
 

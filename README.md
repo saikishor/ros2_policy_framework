@@ -18,7 +18,7 @@ how the data flows and how the pieces fit, are explained in [`docs/`](docs/index
 
 | Package | Content |
 |---------|---------|
-| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck` and `JumpCheck` safety checks), `SafetyCheck` plugin interface, `SwitchPolicy` service |
+| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck` and `JumpCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks, not run by the hosts yet), `SwitchPolicy` service |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` and supermimic `MotionGoalTerm` observation terms and the Kangaroo deployment config/launch |
 
 ## Architecture
