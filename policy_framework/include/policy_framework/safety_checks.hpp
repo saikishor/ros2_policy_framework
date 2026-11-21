@@ -20,6 +20,9 @@ namespace policy_framework
  * - `prefixes` (string array): e.g. joint or actuator names
  * - `interfaces` (string array): e.g. `temperature`, `error_code`; one entry per prefix each
  * - `<interface>.min`, `<interface>.max` (double, default unbounded): at least one of them
+ * - `<interface>.hysteresis` (double, default 0): once an entry failed, it passes again only
+ *   within [min + hysteresis, max - hysteresis], so that a value hovering at a bound does not
+ *   toggle the check (e.g. fail at 80 degrees, pass again below 70)
  * - `trigger_cycles` (int, default 1): consecutive violations of an entry before it fails, to
  *   ride out a single noisy reading
  *
@@ -28,7 +31,8 @@ namespace policy_framework
 class StateBoundsCheck : public SafetyCheck
 {
 public:
-  /// @throws std::runtime_error when an interface has neither `min` nor `max`.
+  /// @throws std::runtime_error when an interface has neither `min` nor `max`, or when its
+  ///         hysteresis leaves no value to pass again.
   void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) override;
   bool check(const DataStore & state, double now, std::string & reason) override;
   void reset() override;
@@ -39,7 +43,9 @@ private:
     size_t index;
     double min;
     double max;
+    double hysteresis;
     int violations = 0;  ///< In a row.
+    bool failed = false;  ///< Until the value is back within the bounds minus the hysteresis.
   };
   std::vector<Entry> entries_;
   int trigger_cycles_ = 1;
