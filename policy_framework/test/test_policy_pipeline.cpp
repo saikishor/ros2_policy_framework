@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -33,10 +34,11 @@ public:
   bool run(const TensorMap & in, TensorMap & out) override
   {
     ++runs;
-    out.at("actions").data[0] = in.at("obs").data[0] + offset_;
+    out.at("actions").data[0] = nan ? std::nanf("") : in.at("obs").data[0] + offset_;
     return true;
   }
   int runs = 0;
+  bool nan = false;  ///< Answer NaN, as a diverged model does.
 
 private:
   ModelInfo model_;
@@ -178,6 +180,16 @@ TEST_F(PolicyPipelineTest, StepWaitsWhenPreprocessorHasNoData)
   pipeline.add_policy(a.policy("a"));
   EXPECT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::WAITING_FOR_DATA);
   EXPECT_EQ(a.inf->runs, 0);
+}
+
+TEST_F(PolicyPipelineTest, NonFiniteOutputsAreAnErrorAndNeverReachTheCommands)
+{
+  Fakes a(1.0F);
+  pipeline.add_policy(a.policy("a"));
+  ASSERT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::OK);
+  a.inf->nan = true;
+  EXPECT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::ERROR);
+  EXPECT_DOUBLE_EQ(cmd(), 1.0);  // the postprocessor did not run
 }
 
 TEST_F(PolicyPipelineTest, StepWithoutPoliciesIsAnError)

@@ -206,6 +206,40 @@ TEST_F(PolicyRunnerTest, HasNoKinematicsByDefault)
   EXPECT_EQ(runner.kinematics(), nullptr);
 }
 
+TEST_F(PolicyRunnerTest, ChecksTheSafetyOfTheStateItReads)
+{
+  auto params = runner_params("/runner_js9");
+  params.push_back({"safety.max_joint_velocity", 5.0});
+  params.push_back({"safety.joint_position_limits", true});
+  params.push_back({"safety.position_margin", 0.2});
+  params.push_back({"safety.max_input_age", 0.5});
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  configure(params, urdf.str());
+  auto & state = runner.state();
+  EXPECT_TRUE(state.find("j1/velocity").has_value());  // registered for the controller to claim
+  EXPECT_FALSE(runner.check_safety(0.0, 0.0));
+
+  state.set(state.index("j2/position"), 3.1, 0.0);  // limit 3.2 minus the margin
+  const auto v = runner.check_safety(0.0, 0.0);
+  ASSERT_TRUE(v);
+  EXPECT_EQ(v->check, policy_framework::SafetyMonitor::Check::JOINT_POSITION);
+  state.set(state.index("j2/position"), 0.0, 0.0);
+  EXPECT_TRUE(runner.check_safety(1.0, 2.0));  // a one second old observation
+}
+
+TEST(PolicyRunner, JointPositionLimitsNeedARobotDescription)
+{
+  auto params = runner_params("/unused_js");
+  params.push_back({"safety.joint_position_limits", true});
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("runner_no_urdf", opts);
+  PolicyRunner runner;
+  EXPECT_THROW(runner.configure(node), std::runtime_error);
+}
+
 TEST(PolicyRunner, ConfigureFailsWithoutPolicies)
 {
   auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("empty_runner");

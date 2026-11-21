@@ -42,6 +42,8 @@ private:
   std::unique_ptr<PolicyRunner> runner_;
   rclcpp::TimerBase::SharedPtr timer_;
   double update_rate_ = 50.0;  ///< Hz, from the parameters at configure.
+  bool faulted_ = false;       ///< A safety.* check failed since activation.
+  double observation_stamp_ = 0.0;  ///< Of the last successful policy step since activation.
 };
 
 }  // namespace policy_framework

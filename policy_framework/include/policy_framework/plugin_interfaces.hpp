@@ -352,6 +352,25 @@ public:
   {
     values.assign(values.size(), std::numeric_limits<double>::quiet_NaN());
   }
+
+  /**
+   * @brief Values that let the robot down gently after a fault, written on every update while
+   *        the controller is faulted with `on_fault: damp` (e.g. a pure joint damping). Called
+   *        from the control loop. Default: safe_values().
+   * @param state Latest values of the state entries registered in configure().
+   */
+  virtual void damp(const DataStore & state, std::vector<double> & values)
+  {
+    (void)state;
+    safe_values(values);
+  }
+
+  /**
+   * @return false when damp() would write nothing useful with this configuration (e.g. zero
+   *         effort because no damping was given). The controller then refuses to configure
+   *         with `on_fault: damp`. Default: true.
+   */
+  virtual bool damping_configured() const {return true;}
 };
 
 }  // namespace policy_framework

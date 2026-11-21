@@ -41,6 +41,10 @@ void PolicyController::load_executors()
     }
     auto executor = executor_loader_->createSharedInstance(type);
     executor->configure({node, name}, runner_->commands(), runner_->state());
+    if (damp_on_fault_ && !executor->damping_configured()) {
+      throw std::runtime_error(
+              "Executor '" + name + "': on_fault: damp needs its fault damping set, above zero");
+    }
     executors_.push_back(executor);
     RCLCPP_INFO(node->get_logger(), "Executor '%s' (%s)", name.c_str(), type.c_str());
   }
@@ -60,6 +64,7 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
   }
   const double policy_rate = params.policy_rate;
   max_failed_reads_ = static_cast<unsigned int>(params.max_failed_reads);
+  damp_on_fault_ = params.on_fault == "damp";
   if (params.async_inference && is_async()) {
     RCLCPP_ERROR(
       get_node()->get_logger(), "async_inference and is_async are exclusive: async_inference "
@@ -177,6 +182,8 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
     loaned_command_.push_back(std::move(loaned));
   }
   policy_ready_ = false;
+  faulted_ = false;
+  observation_stamp_ = 0.0;
   hold_start_ = true;
   failed_reads_ = 0;
   timing_ = Timing();
@@ -205,6 +212,28 @@ void PolicyController::apply_values()
   }
 }
 
+controller_interface::return_type PolicyController::fault(const std::string & reason)
+{
+  if (!damp_on_fault_) {
+    RCLCPP_ERROR_THROTTLE(
+      get_node()->get_logger(), *get_node()->get_clock(), 1000, "%s: writing the safe values",
+      reason.c_str());
+    write_safe_values();
+    return controller_interface::return_type::ERROR;
+  }
+  if (!faulted_) {
+    RCLCPP_ERROR(
+      get_node()->get_logger(), "%s: damping until the controller is reactivated",
+      reason.c_str());
+    faulted_ = true;
+  }
+  for (size_t k = 0; k < values_.size(); ++k) {
+    executors_[k]->damp(runner_->state(), values_[k]);
+  }
+  apply_values();
+  return controller_interface::return_type::OK;
+}
+
 void PolicyController::write_safe_values()
 {
   for (size_t k = 0; k < values_.size(); ++k) {
@@ -230,12 +259,12 @@ controller_interface::return_type PolicyController::update(
     }
   }
   failed_reads_ = read_failed ? failed_reads_ + 1 : 0;
+  // Latched: only the damping runs, with the latest state (the previous one while unreadable).
+  if (faulted_) {return fault("");}
   if (failed_reads_ > max_failed_reads_) {
-    RCLCPP_ERROR_THROTTLE(
-      get_node()->get_logger(), *get_node()->get_clock(), 1000,
-      "State interfaces could not be read for %u updates in a row", failed_reads_);
-    write_safe_values();
-    return controller_interface::return_type::ERROR;
+    return fault(
+      "State interfaces could not be read for " + std::to_string(failed_reads_) +
+      " updates in a row");
   }
 
   // The policy steps every decimation_ updates (starting with the first); executors run on
@@ -251,6 +280,7 @@ controller_interface::return_type PolicyController::update(
       const double stamp = runner_->pipeline().observation_stamp();
       timing_.observation_age_ms =
         status == PolicyPipeline::Status::OK && stamp > 0.0 ? (now - stamp) * 1e3 : 0.0;
+      if (status == PolicyPipeline::Status::OK) {observation_stamp_ = stamp;}
     };
   if (!inference_) {
     if (policy_tick) {
@@ -286,9 +316,9 @@ controller_interface::return_type PolicyController::update(
       }
     }
   }
-  if (status == PolicyPipeline::Status::ERROR) {
-    write_safe_values();
-    return controller_interface::return_type::ERROR;
+  if (status == PolicyPipeline::Status::ERROR) {return fault("The policy step failed");}
+  if (const auto violation = runner_->check_safety(observation_stamp_, now)) {
+    return fault("Safety: " + violation->describe());
   }
   if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
   // Before the first commands since activation the command store may still hold the previous
