@@ -113,6 +113,29 @@ The plugins that feed user commands implement this with ``CommandGate``: ``Twist
 ``TwistCommandTerm`` and ``MotionGoalTerm``. Every change of the signal is logged once.
 Without ``safety_entry`` commands are always accepted.
 
+Safety checks (not run yet)
+---------------------------
+
+Checks specific to a robot, such as an actuator reporting an error or a motor running hot,
+are ``SafetyCheck`` plugins. Each one registers the state entries it reads in ``configure()``
+and says in ``check()`` whether the state is safe, with a reason when it is not. ``check()``
+runs in the control loop: it must not allocate while the state is safe.
+
+``StateBoundsCheck`` checks every ``<prefix>/<interface>`` entry against the bounds of its
+interface. A non-finite value is out of bounds; an entry never received is not checked:
+
+.. code-block:: yaml
+
+   motors:
+     type: policy_framework/StateBoundsCheck
+     prefixes: [leg_left_1_joint, leg_left_2_joint]
+     interfaces: [temperature, error_code]
+     temperature: {max: 85.0}
+     error_code: {min: 0.0, max: 0.0}   # any error code but 0 fails
+     trigger_cycles: 3                  # consecutive violations before it fails
+
+The node and the controller do not load these plugins yet: a failing check has no effect.
+
 What the framework does not do
 ------------------------------
 

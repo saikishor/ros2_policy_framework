@@ -18,7 +18,7 @@ how the data flows and how the pieces fit, are explained in [`docs/`](docs/index
 
 | Package | Content |
 |---------|---------|
-| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages), `SwitchPolicy` service |
+| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck` safety check), `SafetyCheck` plugin interface, `SwitchPolicy` service |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` and supermimic `MotionGoalTerm` observation terms and the Kangaroo deployment config/launch |
 
 ## Architecture
@@ -381,6 +381,11 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
   `InterfaceExecutor::hold` computes the values that keep the robot still until then.
 - A plugin that feeds user commands to a policy checks `CommandGate::open(state)` and uses its
   neutral command while it is false (`safety_entry`).
+- A `SafetyCheck` registers the state entries it reads in `configure()` and returns false from
+  `check()` when the state is unsafe, writing the reason only then (no allocation while it
+  passes). `StateBoundsCheck` is one: every `<prefix>/<interface>` entry within the
+  `<interface>.min`/`.max` bounds, a non-finite value fails, `trigger_cycles` violations in a
+  row before it fails. The node and the controller do not run safety checks yet.
 - `InputSource` callbacks never touch the store: buffer the message (`LatestMessage`) and copy it
   in `read()`.
 - Keep stamps flowing (see [Timestamps](#timestamps)). `policy_framework_mjlab` is a complete
