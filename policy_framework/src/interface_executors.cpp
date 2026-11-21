@@ -56,6 +56,8 @@ void PdEffortExecutor::configure(
   check_size(kp, "stiffness");
   check_size(kd, "damping");
   check_size(limits, "effort_limits");
+  const auto & fault_kd = params.fault_damping;
+  check_size(fault_kd, "fault_damping");
 
   joints_.clear();
   interfaces_.clear();
@@ -77,6 +79,7 @@ void PdEffortExecutor::configure(
     joint.kp = joint.has_kp ? kp[i] : 0.0;
     joint.kd = joint.has_kd ? kd[i] : 0.0;
     joint.limit = limits.empty() ? 0.0 : limits[i];
+    joint.fault_kd = fault_kd.empty() ? 0.0 : fault_kd[i];
     joints_.push_back(joint);
     interfaces_.push_back(j + "/" + effort);
     feedback_.push_back(j + "/position");
@@ -126,6 +129,41 @@ void PdEffortExecutor::hold(
     values[i] = effort(
       j, std::isnan(j.hold_q) ? std::nullopt : std::optional<double>(j.hold_q), 0.0, commands,
       state);
+  }
+}
+
+bool PdEffortExecutor::supports_fault_reaction(FaultReaction reaction) const
+{
+  if (reaction != FaultReaction::DAMP) {return true;}
+  return !joints_.empty() && std::all_of(
+    joints_.begin(), joints_.end(), [](const Joint & j) {return j.fault_kd > 0.0;});
+}
+
+void PdEffortExecutor::fault(
+  const DataStore & commands, const DataStore & state, std::vector<double> & values,
+  FaultReaction reaction, bool start)
+{
+  switch (reaction) {
+    case FaultReaction::HOLD:
+      hold(commands, state, values, start);
+      // hold() leaves a joint it cannot compute unchanged; after a fault that would keep the
+      // last effort of the policy applied.
+      for (auto & v : values) {
+        if (std::isnan(v)) {v = 0.0;}
+      }
+      return;
+    case FaultReaction::DAMP:
+      for (size_t i = 0; i < joints_.size(); ++i) {
+        const auto & j = joints_[i];
+        const auto dq = valid(state, j.dq);
+        const double u = dq ? -j.fault_kd * *dq : 0.0;
+        values[i] = j.limit > 0.0 ? std::clamp(u, -j.limit, j.limit) : u;
+      }
+      return;
+    case FaultReaction::SAFE:
+    case FaultReaction::ERROR:
+      safe_values(values);
+      return;
   }
 }
 

@@ -33,6 +33,12 @@ namespace policy_framework
  * - `effort_interface` (default `effort`)
  * - `stiffness`, `damping` (double arrays, one per joint): fallback gains
  * - `effort_limits` (double array, one per joint, default empty = no clamping): |effort| bound
+ * - `fault_damping` (double array, one per joint, default empty): the DAMP fault reaction
+ *   writes effort = -fault_damping * velocity, within the effort limits (zero effort for a joint
+ *   without a valid velocity); DAMP is only supported when every value is above zero
+ *
+ * Fault reactions: HOLD runs the PD law of hold() around the position at the fault (zero
+ * effort for a joint without gains or position), DAMP the fault damping, SAFE zero effort.
  *
  * A joint whose reference, measurement or gains are not received or not finite is left
  * unchanged. safe_values() is zero effort.
@@ -54,6 +60,12 @@ public:
     const DataStore & commands, const DataStore & state, std::vector<double> & values,
     bool start) override;
   void safe_values(std::vector<double> & values) override {values.assign(values.size(), 0.0);}
+  /// @return true for HOLD, SAFE and ERROR; for DAMP only when every joint has a
+  ///         `fault_damping` above zero.
+  bool supports_fault_reaction(FaultReaction reaction) const override;
+  void fault(
+    const DataStore & commands, const DataStore & state, std::vector<double> & values,
+    FaultReaction reaction, bool start) override;
 
 private:
   struct Joint
@@ -61,6 +73,7 @@ private:
     size_t ref_pos, q, dq;
     std::optional<size_t> ref_vel, kp_entry, kd_entry;
     double kp = 0.0, kd = 0.0, limit = 0.0;  // limit <= 0: none
+    double fault_kd = 0.0;                   // the DAMP fault reaction
     bool has_kp = false, has_kd = false;     // the parameters give this gain
     double hold_q = 0.0;                     // NaN until hold() saw the position
   };
