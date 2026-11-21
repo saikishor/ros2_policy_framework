@@ -32,4 +32,7 @@
   <class name="policy_framework/StateBoundsCheck" type="policy_framework::StateBoundsCheck" base_class_type="policy_framework::SafetyCheck">
     <description>Fails when a state entry &lt;prefix&gt;/&lt;interface&gt; (e.g. a temperature or an error code) leaves its bounds.</description>
   </class>
+  <class name="policy_framework/JumpCheck" type="policy_framework::JumpCheck" base_class_type="policy_framework::SafetyCheck">
+    <description>Fails when a state entry &lt;prefix&gt;/&lt;interface&gt; changes more than its max_delta between two cycles (e.g. an encoder glitch).</description>
+  </class>
 </library>

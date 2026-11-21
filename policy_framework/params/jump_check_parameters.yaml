@@ -1,0 +1,23 @@
+jump_check:
+  prefixes:
+    type: string_array
+    description: "Prefixes of the checked state entries <prefix>/<interface>, e.g. joint names."
+    read_only: true
+    validation:
+      not_empty<>: null
+      unique<>: null
+  interfaces:
+    type: string_array
+    description: "Interfaces checked for every prefix, e.g. position; each needs <interface>.max_delta."
+    read_only: true
+    validation:
+      not_empty<>: null
+      unique<>: null
+  __map_interfaces:
+    max_delta:
+      type: double
+      default_value: 0.0
+      description: "Largest change of the value between two cycles; required, above zero."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]

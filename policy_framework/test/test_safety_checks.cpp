@@ -106,6 +106,80 @@ TEST_F(StateBoundsCheckTest, RejectsAnInterfaceWithoutBounds)
   EXPECT_THROW(check.configure({node, "motors"}, commands, state), std::runtime_error);
 }
 
+rclcpp_lifecycle::LifecycleNode::SharedPtr make_node(
+  const std::string & name, const std::vector<rclcpp::Parameter> & params)
+{
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  return std::make_shared<rclcpp_lifecycle::LifecycleNode>(name, opts);
+}
+
+class JumpCheckTest : public ::testing::Test
+{
+protected:
+  void SetUp() override
+  {
+    const auto node = make_node(
+      "jump", {
+        {"encoders.prefixes", StringArray{"j1", "j2"}},
+        {"encoders.interfaces", StringArray{"position"}},
+        {"encoders.position.max_delta", 0.1}});
+    check.configure({node, "encoders"}, commands, state);
+  }
+
+  void set(const std::string & name, double v) {state.set(state.index(name), v, 0.0);}
+  bool ok() {return check.check(state, 0.0, reason);}
+
+  policy_framework::JumpCheck check;
+  DataStore commands;
+  DataStore state;
+  std::string reason;
+};
+
+TEST_F(JumpCheckTest, FaultsOnAChangeAboveMaxDeltaBetweenTwoCycles)
+{
+  EXPECT_TRUE(ok());  // nothing received yet
+  set("j1/position", 1.0);  // a first value is never a jump
+  EXPECT_TRUE(ok());
+  set("j1/position", 1.05);
+  set("j2/position", -3.0);
+  EXPECT_TRUE(ok());
+  set("j2/position", -2.8);
+  EXPECT_FALSE(ok());
+  EXPECT_NE(reason.find("j2/position"), std::string::npos) << reason;
+}
+
+TEST_F(JumpCheckTest, FaultsOnANonFiniteValue)
+{
+  set("j1/position", std::nan(""));  // even as a first value
+  EXPECT_FALSE(ok());
+  check.reset();
+  set("j1/position", 1.0);
+  EXPECT_TRUE(ok());
+  set("j1/position", std::nan(""));
+  EXPECT_FALSE(ok());
+}
+
+TEST_F(JumpCheckTest, ResetForgetsThePreviousValues)
+{
+  set("j1/position", 1.0);
+  EXPECT_TRUE(ok());
+  check.reset();
+  set("j1/position", 2.0);  // compared with nothing after the reset
+  EXPECT_TRUE(ok());
+}
+
+TEST(JumpCheckConfigTest, RejectsAnInterfaceWithoutMaxDelta)
+{
+  const auto node = make_node(
+    "no_delta", {
+      {"encoders.prefixes", StringArray{"j1"}},
+      {"encoders.interfaces", StringArray{"position"}}});
+  policy_framework::JumpCheck check;
+  DataStore commands, state;
+  EXPECT_THROW(check.configure({node, "encoders"}, commands, state), std::runtime_error);
+}
+
 }  // namespace
 
 int main(int argc, char ** argv)
