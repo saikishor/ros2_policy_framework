@@ -20,7 +20,7 @@ From activation to deactivation
      start -> hold [label="activate"];
      hold -> run [label="first commands\nfrom the policy"];
      run -> run [label="policy waits for data:\nkeep the last commands"];
-     run -> safe [label="a stage fails, or\ninterfaces unreadable"];
+     run -> safe [label="a stage fails (or NaN),\nor interfaces unreadable"];
      hold -> safe [label="deactivate"];
      run -> safe [label="deactivate"];
    }
@@ -53,6 +53,9 @@ When the controller is deactivated, when a stage of the policy fails, or when th
 interfaces cannot be read (below), every executor writes its *safe values*: zero effort for
 ``PdEffortExecutor``, nothing for ``ReferenceInterfaceExecutor``. In the failure cases
 ``update()`` also returns an error to the controller manager.
+
+A model that answers a non-finite value (NaN or infinity), as a diverged one does, counts as a
+failed stage: those values never reach the commands. The node sends nothing for that step.
 
 Inputs that are missing or late
 -------------------------------
