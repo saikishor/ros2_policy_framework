@@ -13,6 +13,7 @@
 #include "rclcpp/rclcpp.hpp"
 
 using policy_framework::DataStore;
+using policy_framework::FaultReaction;
 using policy_framework::PdEffortExecutor;
 using policy_framework::PluginContext;
 using StringArray = std::vector<std::string>;
@@ -214,6 +215,22 @@ TEST(ReferenceInterfaceExecutor, WritesReceivedCommandsToPrefixedInterfaces)
   EXPECT_DOUBLE_EQ(values[2], -0.5);
   ref.safe_values(values);
   EXPECT_TRUE(std::isnan(values[0]));  // the chained controller keeps its last reference
+}
+
+TEST(ReferenceInterfaceExecutor, SupportsOnlySafeAndErrorFaultReactions)
+{
+  DataStore commands;
+  DataStore state;
+  commands.add("a/position");
+  policy_framework::ReferenceInterfaceExecutor ref;
+  ref.configure(make_context({{"pd.prefix", "pid"}}), commands, state);
+  EXPECT_TRUE(ref.supports_fault_reaction(FaultReaction::SAFE));
+  EXPECT_TRUE(ref.supports_fault_reaction(FaultReaction::ERROR));
+  EXPECT_FALSE(ref.supports_fault_reaction(FaultReaction::HOLD));
+  EXPECT_FALSE(ref.supports_fault_reaction(FaultReaction::DAMP));
+  Doubles values(2, 1.0);
+  ref.fault(commands, state, values, FaultReaction::SAFE, true);
+  for (const double v : values) {EXPECT_TRUE(std::isnan(v));}  // the safe values
 }
 
 int main(int argc, char ** argv)
