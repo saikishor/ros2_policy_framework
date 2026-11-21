@@ -160,6 +160,7 @@ void PdEffortExecutor::fault(
         values[i] = j.limit > 0.0 ? std::clamp(u, -j.limit, j.limit) : u;
       }
       return;
+    case FaultReaction::NEUTRAL_COMMANDS:  // never called with it: the host keeps calling write()
     case FaultReaction::SAFE:
     case FaultReaction::ERROR:
       safe_values(values);

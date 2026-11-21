@@ -162,6 +162,28 @@ TEST_F(TopicSourcesTest, TwistIsZeroWhileTheSafetyEntryIsNotSet)
   EXPECT_DOUBLE_EQ(store.get(vx), 0.0);
 }
 
+TEST_F(TopicSourcesTest, TwistIsZeroWhileTheHostSetsNeutralCommands)
+{
+  make_node({{"cmd_vel.topic", "/test_cmd_vel_neutral"}});
+  policy_framework::TwistSource src;
+  src.configure({node, "cmd_vel"});  // no safety entry: only the host's neutral commands gate
+  const auto vx = store.add("cmd_vel/linear.x");
+  const auto neutral = store.add(policy_framework::kNeutralCommandsEntry);
+  geometry_msgs::msg::Twist msg;
+  msg.linear.x = 0.3;
+  publish("/test_cmd_vel_neutral", msg);
+  const double now = node->get_clock()->now().seconds();
+
+  src.read(store, now);  // never set: commands accepted
+  EXPECT_DOUBLE_EQ(store.get(vx), 0.3);
+  store.set(neutral, 1.0, now);
+  src.read(store, now);
+  EXPECT_DOUBLE_EQ(store.get(vx), 0.0);
+  store.set(neutral, 0.0, now);  // recovers by itself
+  src.read(store, now);
+  EXPECT_DOUBLE_EQ(store.get(vx), 0.3);
+}
+
 TEST_F(TopicSourcesTest, OdometryWritesPoseAndTwist)
 {
   make_node({{"odom.topic", "/test_odom"}});
