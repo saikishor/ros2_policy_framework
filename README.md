@@ -209,6 +209,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/OdometrySource` | InputSource | `topic` → `<name>/position.*`, `orientation.*`, `linear.*`, `angular.*` |
 | `policy_framework/MultiDofCommandExecutor` | Executor (node) | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`, empty: 0); drops a message while the previous one is being published |
 | `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none); a joint with a missing or non-finite value is left unchanged |
+| `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `trigger_cycles` (1); a non-finite value is out of bounds, an entry never received is not checked. Not run by the hosts yet |
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
@@ -383,9 +384,7 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
   neutral command while it is false (`safety_entry`).
 - A `SafetyCheck` registers the state entries it reads in `configure()` and returns false from
   `check()` when the state is unsafe, writing the reason only then (no allocation while it
-  passes). `StateBoundsCheck` is one: every `<prefix>/<interface>` entry within the
-  `<interface>.min`/`.max` bounds, a non-finite value fails, `trigger_cycles` violations in a
-  row before it fails. The node and the controller do not run safety checks yet.
+  passes). The node and the controller do not run safety checks yet.
 - `InputSource` callbacks never touch the store: buffer the message (`LatestMessage`) and copy it
   in `read()`.
 - Keep stamps flowing (see [Timestamps](#timestamps)). `policy_framework_mjlab` is a complete
