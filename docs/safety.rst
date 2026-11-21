@@ -165,8 +165,6 @@ received is not checked.
    * - Tilt (``max_tilt``, ``imu``)
      - the IMU z axis is tilted more than ``max_tilt`` (rad) from the vertical: the robot is
        falling. Reads ``<imu>/orientation.{x,y,z,w}``.
-   * - Joint velocity (``max_joint_velocity``)
-     - the absolute velocity of a commanded joint exceeds it (``<joint>/velocity``).
    * - Joint position (``joint_limits``, ``position_margin``)
      - the position of a commanded joint leaves its limits, narrowed by the margin. The limits
        can be read from the robot description; continuous joints have none.
@@ -175,6 +173,17 @@ received is not checked.
        seconds: a topic stopped, so the policy acts on the past.
 
 *Commanded joints* are those the policies write a ``<joint>/position`` command for.
+
+There is no joint velocity check in the monitor: a ``StateBoundsCheck`` does it, with a
+limit per interface and only on the joints you list:
+
+.. code-block:: yaml
+
+   knee_velocity:
+     type: policy_framework/StateBoundsCheck
+     prefixes: [leg_left_4_joint, leg_right_4_joint]
+     interfaces: [velocity]
+     velocity: {min: -12.0, max: 12.0}
 
 The node and the controller do not run the monitor yet: a violation has no effect.
 
