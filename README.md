@@ -208,7 +208,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/TwistSource` | InputSource | `topic`, `timeout` (1.0 s, ≤ 0 disables) → `<name>/linear.*`, `angular.*`; zero when absent or stale |
 | `policy_framework/OdometrySource` | InputSource | `topic` → `<name>/position.*`, `orientation.*`, `linear.*`, `angular.*` |
 | `policy_framework/MultiDofCommandExecutor` | Executor (node) | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`, empty: 0); drops a message while the previous one is being published |
-| `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none); a joint with a missing or non-finite value is left unchanged |
+| `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions (not used by the hosts yet): `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; a joint with a missing or non-finite value is left unchanged |
 | `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `trigger_cycles` (1); a non-finite value is out of bounds, an entry never received is not checked. Not run by the hosts yet |
 | `policy_framework/JumpCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.max_delta` (required): fails on a change above it between two cycles (e.g. an encoder glitch) or a non-finite value; do not use on wrapping values. Not run by the hosts yet |
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
@@ -381,6 +381,9 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
   time-dependent memory (a history) current there.
 - `Postprocessor::initial_commands` writes what is known before the first step (e.g. gains);
   `InterfaceExecutor::hold` computes the values that keep the robot still until then.
+  `InterfaceExecutor::fault` computes the values of a fault reaction (`HOLD`, `DAMP`, `SAFE`;
+  default: the safe values) and `supports_fault_reaction` says which ones the configuration
+  allows; the hosts do not call them yet.
 - A plugin that feeds user commands to a policy checks `CommandGate::open(state)` and uses its
   neutral command while it is false (`safety_entry`).
 - A `SafetyCheck` registers the state entries it reads in `configure()` and returns false from
