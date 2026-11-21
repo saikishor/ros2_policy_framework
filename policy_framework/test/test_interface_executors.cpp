@@ -171,6 +171,73 @@ TEST_F(PdEffortExecutorTest, SafeValuesAreZeroEffort)
   EXPECT_EQ(values, (Doubles{0.0, 0.0}));
 }
 
+TEST_F(PdEffortExecutorTest, FaultDampIsTheFaultDampingAgainstTheVelocityWithinTheLimits)
+{
+  configure({
+    {"pd.stiffness", Doubles{10.0, 10.0}}, {"pd.damping", Doubles{1.0, 1.0}},
+    {"pd.fault_damping", Doubles{4.0, 2.0}}, {"pd.effort_limits", Doubles{1.0, 0.0}}});
+  set_robot_and_references();
+  pd.fault(commands, state, values, FaultReaction::DAMP, true);
+  EXPECT_DOUBLE_EQ(values[0], -1.0);  // -4 * 0.5, clamped
+  EXPECT_DOUBLE_EQ(values[1], 2.0);   // -2 * -1
+  set(state, "b/velocity", std::nan(""));
+  pd.fault(commands, state, values, FaultReaction::DAMP, false);
+  EXPECT_DOUBLE_EQ(values[1], 0.0);  // no valid velocity: no effort
+}
+
+TEST_F(PdEffortExecutorTest, FaultHoldKeepsThePoseOfTheFault)
+{
+  configure({{"pd.stiffness", Doubles{10.0, 20.0}}, {"pd.damping", Doubles{1.0, 2.0}}});
+  set_robot_and_references();  // the references are not followed after a fault
+  pd.fault(commands, state, values, FaultReaction::HOLD, true);
+  EXPECT_DOUBLE_EQ(values[0], -1.0 * 0.5);
+  set(state, "a/position", 1.2);
+  set(state, "a/velocity", 0.0);
+  pd.fault(commands, state, values, FaultReaction::HOLD, false);
+  EXPECT_DOUBLE_EQ(values[0], 10.0 * (1.0 - 1.2));
+}
+
+TEST_F(PdEffortExecutorTest, FaultHoldIsZeroEffortForAJointWithoutGains)
+{
+  for (const auto * n : {"a/stiffness", "a/damping", "b/stiffness", "b/damping"}) {
+    commands.add(n);
+  }
+  configure({});
+  set_robot_and_references();
+  pd.fault(commands, state, values, FaultReaction::HOLD, true);
+  // Not left unchanged like hold() would: the last effort of the policy must not stay applied.
+  EXPECT_EQ(values, (Doubles{0.0, 0.0}));
+}
+
+TEST_F(PdEffortExecutorTest, FaultSafeIsZeroEffort)
+{
+  configure({{"pd.stiffness", Doubles{10.0, 20.0}}, {"pd.damping", Doubles{1.0, 2.0}}});
+  set_robot_and_references();
+  values.assign(2, 7.0);
+  pd.fault(commands, state, values, FaultReaction::SAFE, true);
+  EXPECT_EQ(values, (Doubles{0.0, 0.0}));
+}
+
+TEST_F(PdEffortExecutorTest, SupportsDampOnlyWithAFaultDampingAboveZeroOnEveryJoint)
+{
+  configure({{"pd.stiffness", Doubles{10.0, 10.0}}, {"pd.damping", Doubles{1.0, 1.0}}});
+  EXPECT_FALSE(pd.supports_fault_reaction(FaultReaction::DAMP));
+  EXPECT_TRUE(pd.supports_fault_reaction(FaultReaction::HOLD));
+  EXPECT_TRUE(pd.supports_fault_reaction(FaultReaction::SAFE));
+  EXPECT_TRUE(pd.supports_fault_reaction(FaultReaction::ERROR));
+  configure({
+    {"pd.stiffness", Doubles{10.0, 10.0}}, {"pd.damping", Doubles{1.0, 1.0}},
+    {"pd.fault_damping", Doubles{4.0, 0.0}}});
+  EXPECT_FALSE(pd.supports_fault_reaction(FaultReaction::DAMP));
+  configure({
+    {"pd.stiffness", Doubles{10.0, 10.0}}, {"pd.damping", Doubles{1.0, 1.0}},
+    {"pd.fault_damping", Doubles{4.0, 2.0}}});
+  EXPECT_TRUE(pd.supports_fault_reaction(FaultReaction::DAMP));
+  EXPECT_THROW(
+    configure({{"pd.stiffness", Doubles{10.0, 10.0}}, {"pd.damping", Doubles{1.0, 1.0}},
+        {"pd.fault_damping", Doubles{1.0}}}), std::runtime_error);
+}
+
 TEST_F(PdEffortExecutorTest, RejectsNegativeGainsAndLimits)
 {
   EXPECT_ANY_THROW(
