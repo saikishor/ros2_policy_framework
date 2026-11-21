@@ -92,11 +92,20 @@ struct PluginContext
 };
 
 /**
+ * @brief State entry that the host sets above 0 while a fault with the NEUTRAL_COMMANDS
+ *        reaction is active (see CommandGate). Registered and written by the runner itself, so
+ *        neither an input source nor a state interface provides it.
+ */
+inline constexpr char kNeutralCommandsEntry[] = "policy_framework/neutral_commands";
+
+/**
  * @brief Whether user commands (a velocity command, a motion reference...) may be used now.
  *
  * With the host parameter `safety_entry` set (e.g. `rl_safety_controller/safe`, a state
  * interface in the controller), commands are only accepted while that state entry was received
- * and is greater than 0. Plugins that feed user commands to a policy check open() and use their
+ * and is greater than 0. Independently of it, commands are refused while the host sets
+ * kNeutralCommandsEntry above 0 (a NEUTRAL_COMMANDS fault reaction), and accepted again as soon
+ * as it clears it. Plugins that feed user commands to a policy check open() and use their
  * neutral command (e.g. zero velocity) while it is false; the policy itself keeps running.
  */
 class CommandGate
@@ -106,20 +115,25 @@ public:
   explicit CommandGate(const PluginContext & ctx)
   : name_(ctx.safety_entry) {}
 
-  /// Real-time safe after the first call (which looks the entry up in @p state).
+  /// Real-time safe after the first call (which looks the entries up in @p state).
   bool open(const DataStore & state)
   {
-    if (name_.empty()) {return true;}
     if (!resolved_) {
-      index_ = state.find(name_);
+      if (!name_.empty()) {index_ = state.find(name_);}
+      neutral_index_ = state.find(kNeutralCommandsEntry);
       resolved_ = true;
     }
+    if (neutral_index_ && state.received(*neutral_index_) && state.get(*neutral_index_) > 0.0) {
+      return false;
+    }
+    if (name_.empty()) {return true;}
     return index_ && state.received(*index_) && state.get(*index_) > 0.0;
   }
 
 private:
   std::string name_;
   std::optional<size_t> index_;
+  std::optional<size_t> neutral_index_;
   bool resolved_ = false;
 };
 
@@ -293,11 +307,16 @@ public:
 /**
  * @brief What a host does about a fault (a failed safety check, a failed policy step...).
  *
- * Ordered from the most control kept to the least: once faulted, a host only ever escalates to
- * a later reaction, until it is reactivated. The hosts do not react to faults with these yet.
+ * Ordered from the most control kept to the least: a host only ever escalates to a later
+ * reaction. NEUTRAL_COMMANDS lifts as soon as no fault asks for it any more; every other
+ * reaction is latched until the host is reactivated. The hosts do not react to faults with
+ * these yet.
  */
 enum class FaultReaction
 {
+  /// The policy keeps running, with neutral user commands (e.g. zero velocity, see
+  /// CommandGate): the executors keep following it.
+  NEUTRAL_COMMANDS,
   HOLD,   ///< Keep the pose of the fault, e.g. a PD law around it.
   DAMP,   ///< Let the robot down gently, e.g. a pure joint damping.
   SAFE,   ///< The safe values, e.g. zero effort.
@@ -370,17 +389,20 @@ public:
   /**
    * @return true when fault() can apply @p reaction with this configuration (e.g. DAMP needs a
    *         damping). Meant for hosts to refuse, while configuring, a reaction that their
-   *         configuration uses but an executor cannot apply. Default: SAFE and ERROR only.
+   *         configuration uses but an executor cannot apply. Default: NEUTRAL_COMMANDS (the
+   *         executor keeps following the policy), SAFE and ERROR.
    */
   virtual bool supports_fault_reaction(FaultReaction reaction) const
   {
-    return reaction == FaultReaction::SAFE || reaction == FaultReaction::ERROR;
+    return reaction == FaultReaction::NEUTRAL_COMMANDS || reaction == FaultReaction::SAFE ||
+           reaction == FaultReaction::ERROR;
   }
 
   /**
    * @brief Values written on every update while a host is faulted with an internal reaction
-   *        (HOLD, DAMP or SAFE; with ERROR the host is deactivated, which writes
-   *        safe_values()). Called from the control loop, only with a supported reaction.
+   *        (HOLD, DAMP or SAFE; with NEUTRAL_COMMANDS the host keeps calling write(), with
+   *        ERROR it is deactivated, which writes safe_values()). Called from the control loop,
+   *        only with a supported reaction.
    *        Default: safe_values().
    * @param commands Latest command entries, e.g. the gains the policy wrote.
    * @param state Latest values of the state entries registered in configure().
