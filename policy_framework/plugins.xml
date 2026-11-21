@@ -29,4 +29,7 @@
   <class name="policy_framework/ReferenceInterfaceExecutor" type="policy_framework::ReferenceInterfaceExecutor" base_class_type="policy_framework::InterfaceExecutor">
     <description>Controller-side copy of the commands to prefixed (e.g. chained reference) interfaces.</description>
   </class>
+  <class name="policy_framework/StateBoundsCheck" type="policy_framework::StateBoundsCheck" base_class_type="policy_framework::SafetyCheck">
+    <description>Fails when a state entry &lt;prefix&gt;/&lt;interface&gt; (e.g. a temperature or an error code) leaves its bounds.</description>
+  </class>
 </library>
