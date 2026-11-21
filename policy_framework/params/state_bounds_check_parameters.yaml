@@ -24,6 +24,13 @@ state_bounds_check:
       default_value: 1.0e+300
       description: "Highest allowed value; default: unbounded."
       read_only: true
+    hysteresis:
+      type: double
+      default_value: 0.0
+      description: "Once failed, an entry passes again only within [min + hysteresis, max - hysteresis]."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
   trigger_cycles:
     type: int
     default_value: 1

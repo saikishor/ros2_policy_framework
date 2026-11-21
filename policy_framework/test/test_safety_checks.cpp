@@ -96,6 +96,39 @@ TEST_F(StateBoundsCheckTest, FaultsOnlyAfterTriggerCyclesViolationsInARow)
   EXPECT_TRUE(ok());
 }
 
+TEST_F(StateBoundsCheckTest, PassesAgainOnlyInsideTheBoundsNarrowedByTheHysteresis)
+{
+  configure({{"motors.temperature.hysteresis", 10.0}});
+  set("j1/temperature", 81.0);
+  EXPECT_FALSE(ok());
+  set("j1/temperature", 75.0);  // back below max, but not below max - hysteresis
+  EXPECT_FALSE(ok());
+  EXPECT_NE(reason.find("70.0"), std::string::npos) << reason;  // the bound to get back within
+  set("j1/temperature", 69.0);
+  EXPECT_TRUE(ok());
+  set("j1/temperature", 75.0);  // not failed any more: the plain bounds again
+  EXPECT_TRUE(ok());
+
+  set("j1/temperature", 81.0);
+  EXPECT_FALSE(ok());
+  check.reset();  // forgets that it failed
+  set("j1/temperature", 75.0);
+  EXPECT_TRUE(ok());
+}
+
+TEST_F(StateBoundsCheckTest, RejectsAHysteresisThatLeavesNothingToPass)
+{
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({
+    {"motors.prefixes", StringArray{"j1"}},
+    {"motors.interfaces", StringArray{"error_code"}},
+    {"motors.error_code.min", 0.0},
+    {"motors.error_code.max", 1.0},
+    {"motors.error_code.hysteresis", 0.6}});
+  node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("empty_band", opts);
+  EXPECT_THROW(check.configure({node, "motors"}, commands, state), std::runtime_error);
+}
+
 TEST_F(StateBoundsCheckTest, RejectsAnInterfaceWithoutBounds)
 {
   rclcpp::NodeOptions opts;

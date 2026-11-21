@@ -31,8 +31,14 @@ void StateBoundsCheck::configure(const PluginContext & ctx, const DataStore &, D
               ctx.name + ": interface '" + interface + "' needs " + interface + ".min and/or " +
               interface + ".max");
     }
+    if (bounds.min + bounds.hysteresis > bounds.max - bounds.hysteresis) {
+      throw std::runtime_error(
+              ctx.name + ": " + interface + ".hysteresis leaves no value to pass again within [" +
+              interface + ".min, " + interface + ".max]");
+    }
     for (const auto & prefix : params.prefixes) {
-      entries_.push_back({state.add(prefix + "/" + interface), bounds.min, bounds.max});
+      entries_.push_back(
+        {state.add(prefix + "/" + interface), bounds.min, bounds.max, bounds.hysteresis});
     }
   }
 }
@@ -42,12 +48,16 @@ bool StateBoundsCheck::check(const DataStore & state, double, std::string & reas
   for (auto & e : entries_) {
     if (!state.received(e.index)) {continue;}
     const double v = state.get(e.index);
+    const double margin = e.failed ? e.hysteresis : 0.0;
     // Written so that NaN fails: every comparison with it is false.
-    if (v >= e.min && v <= e.max) {
+    if (v >= e.min + margin && v <= e.max - margin) {
       e.violations = 0;
-    } else if (++e.violations >= trigger_cycles_) {
+      e.failed = false;
+    } else if (e.failed || ++e.violations >= trigger_cycles_) {
+      e.failed = true;
+      // The bounds it has to be back within: narrowed by the hysteresis once it failed.
       reason = state.names()[e.index] + " is " + std::to_string(v) + ", outside [" +
-        std::to_string(e.min) + ", " + std::to_string(e.max) + "]";
+        std::to_string(e.min + margin) + ", " + std::to_string(e.max - margin) + "]";
       return false;
     }
   }
@@ -56,7 +66,10 @@ bool StateBoundsCheck::check(const DataStore & state, double, std::string & reas
 
 void StateBoundsCheck::reset()
 {
-  for (auto & e : entries_) {e.violations = 0;}
+  for (auto & e : entries_) {
+    e.violations = 0;
+    e.failed = false;
+  }
 }
 
 void JumpCheck::configure(const PluginContext & ctx, const DataStore &, DataStore & state)
