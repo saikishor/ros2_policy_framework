@@ -60,8 +60,8 @@ public:
     const DataStore & commands, const DataStore & state, std::vector<double> & values,
     bool start) override;
   void safe_values(std::vector<double> & values) override {values.assign(values.size(), 0.0);}
-  /// @return true for HOLD, SAFE and ERROR; for DAMP only when every joint has a
-  ///         `fault_damping` above zero.
+  /// @return true for NEUTRAL_COMMANDS, HOLD, SAFE and ERROR; for DAMP only when every joint
+  ///         has a `fault_damping` above zero.
   bool supports_fault_reaction(FaultReaction reaction) const override;
   void fault(
     const DataStore & commands, const DataStore & state, std::vector<double> & values,

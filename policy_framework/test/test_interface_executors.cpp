@@ -222,6 +222,7 @@ TEST_F(PdEffortExecutorTest, SupportsDampOnlyWithAFaultDampingAboveZeroOnEveryJo
 {
   configure({{"pd.stiffness", Doubles{10.0, 10.0}}, {"pd.damping", Doubles{1.0, 1.0}}});
   EXPECT_FALSE(pd.supports_fault_reaction(FaultReaction::DAMP));
+  EXPECT_TRUE(pd.supports_fault_reaction(FaultReaction::NEUTRAL_COMMANDS));
   EXPECT_TRUE(pd.supports_fault_reaction(FaultReaction::HOLD));
   EXPECT_TRUE(pd.supports_fault_reaction(FaultReaction::SAFE));
   EXPECT_TRUE(pd.supports_fault_reaction(FaultReaction::ERROR));
@@ -284,13 +285,14 @@ TEST(ReferenceInterfaceExecutor, WritesReceivedCommandsToPrefixedInterfaces)
   EXPECT_TRUE(std::isnan(values[0]));  // the chained controller keeps its last reference
 }
 
-TEST(ReferenceInterfaceExecutor, SupportsOnlySafeAndErrorFaultReactions)
+TEST(ReferenceInterfaceExecutor, SupportsNeutralCommandsSafeAndErrorFaultReactionsOnly)
 {
   DataStore commands;
   DataStore state;
   commands.add("a/position");
   policy_framework::ReferenceInterfaceExecutor ref;
   ref.configure(make_context({{"pd.prefix", "pid"}}), commands, state);
+  EXPECT_TRUE(ref.supports_fault_reaction(FaultReaction::NEUTRAL_COMMANDS));
   EXPECT_TRUE(ref.supports_fault_reaction(FaultReaction::SAFE));
   EXPECT_TRUE(ref.supports_fault_reaction(FaultReaction::ERROR));
   EXPECT_FALSE(ref.supports_fault_reaction(FaultReaction::HOLD));
