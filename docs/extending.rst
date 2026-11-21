@@ -57,6 +57,11 @@ Which plugin to write
    * - ``InterfaceExecutor``
      - command entries into command interface values (controller)
      - ``PdEffortExecutor``, ``ReferenceInterfaceExecutor``
+   * - ``SafetyCheck``
+     - state entries (and the kinematics) into a verdict: safe or not, and why
+     - ``StateBoundsCheck``
+
+The hosts do not run ``SafetyCheck`` plugins yet (:doc:`safety`).
 
 The base classes are in ``policy_framework/plugin_interfaces.hpp`` and
 ``policy_framework/observation_term.hpp``, each method documented there.
