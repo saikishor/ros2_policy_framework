@@ -129,7 +129,9 @@ or, chaining into a pid_controller that closes the loop:
   - *Safety entry* (`safety_entry`, e.g. `rl_safety_controller/safe`): a state entry, claimed
     as a state interface, that is 0 while user commands must be ignored. The policy keeps
     running (the robot keeps balancing) with neutral commands: zero velocity (`TwistSource`,
-    `TwistCommandTerm`), a still stand (`MotionGoalTerm`). Transitions are logged.
+    `TwistCommandTerm`), a still stand (`MotionGoalTerm`). Transitions are logged. The same
+    neutral commands are used while the runner's `set_neutral_commands()` is on (the
+    `NEUTRAL_COMMANDS` fault reaction, not used by the hosts yet; see `docs/safety.rst`).
 - **Introspection**: `<controller>.policy_step_time_us` (duration of the last policy step) and
   `<controller>.observation_age_ms` (age of the oldest input of that step when its commands
   were applied) are registered with ros2_control's introspection, and available as
@@ -209,7 +211,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/OdometrySource` | InputSource | `topic` → `<name>/position.*`, `orientation.*`, `linear.*`, `angular.*` |
 | `policy_framework/MultiDofCommandExecutor` | Executor (node) | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`, empty: 0); drops a message while the previous one is being published |
 | `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions (not used by the hosts yet): `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; a joint with a missing or non-finite value is left unchanged |
-| `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `trigger_cycles` (1); a non-finite value is out of bounds, an entry never received is not checked. Not run by the hosts yet |
+| `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `<interface>.hysteresis` (0: once failed, passes again only within the bounds narrowed by it), `trigger_cycles` (1); a non-finite value is out of bounds, an entry never received is not checked. Not run by the hosts yet |
 | `policy_framework/JumpCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.max_delta` (required): fails on a change above it between two cycles (e.g. an encoder glitch) or a non-finite value; do not use on wrapping values. Not run by the hosts yet |
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
@@ -385,7 +387,7 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
   default: the safe values) and `supports_fault_reaction` says which ones the configuration
   allows; the hosts do not call them yet.
 - A plugin that feeds user commands to a policy checks `CommandGate::open(state)` and uses its
-  neutral command while it is false (`safety_entry`).
+  neutral command while it is false (`safety_entry`, or the `NEUTRAL_COMMANDS` fault reaction).
 - A `SafetyCheck` registers the state entries it reads in `configure()` and returns false from
   `check()` when the state is unsafe, writing the reason only then (no allocation while it
   passes). The node and the controller do not run safety checks yet.
