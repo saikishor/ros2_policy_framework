@@ -216,7 +216,8 @@ the situations described in the other pages:
        which reactions the configuration allows. The hosts do not call them yet.
    * - ``CommandGate::open()``
      - Check it in any plugin that feeds user commands, and use a neutral command while it
-       is false (:doc:`safety`).
+       is false: the safety entry is 0, or the ``NEUTRAL_COMMANDS`` fault reaction is active
+       (:doc:`safety`).
 
 Testing a plugin
 ----------------
