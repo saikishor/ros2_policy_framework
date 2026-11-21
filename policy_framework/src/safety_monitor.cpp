@@ -19,9 +19,6 @@ std::string SafetyMonitor::Violation::describe() const
   switch (check) {
     case Check::TILT:
       return "tilt of " + std::to_string(value) + " rad above safety.max_tilt";
-    case Check::JOINT_VELOCITY:
-      return "velocity " + std::to_string(value) + " of joint " + joint +
-             " above safety.max_joint_velocity";
     case Check::JOINT_POSITION:
       return "position " + std::to_string(value) + " of joint " + joint +
              " outside its limits minus safety.position_margin";
@@ -35,7 +32,6 @@ void SafetyMonitor::configure(const Config & config, const DataStore & commands,
 {
   config_ = config;
   orientation_.clear();
-  velocities_.clear();
   positions_.clear();
   if (config.max_tilt > 0.0) {
     if (config.imu.empty()) {
@@ -53,9 +49,6 @@ void SafetyMonitor::configure(const Config & config, const DataStore & commands,
       continue;
     }
     const auto joint = name.substr(0, name.size() - suffix.size());
-    if (config.max_joint_velocity > 0.0) {
-      velocities_.push_back({joint, state.add(joint + "/velocity")});
-    }
     if (const auto it = config.joint_limits.find(joint); it != config.joint_limits.end()) {
       positions_.push_back(
         {joint, state.add(joint + "/position"), it->second.first + config.position_margin,
@@ -78,13 +71,6 @@ std::optional<SafetyMonitor::Violation> SafetyMonitor::check(
       const double c = std::clamp(1.0 - 2.0 * (x * x + y * y) / norm2, -1.0, 1.0);
       const double tilt = std::acos(c);
       if (tilt > config_.max_tilt) {return Violation{Check::TILT, tilt, ""};}
-    }
-  }
-  for (const auto & j : velocities_) {
-    if (!state.received(j.index)) {continue;}
-    const double v = state.get(j.index);
-    if (std::abs(v) > config_.max_joint_velocity) {
-      return Violation{Check::JOINT_VELOCITY, v, j.name};
     }
   }
   for (const auto & j : positions_) {

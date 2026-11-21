@@ -17,7 +17,7 @@ namespace policy_framework
 
 /**
  * @brief Checks the measured state against limits, to stop following a policy that drives the
- *        robot somewhere it must not be (a fall, a runaway joint, a dead input).
+ *        robot somewhere it must not be (a fall, a joint out of its limits, a dead input).
  *
  * Every check is off by default. check() returns the first violated check. Values that were
  * never received are not checked: a missing input is the policy's concern (it waits for it),
@@ -34,8 +34,6 @@ public:
     double max_tilt = 0.0;
     /// State entry prefix of the IMU orientation, `<imu>/orientation.{x,y,z,w}`.
     std::string imu;
-    /// Largest |velocity| (rad/s or m/s) of a commanded joint; 0: off.
-    double max_joint_velocity = 0.0;
     /// Position limits (lower, upper) per joint; only commanded joints are checked.
     std::map<std::string, std::pair<double, double>> joint_limits;
     /// The joint positions must stay this far inside joint_limits.
@@ -44,13 +42,13 @@ public:
     double max_input_age = 0.0;
   };
 
-  enum class Check {TILT, JOINT_VELOCITY, JOINT_POSITION, INPUT_AGE};
+  enum class Check {TILT, JOINT_POSITION, INPUT_AGE};
 
   /// A violated check.
   struct Violation
   {
     Check check;
-    /// Measured value: tilt (rad), joint velocity or position, observation age (s).
+    /// Measured value: tilt (rad), joint position, observation age (s).
     double value;
     /// The joint, for the joint checks.
     std::string joint;
@@ -91,7 +89,6 @@ private:
   };
   Config config_;
   std::vector<size_t> orientation_;  ///< x, y, z, w; empty: tilt not checked.
-  std::vector<Joint> velocities_;
   std::vector<Joint> positions_;
 };
 
