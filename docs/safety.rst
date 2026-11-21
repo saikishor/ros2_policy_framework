@@ -87,8 +87,9 @@ a dead-man switch, a mode selector, a safety controller. The parameter ``safety_
 the state entry carrying that signal, for example ``rl_safety_controller/safe``. In the
 controller it is claimed as a state interface like any other input.
 
-While that entry is 0 (or has not been received), **user commands are ignored and replaced
-by neutral ones**. The policy itself keeps running, because a legged robot has to keep
+While that entry is 0 (or has not been received), or while a fault with the
+``NEUTRAL_COMMANDS`` reaction is active, **user commands are ignored and replaced by neutral
+ones**. The policy itself keeps running, because a legged robot has to keep
 balancing:
 
 .. graphviz::
@@ -122,7 +123,8 @@ and says in ``check()`` whether the state is safe, with a reason when it is not.
 runs in the control loop: it must not allocate while the state is safe.
 
 ``StateBoundsCheck`` checks every ``<prefix>/<interface>`` entry against the bounds of its
-interface. A non-finite value is out of bounds; an entry never received is not checked:
+interface. A non-finite value is out of bounds; an entry never received is not checked. With a
+``hysteresis``, an entry that failed passes again only within the bounds narrowed by it:
 
 .. code-block:: yaml
 
@@ -130,7 +132,7 @@ interface. A non-finite value is out of bounds; an entry never received is not c
      type: policy_framework/StateBoundsCheck
      prefixes: [leg_left_1_joint, leg_left_2_joint]
      interfaces: [temperature, error_code]
-     temperature: {max: 85.0}
+     temperature: {max: 85.0, hysteresis: 5.0}   # once failed, passes again below 80
      error_code: {min: 0.0, max: 0.0}   # any error code but 0 fails
      trigger_cycles: 3                  # consecutive violations before it fails
 
@@ -190,19 +192,21 @@ The node and the controller do not run the monitor yet: a violation has no effec
 Fault reactions (not used yet)
 ------------------------------
 
-What to do about a fault depends on what went wrong: after an actuator error it is wiser to let
-the robot down gently, while a joint going far too fast is better stopped at once. Each check
-will therefore get its own reaction in the configuration, next to its ``type``, with a default
-for every other fault (a failed policy step, unreadable state interfaces). The reactions, from
-the most control kept to the least:
+What to do about a fault depends on what went wrong: after an actuator error in an arm it is
+wiser to stop walking and keep balancing, while a leg actuator failing or a joint going far
+too fast is better stopped at once. The reactions, from the most control kept to the least:
 
 .. list-table::
    :header-rows: 1
-   :widths: 14 43 43
+   :widths: 18 41 41
 
    * - Reaction
      - ``PdEffortExecutor``
      - ``ReferenceInterfaceExecutor``
+   * - ``NEUTRAL_COMMANDS``
+     - the policy keeps running and the executors keep following it, with neutral user
+       commands: zero velocity, a still stand (see `The safety entry`_)
+     - same
    * - ``HOLD``
      - PD law around the position at the fault; zero effort for a joint without gains
      - not supported
@@ -218,14 +222,75 @@ the most control kept to the least:
        safe values) and activates its ``fallback_controllers``
      - same
 
-A faulted controller only ever escalates to a later reaction, never back, until it is
-reactivated: it damps after an actuator error, and returns an error if a joint then goes far
-too fast. A reaction that an executor does not support with its configuration will be refused
-while configuring, not discovered during a fall. Going to a predefined pose, or any other
-recovery, is the job of a fallback controller (for example a joint trajectory controller):
-use ``ERROR``.
+The plugin decides *whether*, the configuration decides *what*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The executors implement these reactions; the node and the controller do not use them yet.
+A safety check only says whether the state is unsafe, and why. The reaction is set in the
+configuration, per instance of a check, next to its ``type``; ``on_fault`` is the default for
+every check without its own and for the other faults (a failed policy step, unreadable state
+interfaces). Several instances of the same plugin, each on its own joints or with its own
+bounds, give each group its reaction:
+
+.. code-block:: yaml
+
+   on_fault: error
+   safety_checks: [leg_actuators, arm_actuators, motors_warm, motors_hot]
+   leg_actuators:            # a main joint fails: unload, the fallback controllers take over
+     type: policy_framework/StateBoundsCheck
+     prefixes: [leg_left_1_joint, leg_left_2_joint]
+     interfaces: [error_code]
+     error_code: {min: 0.0, max: 0.0}
+     on_fault: error
+   arm_actuators:            # an upper body joint fails: stop walking, keep balancing
+     type: policy_framework/StateBoundsCheck
+     prefixes: [arm_left_1_joint, arm_left_2_joint]
+     interfaces: [error_code]
+     error_code: {min: 0.0, max: 0.0}
+     on_fault: neutral_commands
+   motors_warm:              # a graded severity on the same entries: two instances
+     type: policy_framework/StateBoundsCheck
+     prefixes: [leg_left_1_joint, leg_left_2_joint]
+     interfaces: [temperature]
+     temperature: {max: 80.0, hysteresis: 10.0}   # passes again below 70
+     on_fault: neutral_commands
+   motors_hot:
+     type: policy_framework/StateBoundsCheck
+     prefixes: [leg_left_1_joint, leg_left_2_joint]
+     interfaces: [temperature]
+     temperature: {max: 95.0}
+     on_fault: damp
+
+The behaviour is still dynamic while running:
+
+- **Going**: the checks that fail decide the reaction; the most severe one wins.
+- **Recovering**: ``NEUTRAL_COMMANDS`` lifts as soon as no failing check asks for it any more,
+  so the robot walks again once its motors cooled down. Give such a check a ``hysteresis`` so
+  that a value hovering at a bound does not toggle it. Every other reaction is latched until
+  the controller is reactivated.
+- **Escalating**: a faulted controller only ever moves to a later reaction, never back. Warm
+  motors stop the walking, hot ones damp the robot down, a failing leg actuator returns an
+  error.
+
+Why the reaction is not chosen by the plugins:
+
+- **It can be audited**: reading the configuration tells what happens on every fault, which
+  matters on a robot.
+- **It is checked at startup**: every reaction in use is known while configuring, so a
+  reaction an executor does not support with its configuration (for example ``DAMP`` without
+  a ``fault_damping``) will be refused then, not discovered during a fall.
+- **Plugins stay simple and reusable**: they only answer "is this unsafe, and why"; the same
+  ``StateBoundsCheck`` serves every joint group with a different reaction.
+
+What this does not cover is a reaction chosen by logic *inside* one check, such as "two hot
+leg motors return an error, one stops the walking". Write one check per condition instead,
+each with its reaction. Should a case need more, a plugin could later override its configured
+reaction among reactions it declares while configuring, which keeps the startup check.
+
+Going to a predefined pose, or any other recovery, is the job of a fallback controller (for
+example a joint trajectory controller): use ``ERROR``.
+
+The executors and the runner implement these reactions (``PolicyRunner::set_neutral_commands``
+for ``NEUTRAL_COMMANDS``); the node and the controller do not use them yet.
 
 What the framework does not do
 ------------------------------
