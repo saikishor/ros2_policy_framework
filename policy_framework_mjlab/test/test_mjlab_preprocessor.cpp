@@ -244,6 +244,17 @@ TEST(MjlabPreprocessor, PalExportsHaveObservedJointsAndPerTermHistory)
   }
 }
 
+// mjlab's history_length 0 means "no history": the current frame only, as 1.
+TEST(MjlabPreprocessor, PalExportHistoryLengthZeroIsOneFrame)
+{
+  auto model = pal_model();
+  model.metadata["observation_terms_history_length"] = "0.000,3.000,2.000,0.000";
+  DataStore state;
+  MjlabPreprocessor pre;
+  EXPECT_NO_THROW(pre.configure(make_context(), model, state));
+  EXPECT_EQ(pre.history_length(), 3U);
+}
+
 TEST(MjlabPreprocessor, RejectsPalExportsWithInconsistentTerms)
 {
   DataStore state;

@@ -301,7 +301,9 @@ void MjlabPreprocessor::configure(
   std::vector<size_t> lengths;
   if (md.count("observation_terms_history_length")) {
     // pal_mjlab exports: a history length per term.
-    lengths = parse_counts(md, "observation_terms_history_length", names.size());
+    lengths = parse_counts(md, "observation_terms_history_length", names.size(), 0);
+    // mjlab's history_length 0 means "no history": the term still feeds its current frame.
+    for (auto & l : lengths) {l = std::max<size_t>(l, 1);}
   } else {
     if (single_dim == 0 || obs_dim % single_dim != 0) {
       throw std::runtime_error(
