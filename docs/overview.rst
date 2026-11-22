@@ -20,7 +20,7 @@ pieces are at both ends and never see the model.
 .. graphviz::
 
    digraph architecture {
-     rankdir=LR;
+     rankdir=TB;
      node [shape=box, style="rounded,filled", fillcolor="#eef3fb", fontname="Helvetica", fontsize=11];
      edge [fontname="Helvetica", fontsize=10];
 
@@ -33,7 +33,7 @@ pieces are at both ends and never see the model.
      kin [label="Kinematics\n(optional robot model)"];
 
      subgraph cluster_policy {
-       label="One policy (there can be several)"; style="rounded,dashed"; fontname="Helvetica";
+       label="One policy (there can be several)"; labelloc=b; style="rounded,dashed"; fontname="Helvetica";
        pre [label="Preprocessor\nbuilds the observation"];
        inf [label="Inference\nruns the model"];
        post [label="Postprocessor\nturns actions into commands"];
@@ -44,7 +44,7 @@ pieces are at both ends and never see the model.
      safety [label="Safety checks\n(every cycle)", fillcolor="#fde8e8"];
 
      subgraph cluster_out {
-       label="Outputs (shared by all policies)"; style="rounded,dashed"; fontname="Helvetica";
+       label="Outputs (shared by all policies)"; labelloc=b; style="rounded,dashed"; fontname="Helvetica";
        topics_out [label="Topics\n(Executor plugins, node)"];
        ifaces_out [label="Command interfaces\n(InterfaceExecutor plugins,\ncontroller)"];
      }
@@ -63,7 +63,7 @@ pieces are at both ends and never see the model.
      safety -> ifaces_out [label="controller: hold, damp,\nsafe or error", style=dashed];
    }
 
-Read it left to right: sensors fill the *state store*; the active policy reads it, runs its
+Read it top to bottom: sensors fill the *state store*; the active policy reads it, runs its
 three stages and fills the *command store*; executors send the commands to the robot. The
 optional kinematics model gives the policies the poses of the robot's links
 (:doc:`kinematics`). The safety checks watch the state store on every cycle. On a fault,
