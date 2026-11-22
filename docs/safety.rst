@@ -274,7 +274,7 @@ The behaviour is still dynamic while running:
   motors stop the walking, hot ones damp the robot down, a failing leg actuator returns an
   error.
 
-Why the reaction is not chosen by the plugins:
+Why the reaction is set in the configuration rather than chosen by the plugins:
 
 - **It can be audited**: reading the configuration tells what happens on every fault, which
   matters on a robot.
@@ -284,10 +284,36 @@ Why the reaction is not chosen by the plugins:
 - **Plugins stay simple and reusable**: they only answer "is this unsafe, and why"; the same
   ``StateBoundsCheck`` serves every joint group with a different reaction.
 
-What this does not cover is a reaction chosen by logic *inside* one check, such as "two hot
-leg motors return an error, one stops the walking". Write one check per condition instead,
-each with its reaction. Should a case need more, a plugin could later override its configured
-reaction among reactions it declares while configuring, which keeps the startup check.
+A reaction chosen while running
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Sometimes the reaction depends on the failure itself: one actuator in error may only stop the
+walking, while two or three at once call for an error. ``SafetyCheck::check()`` returns a
+``Verdict``: whether the state is safe and, when it is not, optionally another reaction than
+the configured ``on_fault``, among the reactions the check declares once configured
+(``SafetyCheck::possible_reactions()``). Both points
+above still hold: the declared reactions come from the configuration, so they are known and
+checked at startup.
+
+``StateBoundsCheck`` does it with ``escalation``: from ``escalation.count`` entries failing at
+once, it asks for ``escalation.on_fault`` instead of its ``on_fault``:
+
+.. code-block:: yaml
+
+   leg_actuators:
+     type: policy_framework/StateBoundsCheck
+     prefixes: [leg_left_1_joint, leg_left_2_joint, leg_left_3_joint, leg_left_4_joint]
+     interfaces: [error_code]
+     error_code: {min: 0.0, max: 0.0}
+     on_fault: neutral_commands   # one actuator in error: stop walking, keep balancing
+     escalation:
+       count: 2                   # two or more at once: unload, the fallback controllers take over
+       on_fault: error
+
+Escalating still only goes one way: once the controller returned an error, fewer failing
+entries do not bring it back. Other logic (which entries fail, for how long, combined with
+the kinematics) belongs in your own ``SafetyCheck``, which declares the reactions it may ask
+for.
 
 Going to a predefined pose, or any other recovery, is the job of a fallback controller (for
 example a joint trajectory controller): use ``ERROR``.
