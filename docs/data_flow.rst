@@ -116,8 +116,9 @@ Every entry carries the time its data was produced. The stamps travel with the d
      - The time of the update that read it
    * - Observation of a step
      - The oldest stamp among its inputs. Inputs fed back from the previous outputs do not
-       count, nor do user commands: a command is held until its own timeout, so it is old by
-       design, and counting it would hide a stale sensor behind it
+       count, nor do user commands (the terms derived from ``CommandTerm``, see
+       :doc:`extending`): a command is held until its own timeout, so it is old by design,
+       and counting it would hide a stale sensor behind it
    * - Command entry
      - The stamp of the observation it was computed from
 
