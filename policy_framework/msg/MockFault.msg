@@ -8,3 +8,6 @@ bool fault
 string reaction
 # Why, added to the logged reason.
 string reason
+# Seconds after which the fault ends by itself (e.g. a brief fault while walking, for a
+# neutral_commands reaction that recovers); 0: until the next message.
+float64 duration

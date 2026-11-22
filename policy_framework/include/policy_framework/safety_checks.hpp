@@ -96,10 +96,12 @@ private:
  *
  * Subscribes to `topic` (default `~/<name>`, policy_framework/msg/MockFault) and fails on every
  * cycle while the latest message has `fault: true`, with the message's `reaction` (empty: the
- * check's on_fault). A message may ask only for the reactions listed in `reactions` (declared
+ * check's on_fault), for its `duration` (seconds, 0: until the next message; the time is the
+ * `now` the host passes, on the receive time clock). A message may ask only for the reactions listed in `reactions` (declared
  * through possible_reactions(), so that the host checks its executors at configure); an unknown
  * name asks for error, and the host applies error for a valid but undeclared one. Like any
- * fault, all but neutral_commands stay latched until the controller is reactivated.
+ * fault, all but neutral_commands stay latched until the controller is reactivated; reset()
+ * (on reactivation) forgets the latest message, so that it does not fault again at once.
  *
  * E.g. `ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault
  * "{fault: true, reaction: damp}"`.
@@ -111,9 +113,12 @@ public:
   void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) override;
   Verdict check(const DataStore & state, double now, std::string & reason) override;
   std::vector<FaultReaction> possible_reactions() const override {return reactions_;}
+  void reset() override;
 
 private:
   LatestMessage<msg::MockFault> topic_;
+  /// The message that was the latest at reset(): ignored. Compared by address only.
+  std::shared_ptr<const msg::MockFault> forgotten_;
   std::vector<FaultReaction> reactions_;
 };
 
