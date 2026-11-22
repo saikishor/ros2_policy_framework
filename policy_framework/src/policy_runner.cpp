@@ -126,10 +126,8 @@ void PolicyRunner::configure_safety(
   const std::string & robot_description)
 {
   // The parameter validation allows only the reaction names: the lookups cannot fail.
-  on_fault_ = *fault_reaction_from_string(params.on_fault);
-  const auto reaction = [this](const std::string & name) {
-      return name.empty() ? on_fault_ : *fault_reaction_from_string(name);
-    };
+  const auto reaction = [](const std::string & name) {return *fault_reaction_from_string(name);};
+  policy_failure_reaction_ = reaction(params.on_policy_failure);
   const auto & s = params.safety;
   tilt_on_fault_ = reaction(s.tilt_on_fault);
   position_on_fault_ = reaction(s.joint_position_on_fault);
@@ -195,8 +193,7 @@ FaultReaction PolicyRunner::reaction_of(
 
 std::vector<FaultReaction> PolicyRunner::fault_reactions() const
 {
-  std::vector<FaultReaction> all{on_fault_ == FaultReaction::NEUTRAL_COMMANDS ?
-    FaultReaction::ERROR : on_fault_};
+  std::vector<FaultReaction> all{policy_failure_reaction_};
   all.insert(all.end(), monitor_reactions_.begin(), monitor_reactions_.end());
   for (const auto & c : checks_) {
     all.push_back(c.on_fault);
@@ -237,9 +234,9 @@ std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stam
   return effective;
 }
 
-FaultReaction PolicyRunner::fault(const std::string & reason)
+FaultReaction PolicyRunner::policy_failure(const std::string & reason)
 {
-  escalate(on_fault_ == FaultReaction::NEUTRAL_COMMANDS ? FaultReaction::ERROR : on_fault_);
+  escalate(policy_failure_reaction_);
   report(latched_, reason);
   return *latched_;
 }
