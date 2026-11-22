@@ -23,7 +23,7 @@ namespace policy_framework
  * never received are not checked: a missing input is the policy's concern (it waits for it),
  * not a violation. configure() registers the state entries the enabled checks read.
  *
- * The hosts do not run the monitor yet: this is only the monitor itself.
+ * PolicyRunner runs it from the `safety.*` parameters (see PolicyRunner::update_safety()).
  */
 class SafetyMonitor
 {

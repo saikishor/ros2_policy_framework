@@ -309,8 +309,9 @@ public:
  *
  * Ordered from the most control kept to the least: a host only ever escalates to a later
  * reaction. NEUTRAL_COMMANDS lifts as soon as no fault asks for it any more; every other
- * reaction is latched until the host is reactivated. The hosts do not react to faults with
- * these yet.
+ * reaction is latched until the host is reactivated. PolicyRunner::update_safety() applies
+ * them; policy_node stops its commands on a latched one, PolicyController does not use them
+ * yet.
  */
 enum class FaultReaction
 {
@@ -462,7 +463,7 @@ public:
  * a failing check may ask for another reaction in its Verdict, among the ones it declares once
  * configured (possible_reactions()), e.g. a more severe one when several actuators fail.
  *
- * The hosts do not load SafetyCheck plugins yet: this is only the interface and its plugins.
+ * PolicyRunner loads them from its `safety_checks` parameter (see PolicyRunner::update_safety()).
  */
 class SafetyCheck
 {

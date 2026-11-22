@@ -18,7 +18,7 @@ how the data flows and how the pieces fit, are explained in [`docs/`](docs/index
 
 | Package | Content |
 |---------|---------|
-| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck` and `JumpCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks, not run by the hosts yet), `SwitchPolicy` service |
+| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck` and `JumpCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks), `SwitchPolicy` service |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` and supermimic `MotionGoalTerm` observation terms and the Kangaroo deployment config/launch |
 
 ## Architecture
@@ -29,8 +29,10 @@ how the data flows and how the pieces fit, are explained in [`docs/`](docs/index
  │ InputSource plugins (topics)  ─┐ │   │ Preprocessor → Inference → Postprocessor│   │ node: Executor plugins  │
  │ state interfaces (controller) ─┴─┼──▶│   state ──▶ TensorMap ──▶ TensorMap ──▶  ├──▶│  (topics)               │
  │            state DataStore       │   │                             commands   │   │ controller: Interface-  │
- │                                  │   │                                        │   │  Executor plugins       │
- └──────────────────────────────────┘   └────────────────────────────────────────┘   └─────────────────────────┘
+ │                │                 │   │                                        │   │  Executor plugins       │
+ └────────────────┼─────────────────┘   └────────────────────────────────────────┘   └─────────────────────────┘
+                  ▼
+   safety: SafetyMonitor + SafetyCheck plugins ──▶ fault reaction (neutral commands, hold, damp, safe, error)
 ```
 
 - **DataStore**: flat table of named scalars, named like ros2_control interfaces
@@ -49,9 +51,11 @@ how the data flows and how the pieces fit, are explained in [`docs/`](docs/index
   `InterfaceExecutor` plugins computing command interface values, e.g. a PD law into efforts
   (`PdEffortExecutor`) or references of a chained controller (`ReferenceInterfaceExecutor`).
 
-One cycle: [controller: state interfaces] → sources → kinematics → preprocessor → inference →
-postprocessor → executors. While an input was never received the preprocessor skips the step:
-the node sends nothing, the controller keeps the last commands (see Safety).
+One cycle: [controller: state interfaces] → sources → kinematics → safety checks →
+preprocessor → inference → postprocessor → executors. While an input was never received the
+preprocessor skips the step: the node sends nothing, the controller keeps the last commands
+(see Safety). A failing safety check applies its reaction (see `docs/safety.rst`); in the node
+a latched one stops the cycle before the preprocessor.
 
 ## Running
 
@@ -64,7 +68,10 @@ ros2 run policy_framework policy_node --ros-args --params-file my_policies.yaml
 A lifecycle node that configures and activates itself (`autostart`). Every policy input must
 come from an input source (configuration fails listing the missing ones); commands leave
 through topic executors. The policy steps on a timer at `update_rate`, which follows `/clock`
-with `use_sim_time`. Crashes print a stack trace (`backward_ros`).
+with `use_sim_time`. Crashes print a stack trace (`backward_ros`). The safety checks run on
+every tick: a fault with a latched reaction, or a failed policy step, stops the commands until
+the node is reactivated (the node does not own the hardware); neutral commands keep the policy
+running.
 
 ### ros2_control controller
 
@@ -133,7 +140,7 @@ or, chaining into a pid_controller that closes the loop:
     running (the robot keeps balancing) with neutral commands: zero velocity (`TwistSource`,
     `TwistCommandTerm`), a still stand (`MotionGoalTerm`). Transitions are logged. The same
     neutral commands are used while the runner's `set_neutral_commands()` is on (the
-    `NEUTRAL_COMMANDS` fault reaction, not used by the hosts yet; see `docs/safety.rst`).
+    `NEUTRAL_COMMANDS` fault reaction; see `docs/safety.rst`).
 - **Introspection**: `<controller>.policy_step_time_us` (duration of the last policy step) and
   `<controller>.observation_age_ms` (age of the oldest input of that step when its commands
   were applied) are registered with ros2_control's introspection, and available as
@@ -160,6 +167,12 @@ name. Write floating point values with a decimal point (`50.0`).
 | `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
 | `kinematics.enabled`, `kinematics.joints` | Whole-body kinematics (default false), see below |
 | `safety_entry` | State entry that is 0 while user commands must be ignored (default empty: always accepted), see Safety |
+| `on_fault` | Reaction to a fault without one of its own (default `error`): `neutral_commands`, `hold`, `damp`, `safe`, `error`; a failed policy step uses it too (`error` instead of `neutral_commands`), see `docs/safety.rst` |
+| `safety.max_tilt`, `safety.imu` | Fault when the IMU z axis tilts more than this from the vertical, in rad (default 0: off) |
+| `safety.joint_position_limits`, `safety.position_margin` | Fault when a commanded joint leaves its robot description limits narrowed by the margin (default false, 0) |
+| `safety.max_input_age` | Fault when the observation of the last step is older than this, in s (default 0: off) |
+| `safety.tilt_on_fault`, `.joint_position_on_fault`, `.input_age_on_fault` | Reaction to each of these checks (default empty: `on_fault`) |
+| `safety_checks` | `SafetyCheck` plugin names; each needs `<check>.type`, may have `<check>.on_fault` (default empty: `on_fault`) |
 | `policy_rate` | Controller: policy rate in Hz (default 0 = every update) |
 | `max_failed_reads` | Controller: consecutive updates with an unreadable state interface that are tolerated (default 5) |
 | `async_inference`, `inference_thread_priority` | Controller: policy step in its own thread (default false), its priority (default 40) |
@@ -212,9 +225,9 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/TwistSource` | InputSource | `topic`, `timeout` (1.0 s, ≤ 0 disables) → `<name>/linear.*`, `angular.*`; zero when absent or stale |
 | `policy_framework/OdometrySource` | InputSource | `topic` → `<name>/position.*`, `orientation.*`, `linear.*`, `angular.*` |
 | `policy_framework/MultiDofCommandExecutor` | Executor (node) | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`, empty: 0); drops a message while the previous one is being published |
-| `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions (not used by the hosts yet): `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; a joint with a missing or non-finite value is left unchanged |
-| `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `<interface>.hysteresis` (0: once failed, passes again only within the bounds narrowed by it), `trigger_cycles` (1), `escalation.count` (0: never) / `escalation.on_fault` (`error`): from that many entries failing at once, asks for that reaction instead of its `on_fault`; a non-finite value is out of bounds, an entry never received is not checked. Not run by the hosts yet |
-| `policy_framework/JumpCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.max_delta` (required): fails on a change above it between two cycles (e.g. an encoder glitch) or a non-finite value; do not use on wrapping values. Not run by the hosts yet |
+| `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions (not called by `PolicyController` yet): `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; a joint with a missing or non-finite value is left unchanged |
+| `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `<interface>.hysteresis` (0: once failed, passes again only within the bounds narrowed by it), `trigger_cycles` (1), `escalation.count` (0: never) / `escalation.on_fault` (`error`): from that many entries failing at once, asks for that reaction instead of its `on_fault`; a non-finite value is out of bounds, an entry never received is not checked. Run by `policy_node`, not by `PolicyController` yet |
+| `policy_framework/JumpCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.max_delta` (required): fails on a change above it between two cycles (e.g. an encoder glitch) or a non-finite value; do not use on wrapping values. Run by `policy_node`, not by `PolicyController` yet |
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
@@ -387,14 +400,14 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
   `InterfaceExecutor::hold` computes the values that keep the robot still until then.
   `InterfaceExecutor::fault` computes the values of a fault reaction (`HOLD`, `DAMP`, `SAFE`;
   default: the safe values) and `supports_fault_reaction` says which ones the configuration
-  allows; the hosts do not call them yet.
+  allows; `PolicyController` does not call them yet.
 - A plugin that feeds user commands to a policy checks `CommandGate::open(state)` and uses its
   neutral command while it is false (`safety_entry`, or the `NEUTRAL_COMMANDS` fault reaction).
 - A `SafetyCheck` registers the state entries it reads in `configure()` and returns a `Verdict`
   from `check()`: `safe`, and when it is not, an optional `reaction`; it writes the reason only
   on failure (no allocation while it passes). Its reaction is configured per instance
   (`on_fault`); the `Verdict` may ask for another one among those `possible_reactions()` returns
-  once configured. The node and the controller do not run safety checks yet.
+  once configured. `policy_node` runs the safety checks; `PolicyController` does not yet.
 - `InputSource` callbacks never touch the store: buffer the message (`LatestMessage`) and copy it
   in `read()`.
 - Keep stamps flowing (see [Timestamps](#timestamps)). `policy_framework_mjlab` is a complete
