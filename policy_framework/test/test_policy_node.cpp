@@ -52,6 +52,62 @@ std::shared_ptr<policy_framework::PolicyNode> make_node(const StringArray & prov
   return std::make_shared<policy_framework::PolicyNode>(opts);
 }
 
+/// A node whose safety check fails while |j1/velocity| > 10, with the reaction @p on_fault.
+std::shared_ptr<policy_framework::PolicyNode> make_checked_node(const std::string & on_fault)
+{
+  auto params = node_params({});
+  const std::vector<rclcpp::Parameter> more = {
+    {"safety_checks", StringArray{"speed"}},
+    {"speed.type", "policy_framework/StateBoundsCheck"},
+    {"speed.prefixes", StringArray{"j1"}},
+    {"speed.interfaces", StringArray{"velocity"}},
+    {"speed.velocity.min", -10.0},
+    {"speed.velocity.max", 10.0},
+    {"speed.on_fault", on_fault},
+  };
+  params.insert(params.end(), more.begin(), more.end());
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  return std::make_shared<policy_framework::PolicyNode>(opts);
+}
+
+/// Publishes joint states with j1 at @p j1_velocity for @p ms and counts the commands received.
+class CommandCounter
+{
+public:
+  explicit CommandCounter(const std::shared_ptr<policy_framework::PolicyNode> & node)
+  : helper_(std::make_shared<rclcpp::Node>("node_safety_helper"))
+  {
+    sub_ = helper_->create_subscription<control_msgs::msg::MultiDOFCommand>(
+      "/node_reference", 10, [this](control_msgs::msg::MultiDOFCommand::SharedPtr) {++count_;});
+    pub_ = helper_->create_publisher<sensor_msgs::msg::JointState>("/node_js", 10);
+    exec_.add_node(node->get_node_base_interface());
+    exec_.add_node(helper_);
+  }
+
+  int run(double j1_velocity, int ms)
+  {
+    count_ = 0;
+    sensor_msgs::msg::JointState js;
+    js.name = {"j1", "j2", "j3"};
+    js.position = {1.0, 2.0, 3.0};
+    js.velocity = {j1_velocity, 0.0, 0.0};
+    for (int i = 0; i < ms / 10; ++i) {
+      pub_->publish(js);
+      exec_.spin_some();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return count_;
+  }
+
+private:
+  rclcpp::Node::SharedPtr helper_;
+  rclcpp::Subscription<control_msgs::msg::MultiDOFCommand>::SharedPtr sub_;
+  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr pub_;
+  rclcpp::executors::SingleThreadedExecutor exec_;
+  int count_ = 0;
+};
+
 }  // namespace
 
 TEST(PolicyNode, ConfigureFailsWhenNoSourceProvidesAnInput)
@@ -94,6 +150,33 @@ TEST(PolicyNode, IsDestroyedWhenReleasedWhileActive)
   std::weak_ptr<policy_framework::PolicyNode> weak = node;
   node.reset();
   EXPECT_TRUE(weak.expired());
+}
+
+TEST(PolicyNode, StopsSendingCommandsAfterALatchedFaultUntilReactivated)
+{
+  auto node = make_checked_node("error");
+  ASSERT_EQ(node->configure().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(node->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  CommandCounter counter(node);
+  EXPECT_GT(counter.run(0.0, 500), 0);
+  counter.run(20.0, 200);  // the fault, and the commands still in flight
+  EXPECT_EQ(counter.run(20.0, 300), 0);
+  EXPECT_EQ(counter.run(0.0, 300), 0);  // latched: not back by itself
+
+  ASSERT_EQ(node->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(node->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  EXPECT_GT(counter.run(0.0, 500), 0);
+  node->deactivate();
+}
+
+TEST(PolicyNode, KeepsSendingCommandsWithNeutralCommands)
+{
+  auto node = make_checked_node("neutral_commands");
+  ASSERT_EQ(node->configure().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(node->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  CommandCounter counter(node);
+  EXPECT_GT(counter.run(20.0, 500), 0);  // the policy keeps running
+  node->deactivate();
 }
 
 TEST(PolicyNode, ActiveNodePublishesCommandsComputedFromTopics)
