@@ -145,6 +145,32 @@ TEST_F(StateBoundsCheckTest, AsksForNoOtherReactionWithoutEscalation)
   EXPECT_FALSE(verdict.reaction.has_value());  // the configured on_fault
 }
 
+TEST_F(StateBoundsCheckTest, AsksForTheEscalationReactionWhenEnoughEntriesFailAtOnce)
+{
+  configure({{"motors.escalation.count", 2}, {"motors.escalation.on_fault", "error"}});
+  EXPECT_EQ(check.possible_reactions(), std::vector<FaultReaction>{FaultReaction::ERROR});
+  set("j1/temperature", 81.0);
+  EXPECT_FALSE(ok());
+  EXPECT_FALSE(verdict.reaction.has_value());  // one entry: the configured on_fault
+  set("j2/error_code", 4.0);  // two entries, of any interface
+  EXPECT_FALSE(ok());
+  ASSERT_TRUE(verdict.reaction.has_value());
+  EXPECT_EQ(*verdict.reaction, FaultReaction::ERROR);
+  EXPECT_NE(reason.find("2 entries"), std::string::npos) << reason;
+  set("j1/temperature", 70.0);
+  EXPECT_FALSE(ok());
+  EXPECT_FALSE(verdict.reaction.has_value());
+  set("j2/error_code", 0.0);
+  EXPECT_TRUE(ok());
+  EXPECT_FALSE(verdict.reaction.has_value());  // a safe verdict asks for nothing
+}
+
+TEST_F(StateBoundsCheckTest, RejectsAnUnknownEscalationReaction)
+{
+  EXPECT_ANY_THROW(
+    configure({{"motors.escalation.count", 2}, {"motors.escalation.on_fault", "explode"}}));
+}
+
 TEST(FaultReaction, IsParsedFromItsConfigurationName)
 {
   using policy_framework::fault_reaction_from_string;

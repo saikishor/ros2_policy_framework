@@ -31,6 +31,21 @@ state_bounds_check:
       read_only: true
       validation:
         gt_eq<>: [0.0]
+  escalation:
+    count:
+      type: int
+      default_value: 0
+      description: "Entries failing at once from which the check asks for escalation.on_fault instead of its configured on_fault; 0: never."
+      read_only: true
+      validation:
+        gt_eq<>: [0]
+    on_fault:
+      type: string
+      default_value: "error"
+      description: "Reaction asked for from escalation.count failing entries on."
+      read_only: true
+      validation:
+        one_of<>: [["neutral_commands", "hold", "damp", "safe", "error"]]
   trigger_cycles:
     type: int
     default_value: 1
