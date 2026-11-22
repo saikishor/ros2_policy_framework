@@ -52,10 +52,12 @@ how the data flows and how the pieces fit, are explained in [`docs/`](docs/index
   (`PdEffortExecutor`) or references of a chained controller (`ReferenceInterfaceExecutor`).
 
 One cycle: [controller: state interfaces] → sources → kinematics → safety checks →
-preprocessor → inference → postprocessor → executors. While an input was never received the
-preprocessor skips the step: the node sends nothing, the controller keeps the last commands
-(see Safety). A failing safety check applies its reaction (see `docs/safety.rst`); in the node
-a latched one stops the cycle before the preprocessor.
+preprocessor → inference → postprocessor → term input ages (`max_age`) → executors. While an
+input was never received the preprocessor skips the step: the node sends nothing, the
+controller keeps the last commands (see Safety). A failing safety check applies its reaction
+(see `docs/safety.rst`); while one other than `neutral_commands` is latched the policy is not
+stepped. A stale term input latches its reaction too, and that step's commands are not
+applied.
 
 ## Running
 
@@ -173,6 +175,7 @@ name. Write floating point values with a decimal point (`50.0`).
 | `<policy>.max_steps`, `.interruptible` | Switching, see below |
 | `<policy>.disabled_safety_checks` | Safety checks skipped while this policy is active (default none), e.g. a joint velocity bound for a jump: names from `safety_checks`, or the monitor checks `tilt`, `joint_position_limits`, `max_input_age`; an unknown name is refused. A disabled check is reset when it applies again; a latched fault stays latched across switches; a source's or term's `max_age` always applies. See [Checks per policy](docs/safety.rst) |
 | `<policy>.<plugin param>` | Parameters of the policy's plugins |
+| `<policy>.terms.<term>.max_age`, `.max_age_on_fault` | A `TopicTerm`: fault when its latest message arrived longer ago than this, in s, on the receive time (default 0: off), checked after each step of its policy; reaction `hold`, `damp`, `safe` or `error` (default `error`). Refused by a `CommandTerm` (it has its `timeout`). See [Writing plugins](#writing-plugins) |
 | `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
 | `kinematics.enabled`, `kinematics.joints` | Whole-body kinematics (default false), see below |
 | `safety_entry` | State entry that is 0 while user commands must be ignored (default empty: always accepted), see Safety |
@@ -391,7 +394,8 @@ ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPo
 The controller manager must be started with this workspace sourced to find the controller
 plugin. In node mode the launch shuts down (unloading `rl_impedance_controller`) when the
 policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_policies.yaml`
-(settings per policy kind, shared by both hosts; the launch makes one policy per version), `kangaroo_policy_controller.yaml`, `kangaroo_policy_node.yaml`,
+(settings per policy kind, shared by both hosts; the launch makes one policy per version),
+`kangaroo_policy_controller.yaml`, `kangaroo_policy_node.yaml`,
 `kangaroo_<robot_type>_impedance.yaml` (pid_controller, node mode).
 
 ## Writing plugins
