@@ -148,10 +148,12 @@ void MockSafetyCheck::configure(const PluginContext & ctx, const DataStore &, Da
   topic_.subscribe(ctx.node, topic_parameter(ctx, "~/" + ctx.name));
 }
 
-SafetyCheck::Verdict MockSafetyCheck::check(const DataStore &, double, std::string & reason)
+SafetyCheck::Verdict MockSafetyCheck::check(const DataStore &, double now, std::string & reason)
 {
-  const auto msg = topic_.get().msg;
-  if (!msg || !msg->fault) {return {};}
+  const auto latest = topic_.get();
+  const auto & msg = latest.msg;
+  if (!msg || !msg->fault || msg == forgotten_) {return {};}
+  if (msg->duration > 0.0 && now - latest.receive_time > msg->duration) {return {};}
   reason = "mock fault";
   if (!msg->reason.empty()) {reason += ": " + msg->reason;}
   if (msg->reaction.empty()) {return {false, std::nullopt};}
@@ -162,6 +164,8 @@ SafetyCheck::Verdict MockSafetyCheck::check(const DataStore &, double, std::stri
   }
   return {false, reaction};
 }
+
+void MockSafetyCheck::reset() {forgotten_ = topic_.get().msg;}
 
 }  // namespace policy_framework
 

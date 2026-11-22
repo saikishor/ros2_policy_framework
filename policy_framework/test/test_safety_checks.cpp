@@ -295,15 +295,21 @@ protected:
     pub = helper->create_publisher<policy_framework::msg::MockFault>(topic, 10);
   }
 
-  void send(bool fault, const std::string & reaction = "", const std::string & reason = "")
+  // It arrived between `sent` and the returned time (node clock, seconds).
+  double send(
+    bool fault, const std::string & reaction = "", const std::string & reason = "",
+    double duration = 0.0)
   {
     for (int i = 0; i < 100 && pub->get_subscription_count() == 0; ++i) {spin_for(10);}
     policy_framework::msg::MockFault msg;
     msg.fault = fault;
     msg.reaction = reaction;
     msg.reason = reason;
+    msg.duration = duration;
+    sent = node->now().seconds();
     pub->publish(msg);
     spin_for(100);
+    return node->now().seconds();
   }
 
   void spin_for(int ms)
@@ -322,6 +328,7 @@ protected:
   DataStore commands;
   DataStore state;
   std::string reason;
+  double sent = 0.0;
 };
 
 }  // namespace
@@ -360,6 +367,26 @@ TEST_F(MockSafetyCheckTest, AnUnknownReactionAsksForAnError)
   EXPECT_FALSE(verdict.safe);
   EXPECT_EQ(verdict.reaction, FaultReaction::ERROR);
   EXPECT_NE(reason.find("explode"), std::string::npos);
+}
+
+TEST_F(MockSafetyCheckTest, AResetForgetsTheInjectedFault)
+{
+  // A reactivation must not fault again on a message sent before it.
+  configure("/mock_fault_reset");
+  send(true);
+  EXPECT_FALSE(check_now().safe);
+  check.reset();
+  EXPECT_TRUE(check_now().safe);
+  send(true);
+  EXPECT_FALSE(check_now().safe);  // a new message faults again
+}
+
+TEST_F(MockSafetyCheckTest, AFaultWithADurationEndsByItself)
+{
+  configure("/mock_fault_duration");
+  const double received = send(true, "", "", 0.5);
+  EXPECT_FALSE(check.check(state, sent + 0.4, reason).safe);  // younger than 0.5 s
+  EXPECT_TRUE(check.check(state, received + 0.6, reason).safe);
 }
 
 TEST_F(MockSafetyCheckTest, RejectsUnknownDeclaredReactions)
