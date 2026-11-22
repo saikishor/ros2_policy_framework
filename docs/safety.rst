@@ -79,10 +79,11 @@ Inputs that are missing or late
    * - An input has never been received
      - The policy step is skipped (*waiting for data*, logged once). Node: nothing is sent.
        Controller: hold, or the last commands.
-   * - A velocity command is old (``timeout``)
+   * - A velocity command is old (``timeout``, measured on the receive time)
      - It is replaced by zero. The robot stops walking instead of following a command nobody
        is sending any more. The same applies before the first command arrives, so a policy
-       does not wait for one to start.
+       does not wait for one to start. The timeout cannot be disabled: nothing else catches
+       an operator who stopped sending (commands do not count for the input age below).
    * - A motion reference is old or malformed
      - The goal becomes a still stand at the robot's heading.
    * - A state interface cannot be read (controller)
@@ -124,8 +125,9 @@ balancing:
      neutral -> policy;
    }
 
-The plugins that feed user commands implement this with ``CommandGate``: ``TwistSource``,
-``TwistCommandTerm`` and ``MotionGoalTerm``. Every change of the signal is logged once.
+The plugins that feed user commands implement this with ``CommandGate``: ``TwistSource``, and
+the terms derived from ``CommandTerm`` (``TwistCommandTerm``, ``MotionGoalTerm``), which also
+handles their timeout. Every change of the signal is logged once.
 Without ``safety_entry`` commands are accepted unless the ``NEUTRAL_COMMANDS`` reaction is
 active.
 
@@ -192,8 +194,8 @@ received is not checked.
      - the position of a commanded joint leaves its limits, narrowed by the margin. The limits
        can be read from the robot description; continuous joints have none.
    * - Input age (``max_input_age``)
-     - the observation of the last policy step (its oldest input) is older than this many
-       seconds: a topic stopped, so the policy acts on the past.
+     - the observation of the last policy step (its oldest input, user commands excluded) is
+       older than this many seconds: a topic stopped, so the policy acts on the past.
 
 *Commanded joints* are those the policies write a ``<joint>/position`` command for.
 

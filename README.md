@@ -18,7 +18,7 @@ how the data flows and how the pieces fit, are explained in [`docs/`](docs/index
 
 | Package | Content |
 |---------|---------|
-| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck` and `JumpCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks), `SwitchPolicy` service |
+| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`, `CommandTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck` and `JumpCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks), `SwitchPolicy` service |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` and supermimic `MotionGoalTerm` observation terms and the Kangaroo deployment config/launch |
 
 ## Architecture
@@ -228,7 +228,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/OnnxInference` | Inference | `model_path` (file, or directory: its first `.onnx` by name), `num_threads` (1); float32 tensors, dynamic dimensions fixed to 1 |
 | `policy_framework/JointStateSource` | InputSource | `topic`, `joints` (empty = any) → `<joint>/position\|velocity\|effort` |
 | `policy_framework/ImuSource` | InputSource | `topic`, `sensor_name` (source name) → `<sensor>/orientation.*`, `angular_velocity.*`, `linear_acceleration.*` |
-| `policy_framework/TwistSource` | InputSource | `topic`, `timeout` (1.0 s, ≤ 0 disables) → `<name>/linear.*`, `angular.*`; zero when absent or stale |
+| `policy_framework/TwistSource` | InputSource | `topic`, `timeout` (1.0 s, above zero; on the receive time) → `<name>/linear.*`, `angular.*`, stamped now; zero when absent or stale |
 | `policy_framework/OdometrySource` | InputSource | `topic` → `<name>/position.*`, `orientation.*`, `linear.*`, `angular.*` |
 | `policy_framework/MultiDofCommandExecutor` | Executor (node) | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`, empty: 0); drops a message while the previous one is being published |
 | `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions: `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; a joint with a missing or non-finite value is left unchanged |
@@ -239,7 +239,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
 | `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `imu_frame` (URDF link of the IMU, for the base terms of pal_mjlab exports), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type`, `terms.motion_goal.topic` (`~/motion_reference`), `terms.motion_goal.timeout` (0.5 s) |
 | `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface` (`position`), `velocity_interface` (`velocity`, empty: none), `gains_controller` (empty: none), `gains_as_commands` (false) |
-| `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm | `topic` (`cmd_vel`), `timeout` (1.0 s, ≤ 0 disables) → linear.x, linear.y, angular.z; zero when absent or stale |
+| `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm | `topic` (`cmd_vel`), `timeout` (1.0 s, above zero; on the receive time) → linear.x, linear.y, angular.z, stamped now; zero when absent or stale; a user command |
 
 Source and executor `topic` parameters default to `~/<name>` (also when empty).
 
@@ -294,10 +294,11 @@ the IMU).
 goal joint positions, velocities and the reference root orientation in the base frame (first
 two columns of its rotation matrix). A message with fewer frames has its last one repeated.
 When a stream starts it is turned about z to the robot's heading and keeps that alignment.
-Without a usable reference (none yet, older than `terms.motion_goal.timeout`, malformed, or
-`safety_entry` at 0) the goal is a still stand at the robot's heading: `goal_hold_joint_pos`,
-else the default positions of the goal joints. The policy therefore never waits for a
-reference.
+Without a usable reference (none yet, received longer ago than `terms.motion_goal.timeout`,
+0.5 s by default and above zero, malformed, or `safety_entry` at 0) the goal is a still stand
+at the robot's heading: `goal_hold_joint_pos`, else the default positions of the goal joints.
+The policy therefore never waits for a reference. The term is stamped with the reference's
+header stamp, else now, and is a user command (see [Timestamps](#timestamps)).
 
 ### MjlabPostprocessor
 
@@ -407,8 +408,12 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
   `InterfaceExecutor::fault` computes the values of a fault reaction (`HOLD`, `DAMP`, `SAFE`;
   default: the safe values) and `supports_fault_reaction` says which ones the configuration
   allows (`PolicyController` refuses to configure with one an executor does not support).
-- A plugin that feeds user commands to a policy checks `CommandGate::open(state)` and uses its
-  neutral command while it is false (`safety_entry`, or the `NEUTRAL_COMMANDS` fault reaction).
+- A term that feeds a user command (a velocity command, a motion reference) derives from
+  `CommandTerm<Msg>` (below): it handles the `CommandGate` (`safety_entry`, the
+  `NEUTRAL_COMMANDS` fault reaction), a `timeout` above zero measured on the receive time (the
+  only thing that catches an operator who stopped sending), the stamp and the user command
+  flag, so a command term cannot forget them. An `InputSource` feeding commands (like
+  `TwistSource`) does the gate and the timeout itself.
 - A `SafetyCheck` registers the state entries it reads in `configure()` and returns a `Verdict`
   from `check()`: `safe`, and when it is not, an optional `reaction`; it writes the reason only
   on failure (no allocation while it passes). Its reaction is configured per instance
@@ -433,10 +438,31 @@ public:
   {
     const auto in = latest();  // non-null: ready() is true once a message arrived
     out[0] = in.msg->a;  out[1] = in.msg->b;
-    return rclcpp::Time(in.msg->header.stamp).seconds();  // stamp of the value
+    const auto & h = in.msg->header.stamp;   // stamp of the value: the header, else now
+    return h.sec == 0 && h.nanosec == 0 ? now() : rclcpp::Time(h).seconds();
   }
 protected:
   size_t configure_term(const PluginContext &, const ModelInfo &) override {return 2;}
+};
+```
+
+A user command term derives from `CommandTerm<Msg>` instead, and only says how to write the
+command and the neutral command; the base writes the neutral command without a message,
+after its `timeout` and while the `CommandGate` is closed, stamps it, and flags it so that it
+does not count for the observation stamp:
+
+```cpp
+class HeadingCommand : public CommandTerm<std_msgs::msg::Float64>
+{
+public:
+  HeadingCommand() : CommandTerm("heading", 0.5) {}  // default topic, default timeout (s)
+protected:
+  size_t configure_command(const PluginContext &, const ModelInfo &) override {return 1;}
+  void write_command(const std_msgs::msg::Float64 & msg, const DataStore &, float * out) override
+  {
+    out[0] = static_cast<float>(msg.data);
+  }
+  void write_neutral(const DataStore &, float * out) override {out[0] = 0.0F;}
 };
 ```
 
@@ -476,11 +502,11 @@ ages and the latency down to the commands:
 
 | Data | Stamp |
 |------|-------|
-| State entry from a topic source | message header stamp; receive time when there is none (e.g. Twist) |
+| State entry from a topic source | message header stamp; the time it is read when there is none (e.g. Twist) |
 | State entry from a state interface | time it was read (interfaces carry no stamp) |
-| Observation term | `ObservationTerm::compute()` return value; built-in terms: oldest of their entries |
+| Observation term | `ObservationTerm::compute()` return value: the header stamp, else now; built-in terms: oldest of their entries. A user command term (`CommandTerm`) is flagged `user_command` |
 | Term fed back from previous outputs (`actions`, motion command; a term returns `ObservationTerm::kFromPreviousOutputs`) | previous observation stamp, flagged `from_previous_outputs` |
-| Observation (`PolicyPipeline::observation_stamp()`) | oldest input stamp, feedback terms excluded |
+| Observation (`PolicyPipeline::observation_stamp()`) | oldest input stamp, feedback terms and user commands excluded |
 | Command entry | observation stamp of the step that computed it |
 
 A preprocessor reports `input_stamps()` (per term for mjlab, per entry for
@@ -488,6 +514,13 @@ A preprocessor reports `input_stamps()` (per term for mjlab, per entry for
 controller publishes the age of each step's observation as introspection (see Introspection);
 the node does not publish stamps (`MultiDOFCommand` has no header). Header stamps compare only
 when publishers use the node's clock.
+
+User commands do not count for the observation stamp: a command is held until its own timeout
+(a joystick at 10 Hz is up to 100 ms old while driving, a motion reference may be sent once),
+so it is old by design. Counted, the slowest command would make the observation look old and
+hide a stale sensor behind it; `safety.max_input_age` could then not be tighter than the
+slowest command. Their stamps are still reported in `input_stamps()`, and an operator who
+stopped sending is caught by the command's timeout.
 
 ## Documentation
 
