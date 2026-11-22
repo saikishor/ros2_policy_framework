@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "policy_framework/latest_message.hpp"
+#include "policy_framework/msg/mock_fault.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 
 namespace policy_framework
@@ -87,6 +89,32 @@ private:
     bool has_previous = false;
   };
   std::vector<Entry> entries_;
+};
+
+/**
+ * @brief Fails on request, to see how the robot really reacts to a fault in a given situation.
+ *
+ * Subscribes to `topic` (default `~/<name>`, policy_framework/msg/MockFault) and fails on every
+ * cycle while the latest message has `fault: true`, with the message's `reaction` (empty: the
+ * check's on_fault). A message may ask only for the reactions listed in `reactions` (declared
+ * through possible_reactions(), so that the host checks its executors at configure); an unknown
+ * name asks for error, and the host applies error for a valid but undeclared one. Like any
+ * fault, all but neutral_commands stay latched until the controller is reactivated.
+ *
+ * E.g. `ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault
+ * "{fault: true, reaction: damp}"`.
+ */
+class MockSafetyCheck : public SafetyCheck
+{
+public:
+  /// @throws std::exception on an unknown name in `reactions`.
+  void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) override;
+  Verdict check(const DataStore & state, double now, std::string & reason) override;
+  std::vector<FaultReaction> possible_reactions() const override {return reactions_;}
+
+private:
+  LatestMessage<msg::MockFault> topic_;
+  std::vector<FaultReaction> reactions_;
 };
 
 }  // namespace policy_framework

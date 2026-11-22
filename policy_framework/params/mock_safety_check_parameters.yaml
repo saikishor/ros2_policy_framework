@@ -1,0 +1,9 @@
+mock_safety_check:
+  reactions:
+    type: string_array
+    default_value: []
+    description: "Reactions a MockFault message may ask for besides the check's on_fault, declared so that the host checks its executors support them."
+    read_only: true
+    validation:
+      unique<>: null
+      subset_of<>: [["neutral_commands", "hold", "damp", "safe", "error"]]
