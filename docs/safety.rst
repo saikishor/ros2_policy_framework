@@ -243,10 +243,17 @@ Two settings catch inputs that stopped, and they answer different questions:
      - One per source, e.g. 20 ms for the IMU and 200 ms for a slow estimator
    * - Also catches
      - A stuck inference thread: no new observation is acted on
-     - A source the policy does not read any more, e.g. after switching policies
+     - A source no active policy reads: every source is checked (only the active policy's,
+       with a check when switching, is planned in issue #18)
 
 Use ``max_age`` for each sensor topic, with a limit that suits its rate, and
-``max_input_age`` as a looser check of the whole observation. Do not set ``max_age`` on a
+``max_input_age`` as a looser check of the whole observation.
+
+``max_age`` covers the input sources only. The state interfaces of the controller are read on
+every update, so they are never old (a sensor repeating its last value is not caught by an age;
+see ``JumpCheck`` or a check of your own). Observation terms with their own subscription
+(``TopicTerm``) are covered by ``max_input_age`` only, through their stamp; command terms by
+their ``timeout``. Do not set ``max_age`` on a
 source of user commands (``TwistSource``): an operator who stops sending is normal, and the
 source's ``timeout`` already turns that into a neutral command.
 
