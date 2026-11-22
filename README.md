@@ -150,7 +150,9 @@ or, chaining into a pid_controller that closes the loop:
 - **Introspection**: `<controller>.policy_step_time_us` (duration of the last policy step) and
   `<controller>.observation_age_ms` (age of the oldest input of that step when its commands
   were applied) are registered with ros2_control's introspection, and available as
-  `PolicyController::timing()`.
+  `PolicyController::timing()`. So is the age of each input, per policy:
+  `<controller>.input_age_ms.<policy>.<input>` (a term, or an entry for `ConcatPreprocessor`;
+  0 for the inputs of an inactive policy), available as `PolicyController::input_age_ms()`.
 
 ## Configuration
 
@@ -427,7 +429,10 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
   example.
 
 A term fed by a custom message derives from `TopicTerm<Msg>`, which owns the subscription and
-hands the latest message to the control cycle real-time safely:
+hands the latest message to the control cycle real-time safely. Its parameters are `topic`, and
+`max_age` (seconds, default 0: off) with `max_age_on_fault` (`hold`, `damp`, `safe` or
+`error`, default `error`): a fault when its latest message arrived longer ago, checked after
+each policy step (a `CommandTerm` refuses a `max_age`: it has its `timeout`):
 
 ```cpp
 using namespace policy_framework;

@@ -114,7 +114,8 @@ Example: an observation term from a topic
 -----------------------------------------
 
 ``TopicTerm`` owns the subscription and hands the latest message to the control cycle
-safely. A term only says how big it is and how to write its value:
+safely. A term only says how big it is and how to write its value. Its ``max_age`` parameter
+makes the host fault when the topic stops (:doc:`safety`):
 
 .. code-block:: cpp
 
@@ -330,6 +331,11 @@ the situations described in the other pages:
    * - ``InputSource::receive_time()``
      - Required: when the latest data arrived (0 before any), checked against the source's
        ``max_age`` on every cycle (:doc:`safety`). ``TopicSource`` implements it.
+   * - ``ObservationTerm::receive_time()``
+     - When the latest message of a term with its own subscription arrived, checked against
+       its ``max_age`` after each policy step. ``TopicTerm`` implements it (with the
+       ``max_age`` and ``max_age_on_fault`` parameters); a term reading the state store has
+       none.
    * - ``Preprocessor::clear()``
      - Before the first activation and when the host restarts: forget everything.
    * - ``Preprocessor::reset()``, ``Postprocessor::reset()``, ``ObservationTerm::reset()``

@@ -96,6 +96,11 @@ Inputs that are missing or late
    * - A source receives nothing any more (``<source>.max_age``)
      - Once its latest message arrived longer ago than this many seconds, it is a fault, with
        the reaction ``<source>.max_age_on_fault`` (default ``error``). Off by default.
+   * - An observation term with its own subscription receives nothing any more
+       (``<policy>.terms.<term>.max_age``)
+     - After a step of its policy, once its latest message arrived longer ago than this many
+       seconds, it is a fault, with the reaction ``max_age_on_fault`` (default ``error``); the
+       step's commands are not applied. Off by default.
 
 The safety entry
 ----------------
@@ -222,40 +227,54 @@ Both hosts run it with the safety checks.
 Stale inputs: ``max_input_age`` or ``max_age``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Two settings catch inputs that stopped, and they answer different questions:
+Three settings catch inputs that stopped, and they answer different questions:
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 40 40
+   :widths: 16 28 28 28
 
    * -
      - ``safety.max_input_age``
      - ``<source>.max_age``
+     - ``<policy>.terms.<term>.max_age``
+   * - For
+     - The whole observation
+     - An input source (topic → state entries)
+     - An observation term with its own subscription (``TopicTerm``)
    * - Question
      - How old is the observation the policy last acted on?
      - When did this source last receive a message?
+     - When did this term last receive a message?
    * - Measured on
      - The stamps of the step's inputs (header stamps, so the publishers' clocks must agree),
        user commands excluded
      - The receive time, on the node clock: whatever clock the publisher stamps with
+     - The receive time, like a source
    * - Limit
      - One for the whole observation: it has to allow for the slowest input
      - One per source, e.g. 20 ms for the IMU and 200 ms for a slow estimator
+     - One per term
+   * - Checked
+     - On every cycle
+     - On every cycle
+     - After each policy step, when its result is taken (the term keeps returning its last
+       message, so the step that would act on it is the one stopped)
    * - Also catches
      - A stuck inference thread: no new observation is acted on
      - A source no active policy reads: every source is checked (only the active policy's,
        with a check when switching, is planned in issue #18)
+     - Only the terms of the active policy are checked: a term is read by its policy only
 
 Use ``max_age`` for each sensor topic, with a limit that suits its rate, and
 ``max_input_age`` as a looser check of the whole observation.
 
-``max_age`` covers the input sources only. The state interfaces of the controller are read on
-every update, so they are never old (a sensor repeating its last value is not caught by an age;
-see ``JumpCheck`` or a check of your own). Observation terms with their own subscription
-(``TopicTerm``) are covered by ``max_input_age`` only, through their stamp; command terms by
-their ``timeout``. Do not set ``max_age`` on a
-source of user commands (``TwistSource``): an operator who stops sending is normal, and the
-source's ``timeout`` already turns that into a neutral command.
+The state interfaces of the controller are read on every update, so they are never old (a
+sensor repeating its last value is not caught by an age; see ``JumpCheck`` or a check of your
+own). Do not set ``max_age`` on a source of user commands (``TwistSource``): an operator who
+stops sending is normal, and the source's ``timeout`` already turns that into a neutral
+command; a command term (``CommandTerm``) refuses a ``max_age`` for the same reason. The
+reaction of a term's ``max_age`` is ``hold``, ``damp``, ``safe`` or ``error``: neutral
+commands would keep the policy running, on the stale data.
 
 Fault reactions
 ---------------
