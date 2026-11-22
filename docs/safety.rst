@@ -177,6 +177,32 @@ jump. Do not use it on values that wrap, such as the position of a continuous jo
      interfaces: [position]
      position: {max_delta: 0.2}
 
+``MockSafetyCheck`` fails on request, to see how the robot really reacts to a fault at a chosen
+moment (standing, walking, during a jump) before a real one happens. It subscribes to
+``topic`` (default ``~/<name>``, ``policy_framework/msg/MockFault``) and fails on every cycle
+while the latest message has ``fault: true``, with the message's ``reaction`` (empty: its
+``on_fault``). A message may ask only for the reactions listed in ``reactions``, which the host
+checks against its executors at configure, like any reaction a check declares; an unknown name
+asks for ``error``, and the host applies ``error`` for a valid but undeclared one. As for any
+fault, every reaction but ``neutral_commands`` stays latched until reactivation:
+
+.. code-block:: yaml
+
+   mock:
+     type: policy_framework/MockSafetyCheck
+     on_fault: hold
+     reactions: [damp, safe, neutral_commands]
+
+.. code-block:: bash
+
+   ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault \
+     "{fault: true, reaction: damp, reason: 'test while walking'}"
+   # neutral_commands recovers once the check passes again:
+   ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault "{fault: false}"
+
+Remove it from the configuration outside of testing: anyone who can publish on its topic can
+stop the robot.
+
 They are listed in ``safety_checks``, each with its ``type`` and its reaction ``on_fault``
 (default ``error``, see `Fault reactions`_). ``policy_node`` runs them on every tick, before the policy step.
 ``PolicyController`` runs them on every update, before the policy, and claims what they read
