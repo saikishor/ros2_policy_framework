@@ -297,6 +297,9 @@ controller_interface::return_type PolicyController::update(
       timing_.step_time_us =
         std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
       record_observation_age();
+      if (status == PolicyPipeline::Status::OK) {
+        if (const auto r = runner_->check_input_ages(now)) {return react(*r);}
+      }
     }
   } else {
     // Collect a finished step, then maybe trigger the next one; never wait for inference.
@@ -307,6 +310,8 @@ controller_interface::return_type PolicyController::update(
         std::chrono::duration<double, std::micro>(inference_->get_last_execution_time()).count();
       record_observation_age();
       if (status == PolicyPipeline::Status::OK) {
+        // Before taking its commands: a stale input must not be acted on.
+        if (const auto r = runner_->check_input_ages(now)) {return react(*r);}
         runner_->commands().copy_values_from(async_commands_);
       }
     }

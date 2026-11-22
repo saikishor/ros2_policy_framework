@@ -98,6 +98,57 @@ void publish_until(
 
 }  // namespace
 
+TEST(TopicTerm, ReportsItsReceiveTimeAndItsMaxAge)
+{
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({{"p.terms.x.topic", "/test_term_max_age"},
+      {"p.terms.x.max_age", 0.05}, {"p.terms.x.max_age_on_fault", "damp"}});
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_term_max_age", opts);
+  DataStore state;
+  LinearXTerm term;
+  term.configure({node, "p.terms.x"}, ModelInfo{}, state);
+  EXPECT_DOUBLE_EQ(term.max_age(), 0.05);
+  EXPECT_EQ(term.max_age_on_fault(), policy_framework::FaultReaction::DAMP);
+  EXPECT_DOUBLE_EQ(term.receive_time(), 0.0);  // nothing yet
+  const double before = node->now().seconds();
+  Twist msg;
+  publish_until(node, "/test_term_max_age", msg, [&]() {return term.ready(state);});
+  EXPECT_GE(term.receive_time(), before);
+}
+
+TEST(TopicTerm, HasNoMaxAgeByDefault)
+{
+  auto node = command_node("test_term_no_max_age", "/test_term_no_max_age");
+  DataStore state;
+  LinearXTerm term;
+  term.configure({node, "p.terms.cmd"}, ModelInfo{}, state);
+  EXPECT_DOUBLE_EQ(term.max_age(), 0.0);
+  EXPECT_EQ(term.max_age_on_fault(), policy_framework::FaultReaction::ERROR);
+}
+
+TEST(TopicTerm, RefusesNeutralCommandsForItsMaxAge)
+{
+  // A stale sensor is not answered by neutral commands: the policy would run on stale data.
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({{"p.terms.x.max_age", 0.05},
+      {"p.terms.x.max_age_on_fault", "neutral_commands"}});
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_term_neutral", opts);
+  DataStore state;
+  LinearXTerm term;
+  EXPECT_THROW(term.configure({node, "p.terms.x"}, ModelInfo{}, state), std::runtime_error);
+}
+
+TEST(CommandTerm, RefusesAMaxAge)
+{
+  // A command is old by design; its timeout handles an operator who stopped sending.
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({{"p.terms.cmd.max_age", 0.1}});
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_command_max_age", opts);
+  DataStore state;
+  VxCommand term;
+  EXPECT_THROW(term.configure({node, "p.terms.cmd"}, ModelInfo{}, state), std::runtime_error);
+}
+
 TEST(CommandTerm, AnOrdinaryTopicTermIsNotAUserCommand)
 {
   EXPECT_FALSE(LinearXTerm().user_command());

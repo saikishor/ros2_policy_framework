@@ -280,7 +280,9 @@ void MjlabPreprocessor::configure(
     }
     single_dim += t.dim;
     terms_.push_back(std::move(t));
-    stamps_.push_back({name, 0.0, false, terms_.back().term->user_command()});
+    const auto & term = *terms_.back().term;
+    stamps_.push_back(
+      {name, 0.0, false, term.user_command(), 0.0, term.max_age(), term.max_age_on_fault()});
   }
 
   const auto in = model.inputs.find(obs_input_);
@@ -364,6 +366,7 @@ void MjlabPreprocessor::push(const DataStore & state, const TensorMap & last_out
     if (derived) {stamp = prev_obs_stamp_;}
     stamps_[k].stamp = stamp;
     stamps_[k].from_previous_outputs = derived;
+    stamps_[k].receive_time = t.term->receive_time();
     if (!derived && !stamps_[k].user_command && stamp > 0.0 &&
       (obs_stamp <= 0.0 || stamp < obs_stamp))
     {

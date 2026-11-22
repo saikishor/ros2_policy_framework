@@ -34,6 +34,7 @@ void PolicyRunner::configure(
   const auto & logger = logger_;
   // Reconfiguration starts from scratch: drop plugins before their loaders.
   source_ages_.clear();
+  input_age_reactions_.clear();
   sources_.clear();
   executors_.clear();
   checks_.clear();
@@ -83,6 +84,9 @@ void PolicyRunner::configure(
     p.inference->configure(ctx);
     p.preprocessor = preprocessor_loader_->createSharedInstance(stages.preprocessor);
     p.preprocessor->configure(ctx, p.inference->model(), state_);
+    for (const auto & s : p.preprocessor->input_stamps()) {
+      if (s.max_age > 0.0) {input_age_reactions_.push_back(s.max_age_on_fault);}
+    }
     p.postprocessor = postprocessor_loader_->createSharedInstance(stages.postprocessor);
     p.postprocessor->configure(ctx, p.inference->model(), commands_);
     p.max_steps = static_cast<int>(stages.max_steps);
@@ -205,6 +209,7 @@ std::vector<FaultReaction> PolicyRunner::fault_reactions() const
   std::vector<FaultReaction> all{policy_failure_reaction_};
   all.insert(all.end(), monitor_reactions_.begin(), monitor_reactions_.end());
   for (const auto & s : source_ages_) {all.push_back(s.on_fault);}
+  all.insert(all.end(), input_age_reactions_.begin(), input_age_reactions_.end());
   for (const auto & c : checks_) {
     all.push_back(c.on_fault);
     all.insert(all.end(), c.declared.begin(), c.declared.end());
@@ -252,6 +257,33 @@ std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stam
   const auto effective = latched_ ? latched_ : worst;
   report(effective, reason_);
   return effective;
+}
+
+std::optional<size_t> PolicyRunner::stale_input(const InputStamps & stamps, double now)
+{
+  std::optional<size_t> worst;
+  for (size_t i = 0; i < stamps.size(); ++i) {
+    const auto & s = stamps[i];
+    // Nothing received yet: the policy waits for it, this is not a fault.
+    if (s.max_age <= 0.0 || s.receive_time <= 0.0 || now - s.receive_time <= s.max_age) {
+      continue;
+    }
+    if (!worst || s.max_age_on_fault > stamps[*worst].max_age_on_fault) {worst = i;}
+  }
+  return worst;
+}
+
+std::optional<FaultReaction> PolicyRunner::check_input_ages(double now)
+{
+  const auto & stamps = pipeline_->input_stamps();
+  if (const auto i = stale_input(stamps, now)) {
+    const auto & s = stamps[*i];
+    escalate(s.max_age_on_fault);
+    report(
+      latched_, "input '" + s.name + "' of policy '" + pipeline_->active_policy() +
+      "': no message for " + std::to_string(now - s.receive_time) + " s, above its max_age");
+  }
+  return latched_;
 }
 
 FaultReaction PolicyRunner::policy_failure(const std::string & reason)

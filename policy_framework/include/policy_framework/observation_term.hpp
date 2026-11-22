@@ -55,6 +55,15 @@ public:
    */
   bool user_command() const {return user_command_;}
   /**
+   * @return When the latest message of the term arrived (seconds, node clock), for a term with
+   *         its own subscription (TopicTerm); 0 otherwise or before any. Real-time safe.
+   */
+  virtual double receive_time() {return 0.0;}
+  /// @return The term's `max_age` (seconds, 0: off), see TopicTerm.
+  double max_age() const {return max_age_;}
+  /// @return The reaction when receive_time() is older than max_age().
+  FaultReaction max_age_on_fault() const {return max_age_on_fault_;}
+  /**
    * @brief Write the current value. Called from the control cycle, only when ready().
    * @param last_outputs Model outputs of the previous step of the policy.
    * @param out The configure()d number of floats.
@@ -68,6 +77,9 @@ public:
 protected:
   /// Set by CommandTerm only.
   bool user_command_ = false;
+  /// Set by TopicTerm only.
+  double max_age_ = 0.0;
+  FaultReaction max_age_on_fault_ = FaultReaction::ERROR;
 };
 
 /**
@@ -80,14 +92,34 @@ class TopicTerm : public ObservationTerm
 public:
   explicit TopicTerm(std::string default_topic) : default_topic_(std::move(default_topic)) {}
 
+  /**
+   * Parameters (under the term's name): `topic`; `max_age` (seconds, default 0: off): the host
+   * faults with `max_age_on_fault` (hold, damp, safe or error; default error) when the latest
+   * message arrived longer ago, checked after each policy step. Not for a CommandTerm, whose
+   * timeout handles an operator who stopped sending.
+   * @throws std::runtime_error on an invalid `max_age_on_fault`, or a `max_age` on a CommandTerm.
+   */
   size_t configure(const PluginContext & ctx, const ModelInfo & model, DataStore &) override
   {
+    this->max_age_ = get_parameter<double>(ctx, "max_age", 0.0);
+    const auto reaction = fault_reaction_from_string(
+      get_parameter<std::string>(ctx, "max_age_on_fault", "error"));
+    if (!reaction || *reaction == FaultReaction::NEUTRAL_COMMANDS) {
+      // Neutral commands keep the policy running: on the stale data.
+      throw std::runtime_error(ctx.name + ".max_age_on_fault must be hold, damp, safe or error");
+    }
+    this->max_age_on_fault_ = *reaction;
+    if (this->max_age_ > 0.0 && this->user_command_) {
+      throw std::runtime_error(
+              ctx.name + ".max_age: a command term has a timeout instead (its staleness is normal)");
+    }
     const auto dim = configure_term(ctx, model);
     topic_.subscribe(ctx.node, topic_parameter(ctx, default_topic_));
     return dim;
   }
 
   bool ready(const DataStore &) override {return latest().msg != nullptr;}
+  double receive_time() final {return latest().receive_time;}
 
 protected:
   using Received = typename LatestMessage<MsgT>::Received;
