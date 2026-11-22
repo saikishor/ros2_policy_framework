@@ -105,17 +105,22 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
         command_names_.push_back(name);
       }
     }
+    // Refused now rather than discovered during a fall.
+    for (size_t k = 0; k < executors_.size(); ++k) {
+      for (const auto r : runner_->fault_reactions()) {
+        if (!executors_[k]->supports_fault_reaction(r)) {
+          throw std::runtime_error(
+                  "Executor '" + runner_->executor_types()[k].first + "' cannot apply the fault "
+                  "reaction '" + to_string(r) + "' of the safety configuration");
+        }
+      }
+    }
   } catch (const std::exception & e) {
     RCLCPP_ERROR(get_node()->get_logger(), "Configuration failed: %s", e.what());
     return CallbackReturn::ERROR;
   }
   if (executors_.empty()) {
     RCLCPP_WARN(get_node()->get_logger(), "No executors: the commands are not sent anywhere");
-  }
-  if (runner_->has_safety_checks()) {
-    RCLCPP_WARN(
-      get_node()->get_logger(), "Safety checks are configured, but PolicyController does not run "
-      "them yet: they have no effect");
   }
   if (params.async_inference) {
     // Allocated here, so that the control loop only copies values.
@@ -187,6 +192,8 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
   timing_ = Timing();
   updates_ = 0;
   inference_pending_ = false;
+  observation_stamp_ = 0.0;
+  fault_applied_.reset();
   runner_->restart();
   return CallbackReturn::SUCCESS;
 }
@@ -208,6 +215,23 @@ void PolicyController::apply_values()
       }
     }
   }
+}
+
+controller_interface::return_type PolicyController::react(FaultReaction reaction)
+{
+  if (reaction == FaultReaction::ERROR) {
+    // The controller manager deactivates the controller (which writes the safe values again)
+    // and activates its fallback controllers.
+    write_safe_values();
+    return controller_interface::return_type::ERROR;
+  }
+  const bool start = fault_applied_ != reaction;
+  fault_applied_ = reaction;
+  for (size_t k = 0; k < values_.size(); ++k) {
+    executors_[k]->fault(runner_->commands(), runner_->state(), values_[k], reaction, start);
+  }
+  apply_values();
+  return controller_interface::return_type::OK;
 }
 
 void PolicyController::write_safe_values()
@@ -250,12 +274,21 @@ controller_interface::return_type PolicyController::update(
   // On every update, so that other readers see the current joint state; before the step so
   // that it sees this cycle's (an inference thread updates its own model from its snapshot).
   runner_->update_kinematics();
+  // Before the step: the policy must not act on a state that is already unsafe. While a
+  // reaction is latched the policy is neither stepped nor followed (a step still running in the
+  // inference thread is ignored).
+  if (const auto r = runner_->update_safety(observation_stamp_, now);
+    r && *r != FaultReaction::NEUTRAL_COMMANDS)
+  {
+    return react(*r);
+  }
   std::optional<PolicyPipeline::Status> status;  // of a step whose result arrived now
   // Called right after a step finished, before the next one may start in the inference thread.
   auto record_observation_age = [&]() {
       const double stamp = runner_->pipeline().observation_stamp();
       timing_.observation_age_ms =
         status == PolicyPipeline::Status::OK && stamp > 0.0 ? (now - stamp) * 1e3 : 0.0;
+      if (status == PolicyPipeline::Status::OK) {observation_stamp_ = stamp;}
     };
   if (!inference_) {
     if (policy_tick) {
@@ -292,8 +325,7 @@ controller_interface::return_type PolicyController::update(
     }
   }
   if (status == PolicyPipeline::Status::ERROR) {
-    write_safe_values();
-    return controller_interface::return_type::ERROR;
+    return react(runner_->policy_failure("The policy step failed"));
   }
   if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
   // Before the first commands since activation the command store may still hold the previous

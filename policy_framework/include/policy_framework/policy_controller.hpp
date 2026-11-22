@@ -5,6 +5,7 @@
 #define POLICY_FRAMEWORK__POLICY_CONTROLLER_HPP_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -101,6 +102,9 @@ public:
 private:
   /// Load the `executors` parameter as InterfaceExecutor plugins. @throws on any error.
   void load_executors();
+  /// Apply a latched fault @p reaction: the executors' fault() values, or for ERROR the safe
+  /// values and an error for the controller manager.
+  controller_interface::return_type react(FaultReaction reaction);
   /// Write the executors' safe values.
   void write_safe_values();
   /// Write values[k] of executor k to its loaned interfaces (NaN: leave unchanged).
@@ -127,6 +131,8 @@ private:
   unsigned int failed_reads_ = 0;  ///< Consecutive updates with an unreadable state interface.
   Timing timing_;
   unsigned int decimation_ = 1;  ///< Updates per policy step.
+  double observation_stamp_ = 0.0;  ///< Of the last successful step, for safety.max_input_age.
+  std::optional<FaultReaction> fault_applied_;  ///< Reaction of the previous update, if any.
   uint64_t updates_ = 0;         ///< Updates since activation.
 };
 

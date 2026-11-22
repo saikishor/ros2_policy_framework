@@ -443,6 +443,130 @@ TEST_F(PolicyControllerTest, TwoExecutorsCannotClaimTheSameInterface)
   EXPECT_EQ(controller.configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
 }
 
+/// A PD controller whose safety check fails while |j1/velocity| > 10, with the reaction @p on_fault.
+class ControllerSafetyTest : public PolicyControllerTest
+{
+protected:
+  void init_checked(const std::string & on_fault, std::vector<rclcpp::Parameter> extra = {})
+  {
+    with_reference_executor = false;
+    std::vector<rclcpp::Parameter> params = {
+      {"executors", StringArray{"pd"}},
+      {"pd.type", "policy_framework/PdEffortExecutor"},
+      {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+      {"pd.damping", std::vector<double>{0.0, 0.0}},
+      {"safety_checks", StringArray{"speed"}},
+      {"speed.type", "policy_framework/StateBoundsCheck"},
+      {"speed.prefixes", StringArray{"j1"}},
+      {"speed.interfaces", StringArray{"velocity"}},
+      {"speed.velocity.min", -10.0},
+      {"speed.velocity.max", 10.0},
+      {"speed.on_fault", on_fault},
+    };
+    params.insert(params.end(), extra.begin(), extra.end());
+    init(params);
+  }
+
+  /// Configure, activate and run one normal update at q = (1, 2, 3): references (4.5, 6.5).
+  void start()
+  {
+    ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+    assign();
+    ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+    set_state("j1/position", 1.0);
+    set_state("j2/position", 2.0);
+    set_state("j3/position", 3.0);
+    ASSERT_EQ(update(), controller_interface::return_type::OK);
+    ASSERT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));  // following the policy
+  }
+};
+
+TEST_F(ControllerSafetyTest, RefusesAReactionAnExecutorCannotApply)
+{
+  init_checked("damp");  // no fault_damping: PdEffortExecutor cannot damp
+  EXPECT_EQ(controller.configure().id(), State::PRIMARY_STATE_UNCONFIGURED);
+}
+
+TEST_F(ControllerSafetyTest, ErrorWritesTheSafeValuesAndReturnsAnError)
+{
+  init_checked("error");
+  start();
+  set_state("j1/velocity", 20.0);
+  EXPECT_EQ(update(), controller_interface::return_type::ERROR);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+}
+
+TEST_F(ControllerSafetyTest, DampDampsOnEveryUpdateUntilReactivated)
+{
+  init_checked("damp", {{"pd.fault_damping", std::vector<double>{2.0, 2.0}}});
+  start();
+  set_state("j1/velocity", 20.0);
+  EXPECT_EQ(update(), controller_interface::return_type::OK);  // the controller stays active
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 20.0);
+  set_state("j1/velocity", 1.0);  // the check passes again: still damping, not the policy
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 1.0);
+
+  ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/velocity", 0.0);
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));  // following the policy again
+}
+
+TEST_F(ControllerSafetyTest, HoldKeepsThePoseOfTheFault)
+{
+  init_checked("hold");
+  start();
+  set_state("j1/velocity", 20.0);
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);  // at the pose of the fault
+  set_state("j1/position", 1.5);
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (1.0 - 1.5));
+}
+
+TEST_F(ControllerSafetyTest, NeutralCommandsKeepFollowingThePolicy)
+{
+  init_checked("neutral_commands");
+  start();
+  set_state("j1/velocity", 20.0);
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+}
+
+TEST_F(ControllerSafetyTest, AFailedStepUsesOnPolicyFailure)
+{
+  init_checked("error", {
+    {"pd.fault_damping", std::vector<double>{2.0, 2.0}}, {"on_policy_failure", "damp"}});
+  start();
+  set_state("j1/position", std::nan(""));  // the model answers NaN: the step fails
+  set_state("j1/velocity", 1.0);
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 1.0);
+}
+
+TEST_F(ControllerSafetyTest, ReactsAtOnceWithAsyncInference)
+{
+  init_checked("damp", {
+    {"pd.fault_damping", std::vector<double>{2.0, 2.0}}, {"async_inference", true}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);  // triggers a step, holds
+  set_state("j1/velocity", 20.0);
+  // Whether or not the step finished: damping now, not after the inference.
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 20.0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(update(), controller_interface::return_type::OK);  // the step's result is ignored
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 20.0);
+  ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
