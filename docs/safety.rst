@@ -428,7 +428,8 @@ Going to a predefined pose, or any other recovery, is the job of a fallback cont
 example a joint trajectory controller): use ``ERROR``.
 
 ``PolicyRunner::update_safety()`` runs every check on every cycle and applies the most
-severe reaction. A failed policy step (including a non-finite model output) is a fault too,
+severe reaction; ``PolicyRunner::check_input_ages()`` checks the ``max_age`` of the terms
+after each successful step, before its commands are applied. A failed policy step (including a non-finite model output) is a fault too,
 with its own reaction ``on_policy_failure`` (default ``error``; ``hold``, ``damp`` or ``safe``
 otherwise, but not ``neutral_commands``: the policy itself failed, it cannot keep running).
 Unreadable state interfaces in the controller still return an error.

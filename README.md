@@ -166,7 +166,7 @@ name. Write floating point values with a decimal point (`50.0`).
 
 | Parameter | Description |
 |-----------|-------------|
-| `sources` | Input source names; each needs `<source>.type`, may have `<source>.max_age` (s, default 0: off; a fault when its latest message arrived longer ago, on the receive time) with the reaction `<source>.max_age_on_fault` (default `error`); not for a command source, whose timeout handles a stopped operator. Covers input sources only, not state interfaces nor observation terms with their own subscription |
+| `sources` | Input source names; each needs `<source>.type`, may have `<source>.max_age` (s, default 0: off; a fault when its latest message arrived longer ago, on the receive time) with the reaction `<source>.max_age_on_fault` (default `error`); not for a command source, whose timeout handles a stopped operator. Covers input sources only: state interfaces are fresh by construction, and an observation term with its own subscription has its own `max_age` (see [Writing plugins](#writing-plugins)) |
 | `policies` | Policy names (required); the first one is the default |
 | `<policy>.preprocessor` / `.postprocessor` | Plugin classes (required) |
 | `<policy>.inference` | Plugin class, default `policy_framework/OnnxInference` |

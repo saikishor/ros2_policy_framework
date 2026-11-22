@@ -61,8 +61,9 @@ namespace policy_framework
  * previous value is used meanwhile), every executor's safe_values() are written (zero effort
  * for PdEffortExecutor).
  *
- * Introspection: the duration of each policy step and the age of its observation (see Timing)
- * are registered with ros2_control's introspection.
+ * Introspection: the duration of each policy step and the age of its observation (see Timing),
+ * and the age of each input of the active policy (see input_age_ms()), are registered with
+ * ros2_control's introspection.
  *
  * On activation the first policy restarts from scratch. Policies are switched with the
  * `~/switch_policy` service.
