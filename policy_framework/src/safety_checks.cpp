@@ -9,6 +9,7 @@
 
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework/jump_check_parameters.hpp"
+#include "policy_framework/mock_safety_check_parameters.hpp"
 #include "policy_framework/state_bounds_check_parameters.hpp"
 
 namespace policy_framework
@@ -138,7 +139,32 @@ void JumpCheck::reset()
   for (auto & e : entries_) {e.has_previous = false;}
 }
 
+void MockSafetyCheck::configure(const PluginContext & ctx, const DataStore &, DataStore &)
+{
+  const auto params = mock_safety_check::ParamListener(ctx.node, ctx.name).get_params();
+  reactions_.clear();
+  // The parameter validation allows only the names it knows.
+  for (const auto & r : params.reactions) {reactions_.push_back(*fault_reaction_from_string(r));}
+  topic_.subscribe(ctx.node, topic_parameter(ctx, "~/" + ctx.name));
+}
+
+SafetyCheck::Verdict MockSafetyCheck::check(const DataStore &, double, std::string & reason)
+{
+  const auto msg = topic_.get().msg;
+  if (!msg || !msg->fault) {return {};}
+  reason = "mock fault";
+  if (!msg->reason.empty()) {reason += ": " + msg->reason;}
+  if (msg->reaction.empty()) {return {false, std::nullopt};}
+  const auto reaction = fault_reaction_from_string(msg->reaction);
+  if (!reaction) {
+    reason += " (unknown reaction '" + msg->reaction + "': error)";
+    return {false, FaultReaction::ERROR};
+  }
+  return {false, reaction};
+}
+
 }  // namespace policy_framework
 
 PLUGINLIB_EXPORT_CLASS(policy_framework::StateBoundsCheck, policy_framework::SafetyCheck)
 PLUGINLIB_EXPORT_CLASS(policy_framework::JumpCheck, policy_framework::SafetyCheck)
+PLUGINLIB_EXPORT_CLASS(policy_framework::MockSafetyCheck, policy_framework::SafetyCheck)

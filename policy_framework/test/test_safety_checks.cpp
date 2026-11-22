@@ -3,11 +3,13 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "policy_framework/msg/mock_fault.hpp"
 #include "policy_framework/safety_checks.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -273,6 +275,97 @@ TEST(JumpCheckConfigTest, RejectsAnInterfaceWithoutMaxDelta)
 }
 
 }  // namespace
+
+namespace
+{
+
+class MockSafetyCheckTest : public ::testing::Test
+{
+protected:
+  void configure(const std::string & topic, std::vector<rclcpp::Parameter> extra = {})
+  {
+    extra.push_back({"mock.topic", topic});
+    rclcpp::NodeOptions opts;
+    opts.parameter_overrides(extra);
+    node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("mock_safety", opts);
+    helper = std::make_shared<rclcpp::Node>("mock_safety_helper");
+    exec.add_node(node->get_node_base_interface());
+    exec.add_node(helper);
+    check.configure({node, "mock"}, commands, state);
+    pub = helper->create_publisher<policy_framework::msg::MockFault>(topic, 10);
+  }
+
+  void send(bool fault, const std::string & reaction = "", const std::string & reason = "")
+  {
+    for (int i = 0; i < 100 && pub->get_subscription_count() == 0; ++i) {spin_for(10);}
+    policy_framework::msg::MockFault msg;
+    msg.fault = fault;
+    msg.reaction = reaction;
+    msg.reason = reason;
+    pub->publish(msg);
+    spin_for(100);
+  }
+
+  void spin_for(int ms)
+  {
+    const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+    while (std::chrono::steady_clock::now() < end) {exec.spin_some();}
+  }
+
+  policy_framework::SafetyCheck::Verdict check_now() {return check.check(state, 0.0, reason);}
+
+  rclcpp_lifecycle::LifecycleNode::SharedPtr node;
+  rclcpp::Node::SharedPtr helper;
+  rclcpp::executors::SingleThreadedExecutor exec;
+  rclcpp::Publisher<policy_framework::msg::MockFault>::SharedPtr pub;
+  policy_framework::MockSafetyCheck check;
+  DataStore commands;
+  DataStore state;
+  std::string reason;
+};
+
+}  // namespace
+
+TEST_F(MockSafetyCheckTest, FailsWhileTheLatestMessageAsksForAFault)
+{
+  configure("/mock_fault");
+  EXPECT_TRUE(check_now().safe);  // nothing received
+  EXPECT_TRUE(check.possible_reactions().empty());
+
+  send(true, "", "operator test");
+  auto verdict = check_now();
+  EXPECT_FALSE(verdict.safe);
+  EXPECT_FALSE(verdict.reaction.has_value());  // the check's on_fault
+  EXPECT_NE(reason.find("operator test"), std::string::npos);
+  EXPECT_FALSE(check_now().safe);  // until told otherwise
+
+  send(false);
+  EXPECT_TRUE(check_now().safe);
+}
+
+TEST_F(MockSafetyCheckTest, AsksForTheReactionOfTheMessage)
+{
+  configure("/mock_fault_reaction", {{"mock.reactions", StringArray{"damp", "safe"}}});
+  const auto declared = check.possible_reactions();
+  EXPECT_EQ(declared, (std::vector<FaultReaction>{FaultReaction::DAMP, FaultReaction::SAFE}));
+  send(true, "safe");
+  EXPECT_EQ(check_now().reaction, FaultReaction::SAFE);
+}
+
+TEST_F(MockSafetyCheckTest, AnUnknownReactionAsksForAnError)
+{
+  configure("/mock_fault_unknown");
+  send(true, "explode");
+  const auto verdict = check_now();
+  EXPECT_FALSE(verdict.safe);
+  EXPECT_EQ(verdict.reaction, FaultReaction::ERROR);
+  EXPECT_NE(reason.find("explode"), std::string::npos);
+}
+
+TEST_F(MockSafetyCheckTest, RejectsUnknownDeclaredReactions)
+{
+  EXPECT_ANY_THROW(configure("/mock_fault_bad", {{"mock.reactions", StringArray{"explode"}}}));
+}
 
 int main(int argc, char ** argv)
 {

@@ -35,4 +35,7 @@
   <class name="policy_framework/JumpCheck" type="policy_framework::JumpCheck" base_class_type="policy_framework::SafetyCheck">
     <description>Fails when a state entry &lt;prefix&gt;/&lt;interface&gt; changes more than its max_delta between two cycles (e.g. an encoder glitch).</description>
   </class>
+  <class name="policy_framework/MockSafetyCheck" type="policy_framework::MockSafetyCheck" base_class_type="policy_framework::SafetyCheck">
+    <description>Fails on request from a policy_framework/msg/MockFault topic, to test the fault reactions.</description>
+  </class>
 </library>
