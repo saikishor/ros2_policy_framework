@@ -17,12 +17,20 @@ From activation to deactivation
      hold [label="Hold\nexecutors keep the robot\nwhere it is", fillcolor="#fff6d9"];
      run [label="Run\nexecutors follow\nthe policy's commands", fillcolor="#e8f5e9"];
      safe [label="Safe values\nzero effort", fillcolor="#fde8e8"];
+     fault [label="Fault reaction\nhold, damp or safe,\nuntil reactivated", fillcolor="#fde8e8"];
+     error [label="Error\ndeactivated by the controller\nmanager, fallback controllers", fillcolor="#fde8e8"];
      start -> hold [label="activate"];
      hold -> run [label="first commands\nfrom the policy"];
      run -> run [label="policy waits for data:\nkeep the last commands"];
-     run -> safe [label="a stage fails (or NaN),\nor interfaces unreadable"];
+     hold -> fault [label="latched fault\n(error: to Error)"];
+     run -> fault [label="latched fault\n(a check, or a failed step)"];
+     fault -> fault [label="escalates"];
+     run -> error [label="reaction error, or\ninterfaces unreadable"];
+     fault -> error [label="escalates to error"];
+     error -> safe;
      hold -> safe [label="deactivate"];
      run -> safe [label="deactivate"];
+     fault -> safe [label="deactivate"];
    }
 
 Hold
@@ -49,13 +57,15 @@ step has to wait for data, the last commands stay applied.
 Safe values
 ~~~~~~~~~~~
 
-When the controller is deactivated, when a stage of the policy fails, or when the state
-interfaces cannot be read (below), every executor writes its *safe values*: zero effort for
-``PdEffortExecutor``, nothing for ``ReferenceInterfaceExecutor``. In the failure cases
-``update()`` also returns an error to the controller manager.
+When the controller is deactivated, or when the state interfaces cannot be read (below),
+every executor writes its *safe values*: zero effort for ``PdEffortExecutor``, nothing for
+``ReferenceInterfaceExecutor``. When they cannot be read, ``update()`` also returns an error
+to the controller manager.
 
-A model that answers a non-finite value (NaN or infinity), as a diverged one does, counts as a
-failed stage: those values never reach the commands. The node sends nothing for that step.
+A stage of the policy that fails, including a model that answers a non-finite value (NaN or
+infinity) as a diverged one does, is a fault with the reaction ``on_policy_failure`` (default
+``error``: the safe values and an error; see `Fault reactions`_). Its values never reach the
+commands.
 
 Inputs that are missing or late
 -------------------------------
@@ -159,8 +169,8 @@ jump. Do not use it on values that wrap, such as the position of a continuous jo
 
 They are listed in ``safety_checks``, each with its ``type`` and its reaction ``on_fault``
 (default ``error``, see `Fault reactions`_). ``policy_node`` runs them on every tick, before the policy step.
-``PolicyController`` loads them and claims what they read, but does not run them yet (it
-warns about it).
+``PolicyController`` runs them on every update, before the policy, and claims what they read
+as state interfaces.
 
 Safety monitor
 --------------
@@ -202,7 +212,7 @@ Its parameters are ``safety.max_tilt`` with ``safety.imu``, ``safety.joint_posit
 (the limits of the robot description) with ``safety.position_margin``, and
 ``safety.max_input_age``; each check has its reaction (``safety.tilt_on_fault``,
 ``safety.joint_position_on_fault``, ``safety.input_age_on_fault``, default ``error``).
-``policy_node`` runs it with the safety checks; ``PolicyController`` does not yet.
+Both hosts run it with the safety checks.
 
 Fault reactions
 ---------------
@@ -364,8 +374,12 @@ Unreadable state interfaces in the controller still return an error.
 - ``policy_node`` does not own the hardware: every latched reaction (anything but
   ``neutral_commands``) stops the commands until the node is reactivated; neutral commands keep
   the policy running.
-- ``PolicyController`` does not use the reactions yet; the executors implement them
-  (``InterfaceExecutor::fault()``).
+- ``PolicyController`` refuses, while configuring, a reaction of the configuration that one
+  of its executors cannot apply. While a reaction is latched it neither steps nor follows the
+  policy: on every update its executors write the reaction (``InterfaceExecutor::fault()``),
+  or, for ``error``, their safe values, and ``update()`` returns an error: the controller
+  manager deactivates the controller and activates its ``fallback_controllers``. With
+  ``async_inference`` a step still running is ignored.
 
 What the framework does not do
 ------------------------------

@@ -310,8 +310,8 @@ public:
  * Ordered from the most control kept to the least: a host only ever escalates to a later
  * reaction. NEUTRAL_COMMANDS lifts as soon as no fault asks for it any more; every other
  * reaction is latched until the host is reactivated. PolicyRunner::update_safety() applies
- * them; policy_node stops its commands on a latched one, PolicyController does not use them
- * yet.
+ * them; policy_node stops its commands on a latched one, PolicyController makes its executors
+ * apply it (InterfaceExecutor::fault()) or returns an error.
  */
 enum class FaultReaction
 {

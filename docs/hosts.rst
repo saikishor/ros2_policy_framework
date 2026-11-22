@@ -64,11 +64,16 @@ in the control loop.
        label="PolicyController (update at update_rate)"; style="rounded,dashed"; fontname="Helvetica";
        read [label="Read state\ninterfaces"];
        sources [label="Input sources"];
+       safety [label="Safety checks\n(every update)", fillcolor="#fff6d9"];
        policy [label="Active policy\n(every N updates)"];
        execs [label="Interface executors\n(every update)"];
-       read -> policy;
-       sources -> policy;
+       fault [label="Fault reaction\nexecutors hold, damp or zero;\nor an error", fillcolor="#fde8e8"];
+       read -> safety;
+       sources -> safety;
+       safety -> policy;
        policy -> execs;
+       safety -> fault [label="latched fault"];
+       policy -> fault [label="step fails"];
        read -> execs [label="joint feedback", style=dashed];
      }
      hw_out [label="Command interfaces\n(joint efforts)", shape=plaintext, fillcolor=none];
@@ -86,6 +91,11 @@ in the control loop.
   interfaces of a chained controller.
 - **Two rates in one loop.** The executors run on every update, the policy only every
   ``update_rate / policy_rate`` updates.
+- **Safety.** The safety checks run on every update, before the policy. While a reaction is
+  latched the policy is neither stepped nor followed: the executors write their fault
+  reaction (hold, damp, zero) on every update, or the controller returns an error so that the
+  controller manager deactivates it and activates its fallback controllers
+  (:doc:`safety`).
 
 Two rates
 ---------
@@ -139,7 +149,9 @@ With ``async_inference`` a policy step is spread over several updates:
        tick [label="Policy tick:\ncopy the state,\ntrigger a step"];
        between [label="Following updates:\nexecutors keep using\nthe previous commands"];
        collect [label="First update after\nthe step finished:\ntake its commands"];
+       fault [label="Latched fault:\nno tick, no collect;\nexecutors write\ntheir fault reaction", fillcolor="#fde8e8"];
        tick -> between -> collect;
+       between -> fault [style=dashed];
      }
      subgraph cluster_thread {
        label="Inference thread"; style="rounded,dashed"; fontname="Helvetica";
@@ -148,6 +160,9 @@ With ``async_inference`` a policy step is spread over several updates:
      tick -> step [label="state snapshot"];
      step -> collect [label="commands"];
    }
+
+A fault does not wait for the inference thread either: from the update in which it is
+latched, the executors write its reaction, and a step still running is ignored.
 
 The step works on a *snapshot* of the state store taken at the policy tick, so it sees one
 consistent instant even though the control loop keeps updating the live store. If a policy

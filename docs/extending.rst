@@ -64,8 +64,7 @@ Which plugin to write
        optionally the reaction to a fault
      - ``StateBoundsCheck``, ``JumpCheck``
 
-``policy_node`` runs the ``SafetyCheck`` plugins; ``PolicyController`` does not yet
-(:doc:`safety`).
+Both hosts run the ``SafetyCheck`` plugins (:doc:`safety`).
 
 The base classes are in ``policy_framework/plugin_interfaces.hpp`` and
 ``policy_framework/observation_term.hpp``, each method documented there.
@@ -293,7 +292,8 @@ the situations described in the other pages:
    * - ``InterfaceExecutor::fault()``
      - The values of a fault reaction (``HOLD``, ``DAMP`` or ``SAFE``, :doc:`safety`), on every
        update while faulted. Default: the safe values. ``supports_fault_reaction()`` tells
-       which reactions the configuration allows. ``PolicyController`` does not call them yet.
+       which reactions the configuration allows; ``PolicyController`` refuses to configure
+       with one an executor does not support.
    * - ``CommandGate::open()``
      - Check it in any plugin that feeds user commands, and use a neutral command while it
        is false: the safety entry is 0, or the ``NEUTRAL_COMMANDS`` fault reaction is active

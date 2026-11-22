@@ -128,11 +128,16 @@ or, chaining into a pid_controller that closes the loop:
     the policy provides before its first step (`gains_as_commands`) or its `stiffness`/`damping`
     parameters; `ReferenceInterfaceExecutor` writes nothing (the chained controller holds).
     After that, a step waiting for data keeps the last commands.
-  - *Safe values*: on deactivation and when a stage fails, including a model answering a
-    non-finite value (NaN or infinity), which never reaches the commands (`update()` returns
-    `ERROR`), each
-    executor writes its safe values: zero effort for `PdEffortExecutor`, nothing for
-    `ReferenceInterfaceExecutor`.
+  - *Safe values*: on deactivation each executor writes its safe values: zero effort for
+    `PdEffortExecutor`, nothing for `ReferenceInterfaceExecutor`.
+  - *Fault reactions*: the safety checks run on every update, before the policy. A failing
+    check applies its reaction; a failed policy step (including a non-finite model output,
+    which never reaches the commands) applies `on_policy_failure`. While a reaction other than
+    `neutral_commands` is latched the policy is neither stepped nor followed: the executors
+    write `hold`, `damp` or `safe` on every update until the controller is reactivated, or for
+    `error` they write their safe values and `update()` returns `ERROR` (the controller manager
+    deactivates the controller and activates its `fallback_controllers`). A reaction an
+    executor cannot apply is refused while configuring. See `docs/safety.rst`.
   - *Unreadable state interfaces* (locked by their writer, e.g. an asynchronous hardware
     component): the previous value is used for up to `max_failed_reads` consecutive updates;
     one more writes the safe values and returns `ERROR`.
@@ -226,9 +231,9 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/TwistSource` | InputSource | `topic`, `timeout` (1.0 s, ≤ 0 disables) → `<name>/linear.*`, `angular.*`; zero when absent or stale |
 | `policy_framework/OdometrySource` | InputSource | `topic` → `<name>/position.*`, `orientation.*`, `linear.*`, `angular.*` |
 | `policy_framework/MultiDofCommandExecutor` | Executor (node) | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`, empty: 0); drops a message while the previous one is being published |
-| `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions (not called by `PolicyController` yet): `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; a joint with a missing or non-finite value is left unchanged |
-| `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `<interface>.hysteresis` (0: once failed, passes again only within the bounds narrowed by it), `trigger_cycles` (1), `escalation.count` (0: never) / `escalation.on_fault` (`error`): from that many entries failing at once, asks for that reaction instead of its `on_fault`; a non-finite value is out of bounds, an entry never received is not checked. Run by `policy_node`, not by `PolicyController` yet |
-| `policy_framework/JumpCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.max_delta` (required): fails on a change above it between two cycles (e.g. an encoder glitch) or a non-finite value; do not use on wrapping values. Run by `policy_node`, not by `PolicyController` yet |
+| `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions: `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; a joint with a missing or non-finite value is left unchanged |
+| `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `<interface>.hysteresis` (0: once failed, passes again only within the bounds narrowed by it), `trigger_cycles` (1), `escalation.count` (0: never) / `escalation.on_fault` (`error`): from that many entries failing at once, asks for that reaction instead of its `on_fault`; a non-finite value is out of bounds, an entry never received is not checked |
+| `policy_framework/JumpCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.max_delta` (required): fails on a change above it between two cycles (e.g. an encoder glitch) or a non-finite value; do not use on wrapping values |
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
@@ -401,14 +406,14 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
   `InterfaceExecutor::hold` computes the values that keep the robot still until then.
   `InterfaceExecutor::fault` computes the values of a fault reaction (`HOLD`, `DAMP`, `SAFE`;
   default: the safe values) and `supports_fault_reaction` says which ones the configuration
-  allows; `PolicyController` does not call them yet.
+  allows (`PolicyController` refuses to configure with one an executor does not support).
 - A plugin that feeds user commands to a policy checks `CommandGate::open(state)` and uses its
   neutral command while it is false (`safety_entry`, or the `NEUTRAL_COMMANDS` fault reaction).
 - A `SafetyCheck` registers the state entries it reads in `configure()` and returns a `Verdict`
   from `check()`: `safe`, and when it is not, an optional `reaction`; it writes the reason only
   on failure (no allocation while it passes). Its reaction is configured per instance
   (`on_fault`); the `Verdict` may ask for another one among those `possible_reactions()` returns
-  once configured. `policy_node` runs the safety checks; `PolicyController` does not yet.
+  once configured. Both hosts run the safety checks on every cycle, before the policy.
 - `InputSource` callbacks never touch the store: buffer the message (`LatestMessage`) and copy it
   in `read()`.
 - Keep stamps flowing (see [Timestamps](#timestamps)). `policy_framework_mjlab` is a complete
