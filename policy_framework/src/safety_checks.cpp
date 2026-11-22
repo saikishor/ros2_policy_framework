@@ -43,8 +43,15 @@ void StateBoundsCheck::configure(const PluginContext & ctx, const DataStore &, D
   }
 }
 
-bool StateBoundsCheck::check(const DataStore & state, double, std::string & reason)
+SafetyCheck::Verdict StateBoundsCheck::check(
+  const DataStore & state, double, std::string & reason)
 {
+  // Every entry is evaluated, also after a failing one, to count the failing entries and keep
+  // the counters of all of them current.
+  int failing = 0;
+  const Entry * first = nullptr;
+  double first_value = 0.0;
+  double first_margin = 0.0;
   for (auto & e : entries_) {
     if (!state.received(e.index)) {continue;}
     const double v = state.get(e.index);
@@ -55,13 +62,21 @@ bool StateBoundsCheck::check(const DataStore & state, double, std::string & reas
       e.failed = false;
     } else if (e.failed || ++e.violations >= trigger_cycles_) {
       e.failed = true;
-      // The bounds it has to be back within: narrowed by the hysteresis once it failed.
-      reason = state.names()[e.index] + " is " + std::to_string(v) + ", outside [" +
-        std::to_string(e.min + margin) + ", " + std::to_string(e.max - margin) + "]";
-      return false;
+      if (!first) {
+        first = &e;
+        first_value = v;
+        first_margin = margin;
+      }
+      ++failing;
     }
   }
-  return true;
+  if (!first) {return {};}
+  // The bounds it has to be back within: narrowed by the hysteresis once it failed.
+  reason = state.names()[first->index] + " is " + std::to_string(first_value) + ", outside [" +
+    std::to_string(first->min + first_margin) + ", " + std::to_string(first->max - first_margin) +
+    "]";
+  if (failing > 1) {reason += " (" + std::to_string(failing) + " entries failing)";}
+  return {false, std::nullopt};
 }
 
 void StateBoundsCheck::reset()
@@ -89,7 +104,7 @@ void JumpCheck::configure(const PluginContext & ctx, const DataStore &, DataStor
   }
 }
 
-bool JumpCheck::check(const DataStore & state, double, std::string & reason)
+SafetyCheck::Verdict JumpCheck::check(const DataStore & state, double, std::string & reason)
 {
   for (auto & e : entries_) {
     if (!state.received(e.index)) {continue;}
@@ -98,12 +113,12 @@ bool JumpCheck::check(const DataStore & state, double, std::string & reason)
     if (!std::isfinite(v) || (e.has_previous && !(std::abs(v - e.previous) <= e.max_delta))) {
       reason = state.names()[e.index] + " jumped from " + std::to_string(e.previous) + " to " +
         std::to_string(v) + ", more than " + std::to_string(e.max_delta);
-      return false;
+      return {false, std::nullopt};
     }
     e.previous = v;
     e.has_previous = true;
   }
-  return true;
+  return {};
 }
 
 void JumpCheck::reset()
