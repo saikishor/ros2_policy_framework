@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -17,6 +18,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 
+using policy_framework::FaultReaction;
 using policy_framework::PolicyPipeline;
 using policy_framework::PolicyRunner;
 using StringArray = std::vector<std::string>;
@@ -129,6 +131,163 @@ TEST_F(PolicyRunnerTest, ReportsStateEntriesNoSourceProvides)
   params.push_back({"js.joints", StringArray{"j1", "j2"}});
   configure(params);
   EXPECT_EQ(runner.unprovided_state(), StringArray{"j3/position"});
+}
+
+// Two StateBoundsCheck instances on entries no source provides, set directly in the state.
+std::vector<rclcpp::Parameter> safety_params(
+  const std::string & topic, const std::string & hot_reaction, const std::string & error_reaction)
+{
+  auto params = runner_params(topic);
+  const std::vector<rclcpp::Parameter> more = {
+    {"safety_checks", StringArray{"hot", "errors"}},
+    {"hot.type", "policy_framework/StateBoundsCheck"},
+    {"hot.prefixes", StringArray{"j1"}},
+    {"hot.interfaces", StringArray{"temperature"}},
+    {"hot.temperature.max", 80.0},
+    {"hot.on_fault", hot_reaction},
+    {"errors.type", "policy_framework/StateBoundsCheck"},
+    {"errors.prefixes", StringArray{"j1", "j2"}},
+    {"errors.interfaces", StringArray{"error_code"}},
+    {"errors.error_code.min", 0.0},
+    {"errors.error_code.max", 0.0},
+    {"errors.on_fault", error_reaction},
+  };
+  params.insert(params.end(), more.begin(), more.end());
+  return params;
+}
+
+class RunnerSafetyTest : public PolicyRunnerTest
+{
+protected:
+  void set(const std::string & name, double v)
+  {
+    runner.state().set(runner.state().index(name), v, 1.0);
+  }
+  double neutral()
+  {
+    return runner.state().get(runner.state().index(policy_framework::kNeutralCommandsEntry));
+  }
+};
+
+TEST_F(RunnerSafetyTest, LoadsTheSafetyChecksAndRegistersWhatTheyRead)
+{
+  configure(safety_params("/runner_safety_load", "neutral_commands", "error"));
+  const auto missing = runner.unprovided_state();
+  for (const auto * n : {"j1/temperature", "j1/error_code", "j2/error_code"}) {
+    EXPECT_NE(std::find(missing.begin(), missing.end(), n), missing.end()) << n;
+  }
+  const auto reactions = runner.fault_reactions();
+  for (const auto r : {FaultReaction::NEUTRAL_COMMANDS, FaultReaction::ERROR}) {
+    EXPECT_NE(std::find(reactions.begin(), reactions.end(), r), reactions.end());
+  }
+}
+
+TEST_F(RunnerSafetyTest, NeutralCommandsLiftOnceTheCheckPassesAgain)
+{
+  configure(safety_params("/runner_safety_neutral", "neutral_commands", "error"));
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());  // nothing received: nothing to check
+  set("j1/temperature", 85.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);
+  EXPECT_DOUBLE_EQ(neutral(), 1.0);
+  set("j1/temperature", 70.0);
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
+  EXPECT_DOUBLE_EQ(neutral(), 0.0);
+}
+
+TEST_F(RunnerSafetyTest, OtherReactionsAreLatchedUntilRestarted)
+{
+  configure(safety_params("/runner_safety_latch", "damp", "error"));
+  set("j1/temperature", 85.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::DAMP);
+  set("j1/temperature", 70.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::DAMP);
+  runner.restart();
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
+}
+
+TEST_F(RunnerSafetyTest, OnlyEverEscalatesAndTheMostSevereFailingCheckWins)
+{
+  configure(safety_params("/runner_safety_escalate", "neutral_commands", "safe"));
+  set("j1/temperature", 85.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);
+  set("j2/error_code", 3.0);  // both fail: SAFE is more severe
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::SAFE);
+  EXPECT_DOUBLE_EQ(neutral(), 0.0);  // latched: the policy is not followed any more
+  set("j2/error_code", 0.0);
+  set("j1/temperature", 70.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::SAFE);  // never back
+}
+
+TEST_F(RunnerSafetyTest, UsesOnFaultForAChecksWithoutItsOwnAndForHostFaults)
+{
+  auto params = safety_params("/runner_safety_default", "", "");
+  params.push_back({"on_fault", "hold"});
+  configure(params);
+  set("j1/error_code", 1.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::HOLD);
+  runner.restart();
+  set("j1/error_code", 0.0);
+  EXPECT_EQ(runner.fault("The policy step failed"), FaultReaction::HOLD);
+}
+
+TEST_F(RunnerSafetyTest, AHostFaultIsAnErrorWhenOnFaultIsNeutralCommands)
+{
+  // Neutral commands keep the policy running: no answer when the policy itself failed.
+  auto params = runner_params("/runner_safety_host");
+  params.push_back({"on_fault", "neutral_commands"});
+  configure(params);
+  EXPECT_EQ(runner.fault("The policy step failed"), FaultReaction::ERROR);
+}
+
+TEST_F(RunnerSafetyTest, AsksForTheReactionOfTheVerdictWhenDeclared)
+{
+  auto params = safety_params("/runner_safety_verdict", "neutral_commands", "neutral_commands");
+  params.push_back({"errors.escalation.count", 2});
+  params.push_back({"errors.escalation.on_fault", "error"});
+  configure(params);
+  const auto reactions = runner.fault_reactions();
+  EXPECT_NE(std::find(reactions.begin(), reactions.end(), FaultReaction::ERROR), reactions.end());
+  set("j1/error_code", 1.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);
+  set("j2/error_code", 1.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::ERROR);
+}
+
+TEST(PolicyRunnerReaction, AnUndeclaredReactionOfAVerdictIsAnError)
+{
+  using policy_framework::SafetyCheck;
+  const std::vector<FaultReaction> declared{FaultReaction::DAMP};
+  EXPECT_EQ(
+    PolicyRunner::reaction_of({false, std::nullopt}, FaultReaction::HOLD, declared),
+    FaultReaction::HOLD);
+  EXPECT_EQ(
+    PolicyRunner::reaction_of({false, FaultReaction::DAMP}, FaultReaction::HOLD, declared),
+    FaultReaction::DAMP);
+  EXPECT_EQ(
+    PolicyRunner::reaction_of({false, FaultReaction::SAFE}, FaultReaction::HOLD, declared),
+    FaultReaction::ERROR);
+}
+
+TEST_F(RunnerSafetyTest, RunsTheMonitorWithItsOwnReactions)
+{
+  auto params = runner_params("/runner_safety_monitor");
+  params.push_back({"safety.max_input_age", 0.2});
+  params.push_back({"safety.input_age_on_fault", "safe"});
+  configure(params);
+  EXPECT_FALSE(runner.update_safety(9.9, 10.0).has_value());
+  EXPECT_EQ(runner.update_safety(9.7, 10.0), FaultReaction::SAFE);
+}
+
+TEST_F(RunnerSafetyTest, JointPositionLimitsNeedARobotDescription)
+{
+  auto params = runner_params("/runner_safety_limits");
+  params.push_back({"safety.joint_position_limits", true});
+  EXPECT_ANY_THROW(configure(params));
+}
+
+TEST_F(RunnerSafetyTest, RejectsAnUnknownReactionName)
+{
+  EXPECT_ANY_THROW(configure(safety_params("/runner_safety_unknown", "explode", "error")));
 }
 
 TEST_F(PolicyRunnerTest, SetsNeutralCommandsInTheStateUntilRestarted)

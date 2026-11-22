@@ -35,6 +35,7 @@ void PolicyRunner::configure(
   // Reconfiguration starts from scratch: drop plugins before their loaders.
   sources_.clear();
   executors_.clear();
+  checks_.clear();
   kinematics_ = KinematicsFeed();
   policy_kinematics_ = KinematicsFeed();
   pipeline_ = std::make_unique<PolicyPipeline>();
@@ -45,6 +46,7 @@ void PolicyRunner::configure(
   inference_loader_ = make_loader<Inference>("Inference");
   postprocessor_loader_ = make_loader<Postprocessor>("Postprocessor");
   executor_loader_ = make_loader<Executor>("Executor");
+  safety_check_loader_ = make_loader<SafetyCheck>("SafetyCheck");
 
   // Declares and validates sources, policies, executors and their per-name parameters.
   const auto params = policy_runner::ParamListener(node).get_params();
@@ -99,6 +101,8 @@ void PolicyRunner::configure(
     }
   }
 
+  configure_safety(node, params, robot_description);
+
   switch_service_ = node->create_service<srv::SwitchPolicy>(
     "~/switch_policy",
     [this](
@@ -108,11 +112,154 @@ void PolicyRunner::configure(
       RCLCPP_INFO(logger_, "switch_policy: %s", res->message.c_str());
     });
 
+  latched_.reset();
+  reported_.reset();
   last_status_ = PolicyPipeline::Status::OK;
   last_policy_.clear();
   RCLCPP_INFO(
     logger, "%zu state entries, %zu command entries, active policy '%s'", state_.size(),
     commands_.size(), pipeline_->active_policy().c_str());
+}
+
+void PolicyRunner::configure_safety(
+  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const policy_runner::Params & params,
+  const std::string & robot_description)
+{
+  // The parameter validation allows only the reaction names: the lookups cannot fail.
+  on_fault_ = *fault_reaction_from_string(params.on_fault);
+  const auto reaction = [this](const std::string & name) {
+      return name.empty() ? on_fault_ : *fault_reaction_from_string(name);
+    };
+  const auto & s = params.safety;
+  tilt_on_fault_ = reaction(s.tilt_on_fault);
+  position_on_fault_ = reaction(s.joint_position_on_fault);
+  input_age_on_fault_ = reaction(s.input_age_on_fault);
+
+  // After the policies: the monitor checks the joints they command, and the plugins may look
+  // for command entries.
+  SafetyMonitor::Config config;
+  config.max_tilt = s.max_tilt;
+  config.imu = s.imu;
+  config.position_margin = s.position_margin;
+  config.max_input_age = s.max_input_age;
+  if (s.joint_position_limits) {
+    if (robot_description.empty()) {
+      throw std::runtime_error("safety.joint_position_limits needs a robot description");
+    }
+    config.joint_limits = SafetyMonitor::joint_limits(robot_description);
+  }
+  monitor_.configure(config, commands_, state_);
+  monitor_reactions_.clear();
+  if (s.max_tilt > 0.0) {monitor_reactions_.push_back(tilt_on_fault_);}
+  if (s.joint_position_limits) {monitor_reactions_.push_back(position_on_fault_);}
+  if (s.max_input_age > 0.0) {monitor_reactions_.push_back(input_age_on_fault_);}
+  monitor_enabled_ = !monitor_reactions_.empty();
+
+  for (const auto & name : params.safety_checks) {
+    const auto & entry = params.safety_checks_map.at(name);
+    Check c;
+    c.name = name;
+    c.check = safety_check_loader_->createSharedInstance(entry.type);
+    c.check->configure({node, name, kinematics_.model, params.safety_entry}, commands_, state_);
+    c.on_fault = reaction(entry.on_fault);
+    c.declared = c.check->possible_reactions();
+    RCLCPP_INFO(
+      logger_, "Safety check '%s' (%s), on_fault: %s", name.c_str(), entry.type.c_str(),
+      to_string(c.on_fault));
+    checks_.push_back(std::move(c));
+  }
+  // Reserved now, so that a failing check does not allocate for its reason in most cases.
+  reason_.reserve(256);
+  check_reason_.reserve(256);
+}
+
+void PolicyRunner::restart()
+{
+  pipeline_->restart();
+  pipeline_->write_initial_commands(commands_);
+  set_neutral_commands(false, 0.0);
+  latched_.reset();
+  reported_.reset();
+  for (auto & c : checks_) {c.check->reset();}
+}
+
+FaultReaction PolicyRunner::reaction_of(
+  const SafetyCheck::Verdict & verdict, FaultReaction configured,
+  const std::vector<FaultReaction> & declared)
+{
+  if (!verdict.reaction) {return configured;}
+  // An undeclared reaction was not checked against the executors while configuring.
+  return std::find(declared.begin(), declared.end(), *verdict.reaction) != declared.end() ?
+         *verdict.reaction : FaultReaction::ERROR;
+}
+
+std::vector<FaultReaction> PolicyRunner::fault_reactions() const
+{
+  std::vector<FaultReaction> all{on_fault_ == FaultReaction::NEUTRAL_COMMANDS ?
+    FaultReaction::ERROR : on_fault_};
+  all.insert(all.end(), monitor_reactions_.begin(), monitor_reactions_.end());
+  for (const auto & c : checks_) {
+    all.push_back(c.on_fault);
+    all.insert(all.end(), c.declared.begin(), c.declared.end());
+    // An undeclared reaction of a verdict becomes ERROR.
+    all.push_back(FaultReaction::ERROR);
+  }
+  std::sort(all.begin(), all.end());
+  all.erase(std::unique(all.begin(), all.end()), all.end());
+  return all;
+}
+
+std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stamp, double now)
+{
+  std::optional<FaultReaction> worst;
+  if (const auto v = monitor_.check(state_, observation_stamp, now)) {
+    worst = v->check == SafetyMonitor::Check::TILT ? tilt_on_fault_ :
+      v->check == SafetyMonitor::Check::JOINT_POSITION ? position_on_fault_ :
+      input_age_on_fault_;
+    reason_ = v->describe();
+  }
+  // Every check runs, also after a failing one: the most severe reaction wins.
+  for (auto & c : checks_) {
+    const auto verdict = c.check->check(state_, now, check_reason_);
+    if (verdict.safe) {continue;}
+    const auto r = reaction_of(verdict, c.on_fault, c.declared);
+    if (!worst || r > *worst) {
+      worst = r;
+      reason_ = c.name + ": " + check_reason_;
+    }
+  }
+  if (worst && *worst != FaultReaction::NEUTRAL_COMMANDS) {
+    escalate(*worst);
+  }
+  set_neutral_commands(!latched_ && worst == FaultReaction::NEUTRAL_COMMANDS, now);
+  const auto effective = latched_ ? latched_ : worst;
+  report(effective, reason_);
+  return effective;
+}
+
+FaultReaction PolicyRunner::fault(const std::string & reason)
+{
+  escalate(on_fault_ == FaultReaction::NEUTRAL_COMMANDS ? FaultReaction::ERROR : on_fault_);
+  report(latched_, reason);
+  return *latched_;
+}
+
+void PolicyRunner::escalate(FaultReaction reaction)
+{
+  if (!latched_ || reaction > *latched_) {latched_ = reaction;}
+}
+
+void PolicyRunner::report(std::optional<FaultReaction> effective, const std::string & reason)
+{
+  // ponytail: logs from the control cycle on changes only (rare), like step(); not real-time
+  // safe.
+  if (effective == reported_) {return;}
+  if (effective) {
+    RCLCPP_ERROR(logger_, "Safety: %s, reaction: %s", reason.c_str(), to_string(*effective));
+  } else {
+    RCLCPP_INFO(logger_, "Safety: every check passes again");
+  }
+  reported_ = effective;
 }
 
 std::vector<std::string> PolicyRunner::unprovided_state() const

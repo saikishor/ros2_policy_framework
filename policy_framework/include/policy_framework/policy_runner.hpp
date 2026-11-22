@@ -5,6 +5,7 @@
 #define POLICY_FRAMEWORK__POLICY_RUNNER_HPP_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,7 +15,13 @@
 #include "policy_framework/kinematics.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 #include "policy_framework/policy_pipeline.hpp"
+#include "policy_framework/safety_monitor.hpp"
 #include "policy_framework/srv/switch_policy.hpp"
+
+namespace policy_runner
+{
+struct Params;  // generated from the parameters, kept out of this header
+}  // namespace policy_runner
 
 namespace policy_framework
 {
@@ -35,6 +42,13 @@ namespace policy_framework
  *   plus the parameters of each of its plugins, also under `<policy>.`.
  * - `safety_entry` (string, default empty): state entry that is 0 while user commands must be
  *   ignored (see CommandGate), registered here and handed to the plugins.
+ * - `on_fault` (string, default `error`): reaction to a fault without one of its own (see
+ *   FaultReaction for the names and their order).
+ * - `safety.*`: the checks of a SafetyMonitor, all off by default (`max_tilt` with `imu`,
+ *   `joint_position_limits` with `position_margin`, `max_input_age`), each with an optional
+ *   reaction (`tilt_on_fault`, `joint_position_on_fault`, `input_age_on_fault`).
+ * - `safety_checks` (string array): SafetyCheck plugin names; each needs `<check>.type`, may
+ *   have `<check>.on_fault`, plus the parameters of the plugin under `<check>.`.
  * - `executors` (string array): executor names; each needs `<executor>.type` (plugin class).
  * - `kinematics.enabled`, `kinematics.joints`: optional whole-body Kinematics model, fed from
  *   the `<joint>/position` and `<joint>/velocity` state entries (registered here). The host
@@ -43,8 +57,9 @@ namespace policy_framework
  *   reads: the same model when the step runs in the host's thread, a second one updated by
  *   step() from its own state when it runs in another thread.
  *
- * A cycle: [controller: copy state interfaces] → read_sources() → update_kinematics() → step()
- * → node: write_executors() / controller: its InterfaceExecutors (after a successful step()).
+ * A cycle: [controller: copy state interfaces] → read_sources() → update_kinematics() →
+ * update_safety() → step() (unless a latched reaction is active) → node: write_executors() /
+ * controller: its InterfaceExecutors (after a successful step()).
  */
 class PolicyRunner
 {
@@ -69,12 +84,43 @@ public:
    * @brief Start over from the default policy with every policy cleared (at the next step()),
    *        and write its initial commands. Hosts call it when they are activated.
    */
-  void restart()
-  {
-    pipeline_->restart();
-    pipeline_->write_initial_commands(commands_);
-    set_neutral_commands(false, 0.0);
-  }
+  void restart();
+
+  /**
+   * @brief Run the `safety.*` checks and every `safety_checks` plugin on state(), and apply the
+   *        reaction of the most severe failing one. Hosts call it on every cycle, after
+   *        refreshing state() and the kinematics and before step().
+   *
+   * NEUTRAL_COMMANDS lasts while a failing check asks for it (set_neutral_commands()); every
+   * other reaction is latched until restart(), and only ever escalates. Changes are logged.
+   * Real-time safe while every check passes; a failing check builds its reason.
+   * @param observation_stamp Stamp of the observation of the last successful step (0: none).
+   * @param now Current time in seconds, on the clock of the state stamps.
+   * @return The reaction in effect: nothing when every check passes and nothing is latched.
+   */
+  std::optional<FaultReaction> update_safety(double observation_stamp, double now);
+
+  /**
+   * @brief Latch a fault of the host itself (a failed policy step, unreadable state
+   *        interfaces) with `on_fault`, or ERROR when `on_fault` is neutral_commands (the
+   *        policy, or what it reads, failed: it cannot keep running).
+   * @return The reaction in effect.
+   */
+  FaultReaction fault(const std::string & reason);
+
+  /// @return Every reaction the configuration can lead to, for hosts to check their support.
+  std::vector<FaultReaction> fault_reactions() const;
+
+  /// @return Whether any `safety.*` check or `safety_checks` plugin is configured.
+  bool has_safety_checks() const {return monitor_enabled_ || !checks_.empty();}
+
+  /**
+   * @return The reaction of a failed @p verdict: the one it asks for when @p declared has it,
+   *         ERROR when it does not, @p configured when it asks for none.
+   */
+  static FaultReaction reaction_of(
+    const SafetyCheck::Verdict & verdict, FaultReaction configured,
+    const std::vector<FaultReaction> & declared);
 
   /**
    * @brief Make the user command plugins use their neutral command (@p on true) or accept the
@@ -143,6 +189,7 @@ private:
   std::unique_ptr<pluginlib::ClassLoader<Inference>> inference_loader_;
   std::unique_ptr<pluginlib::ClassLoader<Postprocessor>> postprocessor_loader_;
   std::unique_ptr<pluginlib::ClassLoader<Executor>> executor_loader_;
+  std::unique_ptr<pluginlib::ClassLoader<SafetyCheck>> safety_check_loader_;
 
   KinematicsFeed kinematics_;         ///< Of state(), fed by update_kinematics().
   KinematicsFeed policy_kinematics_;  ///< Of the step's state; may share kinematics_'s model.
@@ -157,6 +204,36 @@ private:
   DataStore state_;
   DataStore commands_;
   rclcpp::Service<srv::SwitchPolicy>::SharedPtr switch_service_;
+
+  /// A loaded `safety_checks` plugin.
+  struct Check
+  {
+    std::string name;
+    std::shared_ptr<SafetyCheck> check;
+    FaultReaction on_fault;
+    std::vector<FaultReaction> declared;  ///< Its possible_reactions().
+  };
+  /// Load the monitor and the `safety_checks` plugins, after the policies.
+  void configure_safety(
+    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const policy_runner::Params & params,
+    const std::string & robot_description);
+  /// Escalate latched_ to @p reaction, never back.
+  void escalate(FaultReaction reaction);
+  /// Log a change of the reaction in effect, caused by @p reason.
+  void report(std::optional<FaultReaction> effective, const std::string & reason);
+
+  SafetyMonitor monitor_;
+  bool monitor_enabled_ = false;
+  FaultReaction on_fault_ = FaultReaction::ERROR;
+  FaultReaction tilt_on_fault_ = FaultReaction::ERROR;
+  FaultReaction position_on_fault_ = FaultReaction::ERROR;
+  FaultReaction input_age_on_fault_ = FaultReaction::ERROR;
+  std::vector<FaultReaction> monitor_reactions_;  ///< Of the enabled monitor checks.
+  std::vector<Check> checks_;
+  std::optional<FaultReaction> latched_;   ///< Latched reaction, until restart().
+  std::optional<FaultReaction> reported_;  ///< Reaction in effect when last logged.
+  std::string reason_;        ///< Of the most severe failing check of the current cycle.
+  std::string check_reason_;  ///< Written by a failing check.
 
   // Used only from step(), to log transitions once instead of every cycle.
   CommandGate command_gate_;

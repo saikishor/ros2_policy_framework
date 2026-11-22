@@ -337,6 +337,19 @@ inline std::optional<FaultReaction> fault_reaction_from_string(const std::string
   return std::nullopt;
 }
 
+/// @return The configuration name of @p reaction (see fault_reaction_from_string()).
+inline const char * to_string(FaultReaction reaction)
+{
+  switch (reaction) {
+    case FaultReaction::NEUTRAL_COMMANDS: return "neutral_commands";
+    case FaultReaction::HOLD: return "hold";
+    case FaultReaction::DAMP: return "damp";
+    case FaultReaction::SAFE: return "safe";
+    case FaultReaction::ERROR: return "error";
+  }
+  return "unknown";
+}
+
 /**
  * @brief Turns the commands into ros2_control command interface values, inside
  *        PolicyController (the controller's counterpart of the topic Executor, which only

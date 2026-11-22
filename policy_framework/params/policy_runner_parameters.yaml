@@ -57,6 +57,87 @@ policy_runner:
     default_value: ""
     description: "State entry (a state interface in PolicyController, e.g. rl_safety_controller/safe) that is 0 while user commands (velocity command, motion reference) must be ignored and replaced by neutral ones. Empty: always accepted."
     read_only: true
+  on_fault:
+    type: string
+    default_value: "error"
+    description: "Reaction to a fault without a reaction of its own: a safety check without on_fault, a failed policy step, unreadable state interfaces (neutral_commands: error for these two). From the most control kept to the least: neutral_commands, hold, damp, safe, error."
+    read_only: true
+    validation:
+      one_of<>: [["neutral_commands", "hold", "damp", "safe", "error"]]
+  safety:
+    max_tilt:
+      type: double
+      default_value: 0.0
+      description: "Largest angle (rad) between the IMU z axis and the vertical; 0: off."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
+    imu:
+      type: string
+      default_value: ""
+      description: "State entry prefix of the IMU orientation, <imu>/orientation.{x,y,z,w}; needed by max_tilt."
+      read_only: true
+    joint_position_limits:
+      type: bool
+      default_value: false
+      description: "Fault when a commanded joint leaves the position limits of the robot description, narrowed by position_margin."
+      read_only: true
+    position_margin:
+      type: double
+      default_value: 0.0
+      description: "Distance the commanded joints must keep from their position limits."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
+    max_input_age:
+      type: double
+      default_value: 0.0
+      description: "Largest age (s) of the observation of the last policy step; 0: off."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
+    tilt_on_fault:
+      type: string
+      default_value: ""
+      description: "Reaction to max_tilt; empty: on_fault."
+      read_only: true
+      validation:
+        one_of<>: [["", "neutral_commands", "hold", "damp", "safe", "error"]]
+    joint_position_on_fault:
+      type: string
+      default_value: ""
+      description: "Reaction to joint_position_limits; empty: on_fault."
+      read_only: true
+      validation:
+        one_of<>: [["", "neutral_commands", "hold", "damp", "safe", "error"]]
+    input_age_on_fault:
+      type: string
+      default_value: ""
+      description: "Reaction to max_input_age; empty: on_fault."
+      read_only: true
+      validation:
+        one_of<>: [["", "neutral_commands", "hold", "damp", "safe", "error"]]
+  safety_checks:
+    type: string_array
+    default_value: []
+    description: "SafetyCheck plugin names; each needs <check>.type, and may have <check>.on_fault."
+    read_only: true
+    validation:
+      unique<>: null
+  __map_safety_checks:
+    type:
+      type: string
+      description: "SafetyCheck plugin class of the check."
+      read_only: true
+      validation:
+        not_empty<>: null
+    on_fault:
+      type: string
+      default_value: ""
+      description: "Reaction to this check failing; empty: on_fault."
+      read_only: true
+      validation:
+        one_of<>: [["", "neutral_commands", "hold", "damp", "safe", "error"]]
   executors:
     type: string_array
     default_value: []
