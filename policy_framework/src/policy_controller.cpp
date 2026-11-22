@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <exception>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <memory>
@@ -122,6 +123,7 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
   if (executors_.empty()) {
     RCLCPP_WARN(get_node()->get_logger(), "No executors: the commands are not sent anywhere");
   }
+  register_input_ages();
   if (params.async_inference) {
     // Allocated here, so that the control loop only copies values.
     async_state_ = runner_->state();
@@ -194,6 +196,7 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
   inference_pending_ = false;
   observation_stamp_ = 0.0;
   fault_applied_.reset();
+  std::fill(input_ages_ms_.begin(), input_ages_ms_.end(), 0.0);
   runner_->restart();
   return CallbackReturn::SUCCESS;
 }
@@ -215,6 +218,50 @@ void PolicyController::apply_values()
       }
     }
   }
+}
+
+void PolicyController::register_input_ages()
+{
+  // The unregister macro names the registry key without its namespace.
+  using hardware_interface::DEFAULT_REGISTRY_KEY;
+  for (const auto & name : registered_ages_) {UNREGISTER_ROS2_CONTROL_INTROSPECTION(name);}
+  registered_ages_.clear();
+  input_age_names_.clear();
+  input_age_offsets_.clear();
+  for (const auto & p : runner_->policy_inputs()) {
+    input_age_offsets_.push_back(input_age_names_.size());
+    for (const auto & input : p.inputs) {input_age_names_.push_back(p.policy + "." + input);}
+  }
+  input_age_offsets_.push_back(input_age_names_.size());
+  // Sized once, before registering: the introspection keeps the addresses.
+  input_ages_ms_.assign(input_age_names_.size(), 0.0);
+  for (size_t i = 0; i < input_age_names_.size(); ++i) {
+    registered_ages_.push_back("input_age_ms." + input_age_names_[i]);
+    REGISTER_ROS2_CONTROL_INTROSPECTION(registered_ages_.back(), &input_ages_ms_[i]);
+  }
+}
+
+void PolicyController::update_input_ages(double now)
+{
+  std::fill(input_ages_ms_.begin(), input_ages_ms_.end(), 0.0);  // inactive policies: unknown
+  const auto & policies = runner_->policy_inputs();
+  const auto & active = runner_->pipeline().active_policy();
+  for (size_t k = 0; k < policies.size(); ++k) {
+    if (policies[k].policy != active) {continue;}
+    const auto & stamps = runner_->pipeline().input_stamps();
+    const size_t n = std::min(stamps.size(), input_age_offsets_[k + 1] - input_age_offsets_[k]);
+    for (size_t i = 0; i < n; ++i) {
+      input_ages_ms_[input_age_offsets_[k] + i] =
+        stamps[i].stamp > 0.0 ? (now - stamps[i].stamp) * 1e3 : 0.0;
+    }
+  }
+}
+
+double PolicyController::input_age_ms(const std::string & name) const
+{
+  const auto it = std::find(input_age_names_.begin(), input_age_names_.end(), name);
+  return it == input_age_names_.end() ? std::numeric_limits<double>::quiet_NaN() :
+         input_ages_ms_[static_cast<size_t>(it - input_age_names_.begin())];
 }
 
 controller_interface::return_type PolicyController::react(FaultReaction reaction)
@@ -288,7 +335,10 @@ controller_interface::return_type PolicyController::update(
       const double stamp = runner_->pipeline().observation_stamp();
       timing_.observation_age_ms =
         status == PolicyPipeline::Status::OK && stamp > 0.0 ? (now - stamp) * 1e3 : 0.0;
-      if (status == PolicyPipeline::Status::OK) {observation_stamp_ = stamp;}
+      if (status == PolicyPipeline::Status::OK) {
+        observation_stamp_ = stamp;
+        update_input_ages(now);
+      }
     };
   if (!inference_) {
     if (policy_tick) {

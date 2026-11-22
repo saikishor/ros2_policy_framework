@@ -567,6 +567,29 @@ TEST_F(ControllerSafetyTest, ReactsAtOnceWithAsyncInference)
   ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
 }
 
+TEST_F(PolicyControllerTest, PublishesTheAgeOfEachInputOfTheStep)
+{
+  init({{"policies", StringArray{"walk", "jump"}},
+    {"jump.preprocessor", "policy_framework/ConcatPreprocessor"},
+    {"jump.input_entries", StringArray{"j3/position", "j2/position", "j1/position"}},
+    {"jump.model_path", std::string(TEST_MODELS_DIR) + "/affine.onnx"},
+    {"jump.postprocessor", "policy_framework/SplitPostprocessor"},
+    {"jump.output_entries", StringArray{"j1/position", "j2/position"}}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  EXPECT_TRUE(std::isnan(controller.input_age_ms("walk.nothing")));  // not an input
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  // State interfaces are stamped when read, in this update: about 0 ms old.
+  const double age = controller.input_age_ms("walk.j1/position");
+  EXPECT_GE(age, 0.0);
+  EXPECT_LT(age, 1000.0);
+  EXPECT_DOUBLE_EQ(controller.input_age_ms("jump.j1/position"), 0.0);  // inactive: unknown
+}
+
 int main(int argc, char ** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

@@ -128,6 +128,15 @@ public:
    */
   static std::optional<size_t> stale_input(const InputStamps & stamps, double now);
 
+  /// The input names of every policy (from its preprocessor's input_stamps()), by policy.
+  struct PolicyInputs
+  {
+    std::string policy;
+    std::vector<std::string> inputs;
+  };
+  /// @return The inputs of every policy, in the order they were configured.
+  const std::vector<PolicyInputs> & policy_inputs() const {return policy_inputs_;}
+
   /// @return Every reaction the configuration can lead to, for hosts to check their support.
   std::vector<FaultReaction> fault_reactions() const;
 
@@ -263,6 +272,7 @@ private:
   };
   std::vector<SourceAge> source_ages_;
   std::vector<FaultReaction> input_age_reactions_;  ///< Of the inputs with a max_age.
+  std::vector<PolicyInputs> policy_inputs_;
   std::optional<FaultReaction> latched_;   ///< Latched reaction, until restart().
   std::optional<FaultReaction> reported_;  ///< Reaction in effect when last logged.
   std::string reason_;        ///< Of the most severe failing check of the current cycle.
