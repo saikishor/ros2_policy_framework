@@ -25,6 +25,7 @@ TEST(TwistCommandTerm, IsLinearXYAngularZOfTheTopicAndZeroWhenAbsentOrStale)
   DataStore state;
   TwistCommandTerm term;
   ASSERT_EQ(term.configure({node, "p.terms.command"}, ModelInfo{}, state), 3U);
+  EXPECT_TRUE(term.user_command());
 
   // A policy must not wait for a velocity command to start: ready and zero without one.
   float out[3] = {9.0F, 9.0F, 9.0F};
@@ -52,9 +53,11 @@ TEST(TwistCommandTerm, IsLinearXYAngularZOfTheTopicAndZeroWhenAbsentOrStale)
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     stamp = term.compute(state, TensorMap{}, out);
   }
-  // A received command is stamped with its receive time (a Twist has no header).
   EXPECT_GT(stamp, before);
-  EXPECT_LE(stamp, node->now().seconds());
+  EXPECT_FLOAT_EQ(out[0], 0.6F);
+  // A Twist has no header: the command in effect is stamped now, not with its receive time.
+  const double later = node->now().seconds();
+  EXPECT_GE(term.compute(state, TensorMap{}, out), later);
   EXPECT_FLOAT_EQ(out[0], 0.6F);
   EXPECT_FLOAT_EQ(out[1], -0.1F);
   EXPECT_FLOAT_EQ(out[2], 0.3F);
@@ -64,6 +67,17 @@ TEST(TwistCommandTerm, IsLinearXYAngularZOfTheTopicAndZeroWhenAbsentOrStale)
   EXPECT_GE(term.compute(state, TensorMap{}, out), before);
   EXPECT_FLOAT_EQ(out[0], 0.0F);
   EXPECT_FLOAT_EQ(out[2], 0.0F);
+}
+
+TEST(TwistCommandTerm, RejectsADisabledTimeout)
+{
+  // Without a timeout a lost operator would keep the last command applied for ever.
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({{"p.terms.command.timeout", 0.0}});
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_twist_no_timeout", opts);
+  DataStore state;
+  TwistCommandTerm term;
+  EXPECT_ANY_THROW(term.configure({node, "p.terms.command"}, ModelInfo{}, state));
 }
 
 TEST(TwistCommandTerm, IsZeroWhileTheSafetyEntryIsZero)

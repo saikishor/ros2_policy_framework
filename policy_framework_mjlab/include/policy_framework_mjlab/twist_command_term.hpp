@@ -14,30 +14,24 @@ namespace policy_framework_mjlab
  * @brief mjlab velocity `command` term (linear.x, linear.y, angular.z) read directly from a
  *        geometry_msgs/Twist topic, without going through the state store.
  *
- * Parameters (under `<policy>.terms.<term>.`): `topic` (default `cmd_vel`), `timeout` (seconds,
- * default 1.0, <= 0 disables it). Always ready: a command that never arrived, is older than
- * `timeout` or arrives while the host's `safety_entry` is 0 (policy_framework::CommandGate) is
- * zero, so a policy neither waits for a command nor acts on a stale or unsafe one.
- *
- * Stamp: the receive time (a Twist has no header); the current time for a zero command.
+ * A policy_framework::CommandTerm: parameters (under `<policy>.terms.<term>.`) `topic`
+ * (default `cmd_vel`) and `timeout` (seconds, default 1.0, above zero); zero velocity is its
+ * neutral command (no command, an old one, a closed CommandGate). Stamped now: a Twist has no
+ * header.
  */
-class TwistCommandTerm : public policy_framework::TopicTerm<geometry_msgs::msg::Twist>
+class TwistCommandTerm : public policy_framework::CommandTerm<geometry_msgs::msg::Twist>
 {
 public:
-  TwistCommandTerm() : TopicTerm("cmd_vel") {}
-  bool ready(const policy_framework::DataStore &) override {return true;}
-  double compute(
-    const policy_framework::DataStore & state, const policy_framework::TensorMap & last_outputs,
-    float * out) override;
+  TwistCommandTerm() : CommandTerm("cmd_vel", 1.0) {}
 
 protected:
-  size_t configure_term(
+  size_t configure_command(
     const policy_framework::PluginContext & ctx, const policy_framework::ModelInfo & model)
   override;
-
-private:
-  policy_framework::CommandGate gate_;
-  double timeout_ = 1.0;
+  void write_command(
+    const geometry_msgs::msg::Twist & msg, const policy_framework::DataStore & state,
+    float * out) override;
+  void write_neutral(const policy_framework::DataStore & state, float * out) override;
 };
 
 }  // namespace policy_framework_mjlab
