@@ -62,8 +62,8 @@ namespace policy_framework
  *   step() from its own state when it runs in another thread.
  *
  * A cycle: [controller: copy state interfaces] → read_sources() → update_kinematics() →
- * update_safety() → step() (unless a latched reaction is active) → node: write_executors() /
- * controller: its InterfaceExecutors (after a successful step()).
+ * update_safety() → step() (unless a latched reaction is active) → check_input_ages() (after a
+ * successful step) → node: write_executors() / controller: its InterfaceExecutors.
  */
 class PolicyRunner
 {

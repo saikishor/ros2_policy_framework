@@ -25,10 +25,11 @@ namespace policy_framework
  * - activate: starts the timer. Every activation starts from the default (first) policy with
  *   all policies cleared, even if a non-interruptible policy was active, and clears a fault.
  *
- * Safety (see PolicyRunner::update_safety()): the checks run on every tick, before the step. A
- * fault with a latched reaction (anything but neutral_commands), including a failed policy
- * step, stops the commands until the node is reactivated: the node does not own the hardware,
- * so it cannot hold or damp the robot.
+ * Safety (see PolicyRunner::update_safety()): the checks run on every tick, before the step,
+ * and the `max_age` of the step's inputs after it (PolicyRunner::check_input_ages()). A fault
+ * with a latched reaction (anything but neutral_commands), including a failed policy step or a
+ * stale input, stops the commands until the node is reactivated: the node does not own the
+ * hardware, so it cannot hold or damp the robot.
  * - deactivate: stops the timer.
  */
 class PolicyNode : public rclcpp_lifecycle::LifecycleNode
