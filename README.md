@@ -164,7 +164,7 @@ name. Write floating point values with a decimal point (`50.0`).
 
 | Parameter | Description |
 |-----------|-------------|
-| `sources` | Input source names; each needs `<source>.type` |
+| `sources` | Input source names; each needs `<source>.type`, may have `<source>.max_age` (s, default 0: off; a fault when its latest message arrived longer ago, on the receive time) with the reaction `<source>.max_age_on_fault` (default `error`); not for a command source, whose timeout handles a stopped operator |
 | `policies` | Policy names (required); the first one is the default |
 | `<policy>.preprocessor` / `.postprocessor` | Plugin classes (required) |
 | `<policy>.inference` | Plugin class, default `policy_framework/OnnxInference` |
@@ -421,7 +421,8 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
   (`on_fault`); the `Verdict` may ask for another one among those `possible_reactions()` returns
   once configured. Both hosts run the safety checks on every cycle, before the policy.
 - `InputSource` callbacks never touch the store: buffer the message (`LatestMessage`) and copy it
-  in `read()`.
+  in `read()`. An `InputSource` reports `receive_time()`, when its latest data arrived (0 before
+  any), for `<source>.max_age`; `TopicSource` does it for a topic.
 - Keep stamps flowing (see [Timestamps](#timestamps)). `policy_framework_mjlab` is a complete
   example.
 

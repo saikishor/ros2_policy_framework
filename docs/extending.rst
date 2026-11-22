@@ -327,6 +327,9 @@ the situations described in the other pages:
 
    * - Hook
      - When it is called, and what for
+   * - ``InputSource::receive_time()``
+     - Required: when the latest data arrived (0 before any), checked against the source's
+       ``max_age`` on every cycle (:doc:`safety`). ``TopicSource`` implements it.
    * - ``Preprocessor::clear()``
      - Before the first activation and when the host restarts: forget everything.
    * - ``Preprocessor::reset()``, ``Postprocessor::reset()``, ``ObservationTerm::reset()``

@@ -93,6 +93,9 @@ Inputs that are missing or late
    * - Inference is slower than ``policy_rate``, or its thread is busy for an instant, at a
        policy tick (``async_inference``)
      - The policy tick is skipped and a warning is logged. The executors keep running.
+   * - A source receives nothing any more (``<source>.max_age``)
+     - Once its latest message arrived longer ago than this many seconds, it is a fault, with
+       the reaction ``<source>.max_age_on_fault`` (default ``error``). Off by default.
 
 The safety entry
 ----------------
@@ -215,6 +218,37 @@ Its parameters are ``safety.max_tilt`` with ``safety.imu``, ``safety.joint_posit
 ``safety.max_input_age``; each check has its reaction (``safety.tilt_on_fault``,
 ``safety.joint_position_on_fault``, ``safety.input_age_on_fault``, default ``error``).
 Both hosts run it with the safety checks.
+
+Stale inputs: ``max_input_age`` or ``max_age``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Two settings catch inputs that stopped, and they answer different questions:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 40 40
+
+   * -
+     - ``safety.max_input_age``
+     - ``<source>.max_age``
+   * - Question
+     - How old is the observation the policy last acted on?
+     - When did this source last receive a message?
+   * - Measured on
+     - The stamps of the step's inputs (header stamps, so the publishers' clocks must agree),
+       user commands excluded
+     - The receive time, on the node clock: whatever clock the publisher stamps with
+   * - Limit
+     - One for the whole observation: it has to allow for the slowest input
+     - One per source, e.g. 20 ms for the IMU and 200 ms for a slow estimator
+   * - Also catches
+     - A stuck inference thread: no new observation is acted on
+     - A source the policy does not read any more, e.g. after switching policies
+
+Use ``max_age`` for each sensor topic, with a limit that suits its rate, and
+``max_input_age`` as a looser check of the whole observation. Do not set ``max_age`` on a
+source of user commands (``TwistSource``): an operator who stops sending is normal, and the
+source's ``timeout`` already turns that into a neutral command.
 
 Fault reactions
 ---------------
