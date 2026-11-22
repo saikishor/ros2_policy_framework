@@ -38,7 +38,7 @@ preprocessor keeps the history and lays everything out in the input tensor.
      edge [fontname="Helvetica", fontsize=10];
      state [label="State store", shape=cylinder, fillcolor="#fff6d9"];
      prev [label="Previous outputs", shape=cylinder, fillcolor="#fff6d9"];
-     topic [label="Topic", shape=plaintext, fillcolor=none];
+     topic [label="State store, or a topic\n(TwistCommandTerm)", shape=plaintext, fillcolor=none];
      t1 [label="base_ang_vel\ncurrent value (3)"];
      t2 [label="joint_pos\ncurrent value (n)"];
      t3 [label="actions\ncurrent value (m)"];
@@ -78,6 +78,8 @@ The terms
      - Linear acceleration measured by the IMU
    * - ``projected_gravity``, ``imu_projected_gravity``
      - Direction of gravity in the IMU frame, from the IMU orientation
+   * - ``base_projected_gravity``
+     - Direction of gravity in the base frame (pal_mjlab, see below)
    * - ``base_lin_vel``
      - Linear velocity from an odometry source
    * - ``joint_pos``
@@ -90,6 +92,8 @@ The terms
      - The velocity the user asks for: forward, sideways, turning
    * - ``command`` of a motion policy
      - The joint reference the policy itself predicted at the previous step
+   * - ``motion_goal``
+     - The reference motion of a supermimic policy (pal_mjlab, see below)
 
 Any term can be replaced, and new ones added, without touching the preprocessor: set
 ``<policy>.terms.<name>.type`` to an ``ObservationTerm`` plugin. The Kangaroo configuration
@@ -233,4 +237,5 @@ It runs in three modes:
        as parameters
 
 The settings of each kind of policy are written once, in ``kangaroo_policies.yaml``, and
-shared by the three modes; the launch copies them into one policy per version. Only the host-specific file differs. The README has the commands.
+shared by the three modes; the launch copies them into one policy per version. Only the
+host-specific file differs. The README has the commands.
