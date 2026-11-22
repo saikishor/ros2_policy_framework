@@ -116,7 +116,8 @@ or, chaining into a pid_controller that closes the loop:
   step runs in its own real-time thread (`SCHED_FIFO` `inference_thread_priority`, below the
   controller manager's 50). Each policy tick hands over a copy of the state and triggers the
   step without waiting; its commands apply from the first update after it finished, and a tick
-  that finds the step still running is skipped with a warning. Without real-time permissions
+  that finds the step still running, or the thread busy for an instant, is skipped with a
+  warning. Without real-time permissions
   the thread uses the default scheduler.
 - **is_async**: the standard ros2_control option moves the whole `update()` to its own thread.
   Suits a reference executor, not a PD law. Exclusive with `async_inference`.

@@ -152,7 +152,9 @@ With ``async_inference`` a policy step is spread over several updates:
 The step works on a *snapshot* of the state store taken at the policy tick, so it sees one
 consistent instant even though the control loop keeps updating the live store. If a policy
 tick finds the previous step still running, that tick is skipped and a warning is logged:
-the model is slower than ``policy_rate``.
+the model is slower than ``policy_rate``. A tick can also be skipped, rarely, when the thread
+happens to hold its lock at that instant (the control loop never waits for it); the next tick
+steps again.
 
 Choosing
 --------

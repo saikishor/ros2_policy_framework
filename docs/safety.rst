@@ -79,7 +79,8 @@ Inputs that are missing or late
      - This happens when its writer holds it, for example an asynchronous hardware component.
        The previous value is used for up to ``max_failed_reads`` updates in a row. One more
        failure writes the safe values and returns an error.
-   * - Inference is slower than ``policy_rate`` (``async_inference``)
+   * - Inference is slower than ``policy_rate``, or its thread is busy for an instant, at a
+       policy tick (``async_inference``)
      - The policy tick is skipped and a warning is logged. The executors keep running.
 
 The safety entry
