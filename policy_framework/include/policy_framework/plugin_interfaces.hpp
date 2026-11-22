@@ -441,8 +441,9 @@ public:
  *        the feet).
  *
  * The contract: configure() registers every state entry the check reads, check() is then
- * called with the state on every cycle of the control loop and returns false when the state is
- * unsafe, and reset() forgets what the check accumulated (filters, counters).
+ * called with the state on every cycle of the control loop and returns a Verdict that is not
+ * safe when the state is unsafe, and reset() forgets what the check accumulated (filters,
+ * counters).
  *
  * What to do about a failure is configured per instance (`on_fault`), not decided by the check;
  * a failing check may ask for another reaction in its Verdict, among the ones it declares once
