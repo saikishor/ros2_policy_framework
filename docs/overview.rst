@@ -30,6 +30,7 @@ pieces are at both ends and never see the model.
        ifaces_in [label="State interfaces\n(controller only)"];
      }
      state [label="State store\n(named values)", shape=cylinder, fillcolor="#fff6d9"];
+     kin [label="Kinematics\n(optional robot model)"];
 
      subgraph cluster_policy {
        label="One policy (there can be several)"; style="rounded,dashed"; fontname="Helvetica";
@@ -40,7 +41,7 @@ pieces are at both ends and never see the model.
        inf -> post [label="tensors"];
      }
      commands [label="Command store\n(named values)", shape=cylinder, fillcolor="#fff6d9"];
-     safety [label="Safety checks\nfault reaction", fillcolor="#fde8e8"];
+     safety [label="Safety checks\n(every cycle)", fillcolor="#fde8e8"];
 
      subgraph cluster_out {
        label="Outputs (shared by all policies)"; style="rounded,dashed"; fontname="Helvetica";
@@ -51,18 +52,24 @@ pieces are at both ends and never see the model.
      topics_in -> state;
      ifaces_in -> state;
      state -> pre;
+     state -> kin;
+     kin -> pre [label="link poses", style=dashed];
      post -> commands;
      commands -> topics_out;
      commands -> ifaces_out;
      state -> safety;
-     safety -> pre [label="latched:\nnot stepped", style=dashed];
-     safety -> ifaces_out [label="hold, damp,\nsafe, error", style=dashed];
+     safety -> pre [label="neutral user commands,\nor not stepped", style=dashed];
+     safety -> topics_out [label="node: stop sending", style=dashed];
+     safety -> ifaces_out [label="controller: hold, damp,\nsafe or error", style=dashed];
    }
 
 Read it left to right: sensors fill the *state store*; the active policy reads it, runs its
 three stages and fills the *command store*; executors send the commands to the robot. The
-safety checks watch the state store on every cycle and, on a fault, stop the policy and tell
-the executors how to react (:doc:`safety`).
+optional kinematics model gives the policies the poses of the robot's links
+(:doc:`kinematics`). The safety checks watch the state store on every cycle. On a fault,
+either the policy keeps running with neutral user commands, or it is no longer stepped: the
+node stops sending, and the controller's executors hold, damp or zero the joints, or hand
+over to the fallback controllers (:doc:`safety`).
 
 The two packages
 ----------------
