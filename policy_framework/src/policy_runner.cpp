@@ -170,7 +170,19 @@ void PolicyRunner::configure_safety(
     }
   }
 
+  // The monitor checks a policy may disable, by the name of their parameter.
+  const std::vector<std::pair<std::string, SafetyMonitor::Check>> monitor_checks = {
+    {"tilt", SafetyMonitor::Check::TILT},
+    {"joint_position_limits", SafetyMonitor::Check::JOINT_POSITION},
+    {"max_input_age", SafetyMonitor::Check::INPUT_AGE}};
   for (const auto & name : params.safety_checks) {
+    for (const auto & m : monitor_checks) {
+      if (name == m.first) {
+        throw std::runtime_error(
+                "safety_checks: '" + name + "' is the name of a monitor check, which "
+                "disabled_safety_checks would not tell apart");
+      }
+    }
     const auto & entry = params.safety_checks_map.at(name);
     Check c;
     c.name = name;
@@ -182,6 +194,34 @@ void PolicyRunner::configure_safety(
       logger_, "Safety check '%s' (%s), on_fault: %s", name.c_str(), entry.type.c_str(),
       to_string(c.on_fault));
     checks_.push_back(std::move(c));
+  }
+
+  policy_safety_.clear();
+  for (const auto & policy : params.policies) {
+    PolicySafety p;
+    p.checks.assign(checks_.size(), false);
+    for (const auto & name : params.policies_map.at(policy).disabled_safety_checks) {
+      bool found = false;
+      for (const auto & m : monitor_checks) {
+        if (name == m.first) {
+          p.monitor.set(SafetyMonitor::bit(m.second));
+          found = true;
+        }
+      }
+      for (size_t i = 0; i < checks_.size(); ++i) {
+        if (name == checks_[i].name) {
+          p.checks[i] = true;
+          found = true;
+        }
+      }
+      if (!found) {
+        throw std::runtime_error(
+                policy + ".disabled_safety_checks: unknown check '" + name +
+                "' (a safety_checks name, tilt, joint_position_limits or max_input_age)");
+      }
+      RCLCPP_INFO(logger_, "Policy '%s' disables safety check '%s'", policy.c_str(), name.c_str());
+    }
+    policy_safety_.push_back(std::move(p));
   }
   // Reserved now, so that a failing check does not allocate for its reason in most cases.
   reason_.reserve(256);
@@ -228,7 +268,11 @@ std::vector<FaultReaction> PolicyRunner::fault_reactions() const
 std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stamp, double now)
 {
   std::optional<FaultReaction> worst;
-  if (const auto v = monitor_.check(state_, observation_stamp, now)) {
+  // The policy whose commands are applied: a requested switch takes effect at the start of the
+  // next step, after this, so a new policy's exemptions apply from the cycle after its first
+  // step, and the checks it disabled come back from the cycle after the next policy's first step.
+  const auto & disabled = policy_safety_[pipeline_->active_index()];
+  if (const auto v = monitor_.check(state_, observation_stamp, now, disabled.monitor)) {
     worst = v->check == SafetyMonitor::Check::TILT ? tilt_on_fault_ :
       v->check == SafetyMonitor::Check::JOINT_POSITION ? position_on_fault_ :
       input_age_on_fault_;
@@ -245,7 +289,19 @@ std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stam
     }
   }
   // Every check runs, also after a failing one: the most severe reaction wins.
-  for (auto & c : checks_) {
+  for (size_t i = 0; i < checks_.size(); ++i) {
+    auto & c = checks_[i];
+    if (disabled.checks[i]) {
+      // Not run at all: a check that fails throughout a jump would allocate its reason on every
+      // cycle.
+      c.skipped = true;
+      continue;
+    }
+    if (c.skipped) {
+      // Its filters and previous values are from before the policy that disabled it.
+      c.check->reset();
+      c.skipped = false;
+    }
     const auto verdict = c.check->check(state_, now, check_reason_);
     if (verdict.safe) {continue;}
     const auto r = reaction_of(verdict, c.on_fault, c.declared);

@@ -337,6 +337,90 @@ TEST_F(RunnerSafetyTest, FaultsWhenASourceStopsReceivingForLongerThanItsMaxAge)
   EXPECT_EQ(runner.update_safety(0.0, received + 0.5), FaultReaction::SAFE);
 }
 
+// walk runs every step; jump (max_steps 1) runs one step after a switch, then walk again.
+class PerPolicySafetyTest : public RunnerSafetyTest
+{
+protected:
+  void configure_with(std::vector<rclcpp::Parameter> extra, const StringArray & jump_disables)
+  {
+    auto params = runner_params("/runner_per_policy");
+    params.push_back({"jump.disabled_safety_checks", jump_disables});
+    params.insert(params.end(), extra.begin(), extra.end());
+    configure(params);
+    for (const auto * n : {"j1/position", "j2/position", "j3/position"}) {set(n, 0.0);}
+  }
+  void step_into(const std::string & policy)
+  {
+    std::string msg;
+    ASSERT_TRUE(runner.pipeline().request_switch(policy, msg)) << msg;
+    ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
+    ASSERT_EQ(runner.pipeline().active_policy(), policy);
+  }
+};
+
+TEST_F(PerPolicySafetyTest, ACheckDisabledByTheActivePolicyIsSkipped)
+{
+  configure_with(
+    {{"safety_checks", StringArray{"hot"}}, {"hot.type", "policy_framework/StateBoundsCheck"},
+      {"hot.prefixes", StringArray{"j1"}}, {"hot.interfaces", StringArray{"temperature"}},
+      {"hot.temperature.max", 80.0}, {"hot.on_fault", "neutral_commands"}}, {"hot"});
+  set("j1/temperature", 85.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);  // walk
+  step_into("jump");
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);  // back to walk
+  ASSERT_EQ(runner.pipeline().active_policy(), "walk");
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);
+}
+
+TEST_F(PerPolicySafetyTest, AReenabledCheckStartsAfresh)
+{
+  // Without a reset, the JumpCheck would compare with its value from before the jump.
+  configure_with(
+    {{"safety_checks", StringArray{"glitch"}}, {"glitch.type", "policy_framework/JumpCheck"},
+      {"glitch.prefixes", StringArray{"j1"}}, {"glitch.interfaces", StringArray{"position"}},
+      {"glitch.position.max_delta", 0.5}, {"glitch.on_fault", "hold"}}, {"glitch"});
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());  // walk, j1 at 0
+  step_into("jump");
+  set("j1/position", 3.0);
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);  // back to walk
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
+  set("j1/position", 4.0);  // a real jump is still caught
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::HOLD);
+}
+
+TEST_F(PerPolicySafetyTest, AMonitorCheckCanBeDisabledAndALatchedFaultSurvivesASwitch)
+{
+  configure_with(
+    {{"safety.max_tilt", 0.5}, {"safety.imu", "imu"}, {"safety.tilt_on_fault", "hold"}},
+    {"tilt"});
+  step_into("jump");
+  set("imu/orientation.x", 1.0);  // upside down
+  set("imu/orientation.y", 0.0);
+  set("imu/orientation.z", 0.0);
+  set("imu/orientation.w", 0.0);
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);  // back to walk
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::HOLD);
+  step_into("jump");
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::HOLD);  // latched
+}
+
+TEST_F(PerPolicySafetyTest, RejectsAnUnknownCheckName)
+{
+  EXPECT_ANY_THROW(configure_with({}, {"nope"}));
+}
+
+TEST_F(PerPolicySafetyTest, RejectsAPluginCheckNamedLikeAMonitorCheck)
+{
+  EXPECT_ANY_THROW(
+    configure_with(
+      {{"safety_checks", StringArray{"tilt"}}, {"tilt.type", "policy_framework/JumpCheck"},
+        {"tilt.prefixes", StringArray{"j1"}}, {"tilt.interfaces", StringArray{"position"}},
+        {"tilt.position.max_delta", 0.5}}, {}));
+}
+
 TEST_F(RunnerSafetyTest, AMockSafetyCheckInjectsAFaultOnRequest)
 {
   auto params = runner_params("/runner_mock_js");

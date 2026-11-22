@@ -95,6 +95,8 @@ public:
    *        reaction of the most severe failing one. Hosts call it on every cycle, after
    *        refreshing state() and the kinematics and before step().
    *
+   * Checks the active policy lists in `disabled_safety_checks` are skipped (not run), and reset
+   * when they apply again, so that they start afresh; a latched reaction stays latched.
    * NEUTRAL_COMMANDS lasts while a failing check asks for it (set_neutral_commands()); every
    * other reaction is latched until restart(), and only ever escalates. Changes are logged.
    * Real-time safe while every check passes; a failing check builds its reason.
@@ -244,6 +246,13 @@ private:
     std::shared_ptr<SafetyCheck> check;
     FaultReaction on_fault;
     std::vector<FaultReaction> declared;  ///< Its possible_reactions().
+    bool skipped = false;  ///< Disabled by the policy active at the previous update_safety().
+  };
+  /// The checks a policy disables (`<policy>.disabled_safety_checks`).
+  struct PolicySafety
+  {
+    SafetyMonitor::Checks monitor;
+    std::vector<bool> checks;  ///< Per checks_ entry.
   };
   /// Load the monitor and the `safety_checks` plugins, after the policies.
   void configure_safety(
@@ -262,6 +271,7 @@ private:
   FaultReaction input_age_on_fault_ = FaultReaction::ERROR;
   std::vector<FaultReaction> monitor_reactions_;  ///< Of the enabled monitor checks.
   std::vector<Check> checks_;
+  std::vector<PolicySafety> policy_safety_;  ///< Per policy, in the pipeline order.
   /// A source with a `max_age`.
   struct SourceAge
   {
