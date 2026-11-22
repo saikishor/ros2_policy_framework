@@ -181,10 +181,11 @@ jump. Do not use it on values that wrap, such as the position of a continuous jo
 moment (standing, walking, during a jump) before a real one happens. It subscribes to
 ``topic`` (default ``~/<name>``, ``policy_framework/msg/MockFault``) and fails on every cycle
 while the latest message has ``fault: true``, with the message's ``reaction`` (empty: its
-``on_fault``). A message may ask only for the reactions listed in ``reactions``, which the host
+``on_fault``), for its ``duration`` in seconds (0: until the next message). A message may ask only for the reactions listed in ``reactions``, which the host
 checks against its executors at configure, like any reaction a check declares; an unknown name
 asks for ``error``, and the host applies ``error`` for a valid but undeclared one. As for any
-fault, every reaction but ``neutral_commands`` stays latched until reactivation:
+fault, every reaction but ``neutral_commands`` stays latched until reactivation, which also
+forgets the latest message, so that the robot does not fault again at once:
 
 .. code-block:: yaml
 
@@ -197,7 +198,10 @@ fault, every reaction but ``neutral_commands`` stays latched until reactivation:
 
    ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault \
      "{fault: true, reaction: damp, reason: 'test while walking'}"
-   # neutral_commands recovers once the check passes again:
+   # neutral_commands recovers once the check passes again: here after 2 s by itself
+   ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault \
+     "{fault: true, reaction: neutral_commands, duration: 2.0}"
+   # or until told otherwise
    ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault "{fault: false}"
 
 Remove it from the configuration outside of testing: anyone who can publish on its topic can
