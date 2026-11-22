@@ -92,6 +92,15 @@ public:
   const Timing & timing() const {return timing_;}
 
   /**
+   * @return Age in milliseconds of the input `<policy>.<input>` (a term or an entry, see
+   *         PolicyRunner::policy_inputs()) when the commands of the last step were applied: now
+   *         minus its stamp. 0 for the inputs of an inactive policy or when unknown, NaN for a
+   *         name that is no input. Also published by ros2_control's introspection as
+   *         `<controller>.input_age_ms.<policy>.<input>`. Not real-time (looks the name up).
+   */
+  double input_age_ms(const std::string & name) const;
+
+  /**
    * @return The whole-body kinematics (null unless `kinematics.enabled`), updated on every
    *         update() from the state interfaces. Its readers are thread-safe.
    */
@@ -108,6 +117,10 @@ private:
   controller_interface::return_type react(FaultReaction reaction);
   /// Write the executors' safe values.
   void write_safe_values();
+  /// Register one introspection value per input of every policy (and drop the previous ones).
+  void register_input_ages();
+  /// Update the input ages from the stamps of the step that just finished.
+  void update_input_ages(double now);
   /// Write values[k] of executor k to its loaned interfaces (NaN: leave unchanged).
   void apply_values();
 
@@ -131,6 +144,10 @@ private:
   unsigned int max_failed_reads_ = 5;
   unsigned int failed_reads_ = 0;  ///< Consecutive updates with an unreadable state interface.
   Timing timing_;
+  std::vector<std::string> input_age_names_;  ///< `<policy>.<input>`, every policy's inputs.
+  std::vector<double> input_ages_ms_;         ///< Same order; registered: never reallocated.
+  std::vector<size_t> input_age_offsets_;     ///< Index of each policy's first input, + end.
+  std::vector<std::string> registered_ages_;  ///< Introspection names registered.
   unsigned int decimation_ = 1;  ///< Updates per policy step.
   double observation_stamp_ = 0.0;  ///< Of the last successful step, for safety.max_input_age.
   std::optional<FaultReaction> fault_applied_;  ///< Reaction of the previous update, if any.

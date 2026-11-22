@@ -35,6 +35,7 @@ void PolicyRunner::configure(
   // Reconfiguration starts from scratch: drop plugins before their loaders.
   source_ages_.clear();
   input_age_reactions_.clear();
+  policy_inputs_.clear();
   sources_.clear();
   executors_.clear();
   checks_.clear();
@@ -84,9 +85,12 @@ void PolicyRunner::configure(
     p.inference->configure(ctx);
     p.preprocessor = preprocessor_loader_->createSharedInstance(stages.preprocessor);
     p.preprocessor->configure(ctx, p.inference->model(), state_);
+    PolicyInputs inputs{name, {}};
     for (const auto & s : p.preprocessor->input_stamps()) {
+      inputs.inputs.push_back(s.name);
       if (s.max_age > 0.0) {input_age_reactions_.push_back(s.max_age_on_fault);}
     }
+    policy_inputs_.push_back(std::move(inputs));
     p.postprocessor = postprocessor_loader_->createSharedInstance(stages.postprocessor);
     p.postprocessor->configure(ctx, p.inference->model(), commands_);
     p.max_steps = static_cast<int>(stages.max_steps);
