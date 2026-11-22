@@ -306,6 +306,91 @@ command; a command term (``CommandTerm``) refuses a ``max_age`` for the same rea
 reaction of a term's ``max_age`` is ``hold``, ``damp``, ``safe`` or ``error``: neutral
 commands would keep the policy running, on the stale data.
 
+.. _checks-per-policy:
+
+Checks per policy
+-----------------
+
+Not every limit suits every policy: a jump moves the joints much faster than walking, and may
+tilt the base further. A policy lists the checks it does not want in
+``<policy>.disabled_safety_checks``; those checks are skipped while it is the active policy,
+and every other policy keeps them. A new policy keeps every check unless it says otherwise.
+
+.. code-block:: yaml
+
+   policies: [walk, jump]
+   jump:
+     max_steps: 147
+     interruptible: false
+     disabled_safety_checks: [joint_velocity, tilt]
+   safety:
+     max_tilt: 0.6
+     imu: imu
+   safety_checks: [joint_velocity, encoders]
+   joint_velocity:
+     type: policy_framework/StateBoundsCheck
+     prefixes: [leg_left_4_joint, leg_right_4_joint]
+     interfaces: [velocity]
+     velocity: {min: -12.0, max: 12.0}
+
+Here ``walk`` runs with every check; ``jump`` runs without the velocity bound and the tilt
+check, but ``encoders`` and every other check still apply.
+
+What can be listed
+   The names in ``safety_checks``, and the monitor checks ``tilt``, ``joint_position_limits``
+   and ``max_input_age``. An unknown name is refused when configuring, so that a typo does not
+   leave a check running unnoticed; for the same reason a ``safety_checks`` entry may not be
+   named like a monitor check. A source's or a term's ``max_age`` cannot be disabled: a stale
+   input is a fault whatever the policy does.
+
+Looser limits instead of none
+   Configure the check twice, with the strict and the loose limits, and let each policy
+   disable the one that does not suit it:
+
+   .. code-block:: yaml
+
+      safety_checks: [joint_velocity, joint_velocity_jump]
+      joint_velocity:
+        type: policy_framework/StateBoundsCheck
+        prefixes: [leg_left_4_joint, leg_right_4_joint]
+        interfaces: [velocity]
+        velocity: {min: -12.0, max: 12.0}
+      joint_velocity_jump:
+        type: policy_framework/StateBoundsCheck
+        prefixes: [leg_left_4_joint, leg_right_4_joint]
+        interfaces: [velocity]
+        velocity: {min: -25.0, max: 25.0}
+      walk:
+        disabled_safety_checks: [joint_velocity_jump]
+      jump:
+        disabled_safety_checks: [joint_velocity]
+
+When it applies
+   The checks follow the policy whose commands are applied. A switch takes effect at the start
+   of the next policy step, which runs after the checks of that cycle, so the new policy's
+   exemptions apply from the cycle after its first step, and the checks it disabled come back
+   from the cycle after the next policy's first step (for ``jump`` above, after ``max_steps``,
+   when the first policy takes over again).
+
+Skipped, then started afresh
+   A disabled check is not run at all, rather than run with its result ignored: a check that
+   fails throughout a jump would build its reason on every cycle of the control loop. When it
+   applies again it is reset first (``SafetyCheck::reset()``), so that it does not compare with
+   values from before the policy that disabled it: a ``JumpCheck`` would otherwise see the
+   whole jump as one glitch. A ``StateBoundsCheck`` starts counting its ``trigger_cycles``
+   again, so a value still out of bounds fails a few cycles later.
+
+Faults stay latched
+   Switching policy never clears a fault: a reaction latched while one policy ran stays latched
+   under the next one, until reactivation.
+
+.. warning::
+
+   When ``jump`` hands back to ``walk``, the joints may still move fast from the landing, and
+   ``walk``'s velocity bound applies again at once (after its ``trigger_cycles``). Give that
+   check enough ``trigger_cycles`` or ``hysteresis`` for a landing, or bound the velocity
+   loosely enough for it. There is no grace period after a switch yet.
+
 Fault reactions
 ---------------
 

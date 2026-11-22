@@ -51,6 +51,9 @@ Two per-policy parameters shape this:
    When false, switch requests are rejected while the policy is active. Use it for a motion
    that must not be cut short, such as a jump.
 
+A third one, ``disabled_safety_checks``, skips some safety checks while the policy is active,
+for instance a joint velocity bound during a jump; see :ref:`checks-per-policy`.
+
 What a policy remembers
 -----------------------
 
