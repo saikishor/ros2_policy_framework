@@ -171,6 +171,7 @@ name. Write floating point values with a decimal point (`50.0`).
 | `<policy>.preprocessor` / `.postprocessor` | Plugin classes (required) |
 | `<policy>.inference` | Plugin class, default `policy_framework/OnnxInference` |
 | `<policy>.max_steps`, `.interruptible` | Switching, see below |
+| `<policy>.disabled_safety_checks` | Safety checks skipped while this policy is active (default none), e.g. a joint velocity bound for a jump: names from `safety_checks`, or the monitor checks `tilt`, `joint_position_limits`, `max_input_age`; an unknown name is refused. A disabled check is reset when it applies again; a latched fault stays latched across switches; a source's or term's `max_age` always applies. See [Checks per policy](docs/safety.rst) |
 | `<policy>.<plugin param>` | Parameters of the policy's plugins |
 | `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
 | `kinematics.enabled`, `kinematics.joints` | Whole-body kinematics (default false), see below |
