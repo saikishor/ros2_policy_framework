@@ -102,7 +102,7 @@ balancing:
      node [shape=box, style="rounded,filled", fillcolor="#eef3fb", fontname="Helvetica", fontsize=11];
      edge [fontname="Helvetica", fontsize=10];
      user [label="User command\n(velocity, motion reference)", shape=plaintext, fillcolor=none];
-     gate [label="safety entry > 0 ?", shape=diamond, fillcolor="#fff6d9"];
+     gate [label="safety entry > 0 (if set)\nand no neutral commands\nreaction ?", shape=diamond, fillcolor="#fff6d9"];
      real [label="The command"];
      neutral [label="Neutral command\nzero velocity, still stand", fillcolor="#fde8e8"];
      policy [label="Policy\n(always running)", fillcolor="#e8f5e9"];
@@ -115,10 +115,11 @@ balancing:
 
 The plugins that feed user commands implement this with ``CommandGate``: ``TwistSource``,
 ``TwistCommandTerm`` and ``MotionGoalTerm``. Every change of the signal is logged once.
-Without ``safety_entry`` commands are always accepted.
+Without ``safety_entry`` commands are accepted unless the ``NEUTRAL_COMMANDS`` reaction is
+active.
 
-Safety checks (not run yet)
----------------------------
+Safety checks
+-------------
 
 Checks specific to a robot, such as an actuator reporting an error or a motor running hot,
 are ``SafetyCheck`` plugins. Each one registers the state entries it reads in ``configure()``
@@ -133,6 +134,7 @@ interface. A non-finite value is out of bounds; an entry never received is not c
 
 .. code-block:: yaml
 
+   safety_checks: [motors]
    motors:
      type: policy_framework/StateBoundsCheck
      prefixes: [leg_left_1_joint, leg_left_2_joint]
@@ -154,10 +156,13 @@ jump. Do not use it on values that wrap, such as the position of a continuous jo
      interfaces: [position]
      position: {max_delta: 0.2}
 
-The node and the controller do not load these plugins yet: a failing check has no effect.
+They are listed in ``safety_checks``, each with its ``type`` and an optional ``on_fault`` (see
+`Fault reactions`_). ``policy_node`` runs them on every tick, before the policy step.
+``PolicyController`` loads them and claims what they read, but does not run them yet (it
+warns about it).
 
-Safety monitor (not run yet)
-----------------------------
+Safety monitor
+--------------
 
 Besides the plugins, ``SafetyMonitor`` has built-in checks of the measured state, each off
 until it is given a limit. ``check()`` returns the first one violated; a value that was never
@@ -192,10 +197,14 @@ limit per interface and only on the joints you list:
      interfaces: [velocity]
      velocity: {min: -12.0, max: 12.0}
 
-The node and the controller do not run the monitor yet: a violation has no effect.
+Its parameters are ``safety.max_tilt`` with ``safety.imu``, ``safety.joint_position_limits``
+(the limits of the robot description) with ``safety.position_margin``, and
+``safety.max_input_age``; each check has its reaction (``safety.tilt_on_fault``,
+``safety.joint_position_on_fault``, ``safety.input_age_on_fault``, default: ``on_fault``).
+``policy_node`` runs it with the safety checks; ``PolicyController`` does not yet.
 
-Fault reactions (not used yet)
-------------------------------
+Fault reactions
+---------------
 
 What to do about a fault depends on what went wrong: after an actuator error in an arm it is
 wiser to stop walking and keep balancing, while a leg actuator failing or a joint going far
@@ -226,6 +235,28 @@ too fast is better stopped at once. The reactions, from the most control kept to
      - the controller returns an error: the controller manager deactivates it (it writes its
        safe values) and activates its ``fallback_controllers``
      - same
+
+On every cycle the runner runs every check, takes the most severe reaction among the failing
+ones, and applies it; only neutral commands recover by themselves:
+
+.. graphviz::
+
+   digraph reactions {
+     rankdir=LR;
+     node [shape=box, style="rounded,filled", fillcolor="#eef3fb", fontname="Helvetica", fontsize=11];
+     edge [fontname="Helvetica", fontsize=10];
+     start [shape=point];
+     ok [label="Every check passes\npolicy followed", fillcolor="#e8f5e9"];
+     neutral [label="Neutral commands\npolicy followed,\nuser commands neutral", fillcolor="#fff6d9"];
+     latched [label="Latched reaction\nhold, damp, safe or error", fillcolor="#fde8e8"];
+     start -> ok [label="activate"];
+     ok -> neutral [label="a failing check asks\nfor neutral_commands"];
+     neutral -> ok [label="it passes again"];
+     ok -> latched [label="a failing check (or a\nfailed step) asks for more"];
+     neutral -> latched [label="a more severe\nreaction"];
+     latched -> latched [label="escalates to a more\nsevere one, never back"];
+     latched -> ok [label="deactivate and\nactivate", style=dashed];
+   }
 
 The plugin decides *whether*, the configuration decides *what*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -320,8 +351,15 @@ for.
 Going to a predefined pose, or any other recovery, is the job of a fallback controller (for
 example a joint trajectory controller): use ``ERROR``.
 
-The executors and the runner implement these reactions (``PolicyRunner::set_neutral_commands``
-for ``NEUTRAL_COMMANDS``); the node and the controller do not use them yet.
+``PolicyRunner::update_safety()`` runs every check on every cycle and applies the most
+severe reaction. A failed policy step is a fault too, with ``on_fault`` (``error`` when
+``on_fault`` is ``neutral_commands``: the policy itself failed, it cannot keep running).
+
+- ``policy_node`` does not own the hardware: every latched reaction (anything but
+  ``neutral_commands``) stops the commands until the node is reactivated; neutral commands keep
+  the policy running.
+- ``PolicyController`` does not use the reactions yet; the executors implement them
+  (``InterfaceExecutor::fault()``).
 
 What the framework does not do
 ------------------------------

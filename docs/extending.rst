@@ -21,12 +21,14 @@ Which plugin to write
      inf [label="Inference"];
      exec [label="Executor\n(node)"];
      iexec [label="InterfaceExecutor\n(controller)"];
+     check [label="SafetyCheck"];
      q1 -> source [label="A sensor topic as\nnamed state entries"];
      q1 -> term [label="A new observation\nterm for mjlab policies"];
      q1 -> pre [label="Policies from another\ntraining framework"];
      q1 -> inf [label="Another model format\nor runtime"];
      q1 -> exec [label="Commands on\nanother topic type"];
      q1 -> iexec [label="Another control law\nor command interface"];
+     q1 -> check [label="A state the robot\nmust not be in"];
    }
 
 .. list-table::
@@ -62,7 +64,8 @@ Which plugin to write
        optionally the reaction to a fault
      - ``StateBoundsCheck``, ``JumpCheck``
 
-The hosts do not run ``SafetyCheck`` plugins yet (:doc:`safety`).
+``policy_node`` runs the ``SafetyCheck`` plugins; ``PolicyController`` does not yet
+(:doc:`safety`).
 
 The base classes are in ``policy_framework/plugin_interfaces.hpp`` and
 ``policy_framework/observation_term.hpp``, each method documented there.
@@ -77,7 +80,7 @@ The life of a plugin
      node [shape=box, style="rounded,filled", fillcolor="#eef3fb", fontname="Helvetica", fontsize=11];
      edge [fontname="Helvetica", fontsize=10];
      configure [label="configure()\nread parameters,\nregister entries,\nallocate", fillcolor="#fff6d9"];
-     cycle [label="Control cycle\ncompute() / read() / write()\nindices only, no allocation", fillcolor="#e8f5e9"];
+     cycle [label="Control cycle\ncompute() / read() / write() / check()\nindices only, no allocation", fillcolor="#e8f5e9"];
      configure -> cycle [label="host activated"];
      cycle -> cycle [label="every step\nor update"];
    }
@@ -250,7 +253,7 @@ leg it leaves the reaction to the configured ``on_fault``:
 
 The ``Verdict`` carries the whole answer of a cycle, so a check keeps no state between
 ``check()`` and its host besides its own filters and counters (forgotten in ``reset()``). Its
-configuration, once the hosts run the checks:
+configuration:
 
 .. code-block:: yaml
 
@@ -290,7 +293,7 @@ the situations described in the other pages:
    * - ``InterfaceExecutor::fault()``
      - The values of a fault reaction (``HOLD``, ``DAMP`` or ``SAFE``, :doc:`safety`), on every
        update while faulted. Default: the safe values. ``supports_fault_reaction()`` tells
-       which reactions the configuration allows. The hosts do not call them yet.
+       which reactions the configuration allows. ``PolicyController`` does not call them yet.
    * - ``CommandGate::open()``
      - Check it in any plugin that feeds user commands, and use a neutral command while it
        is false: the safety entry is 0, or the ``NEUTRAL_COMMANDS`` fault reaction is active

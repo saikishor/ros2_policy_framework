@@ -20,9 +20,13 @@ Standalone node
      subgraph cluster_node {
        label="policy_node (timer at update_rate)"; style="rounded,dashed"; fontname="Helvetica";
        sources [label="Input sources"];
+       safety [label="Safety checks", fillcolor="#fff6d9"];
        policy [label="Active policy\n(one step per tick)"];
        execs [label="Topic executors"];
-       sources -> policy -> execs;
+       stop [label="No commands\nuntil reactivated", fillcolor="#fde8e8"];
+       sources -> safety -> policy -> execs;
+       safety -> stop [label="latched fault"];
+       policy -> stop [label="step fails"];
      }
      joint_ctrl [label="Joint controller\n(runs elsewhere, at its own rate)", fillcolor="#e8f5e9"];
      topics -> sources;
@@ -35,6 +39,9 @@ Standalone node
   50 Hz).
 - Commands leave as topics. The node sends *references*; something else closes the joint
   loop at a high rate: a ros2_control ``pid_controller``, or the robot's own driver.
+- The safety checks run on every tick, before the step. The node does not own the hardware:
+  a fault with a latched reaction, or a failed step, stops the commands until the node is
+  reactivated; neutral commands keep the policy running (:doc:`safety`).
 
 Use it when the robot has no ros2_control, or when the policy should live outside the
 control process.

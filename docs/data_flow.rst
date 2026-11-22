@@ -64,6 +64,8 @@ One step
      sensors [label="Sensors and user commands", shape=plaintext, fillcolor=none];
      read [label="1. Read inputs\ntopic sources and state interfaces"];
      state [label="State store", shape=cylinder, fillcolor="#fff6d9"];
+     safety [label="Safety checks\nmonitor + SafetyCheck plugins", fillcolor="#fff6d9"];
+     fault [label="Fault reaction\n(see Safety)", fillcolor="#fde8e8"];
      pre [label="2. Preprocessor\nobservation terms + history"];
      inf [label="3. Inference\nmodel(obs) = actions"];
      post [label="4. Postprocessor\nscale, offset, gains"];
@@ -71,7 +73,8 @@ One step
      exec [label="5. Executors\npublish or write interfaces"];
      robot [label="Robot", shape=plaintext, fillcolor=none];
 
-     sensors -> read -> state -> pre;
+     sensors -> read -> state -> safety -> pre;
+     safety -> fault [label="a check fails"];
      pre -> inf [label="input tensors"];
      inf -> post [label="output tensors"];
      post -> commands -> exec -> robot;
@@ -79,7 +82,9 @@ One step
    }
 
 #. **Read inputs.** Topic sources copy their latest message into the state store. In the
-   controller, the state interfaces are copied too.
+   controller, the state interfaces are copied too. The safety checks then look at the state
+   before the policy acts on it; a failing one applies its reaction (:doc:`safety`), which in
+   ``policy_node`` stops the cycle here when it is latched.
 #. **Preprocessor.** Reads the state store and fills the model's input tensors. This is where
    the observation is built: each observation term computes its current value, and the
    history of past values is kept. If an input has never been received, the preprocessor
