@@ -66,6 +66,13 @@ policy_runner:
       default_value: true
       description: "false: switch requests are rejected while this policy is active."
       read_only: true
+    disabled_safety_checks:
+      type: string_array
+      default_value: []
+      description: "Safety checks skipped while this policy is active, e.g. a joint velocity bound for a jump: names from safety_checks, or the monitor checks tilt, joint_position_limits and max_input_age. Sources' and terms' max_age always apply."
+      read_only: true
+      validation:
+        unique<>: null
   safety_entry:
     type: string
     default_value: ""
