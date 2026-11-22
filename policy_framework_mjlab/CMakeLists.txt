@@ -43,6 +43,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_motion_goal_term ${PROJECT_NAME})
   target_compile_definitions(test_motion_goal_term PRIVATE
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/../policy_framework/test/urdf/test_robot.urdf")
+  ament_add_gtest(test_term_max_age test/test_term_max_age.cpp)
+  target_link_libraries(test_term_max_age ${PROJECT_NAME})
+  target_compile_definitions(test_term_max_age PRIVATE
+    TEST_MODEL="${CMAKE_CURRENT_SOURCE_DIR}/../policy_framework/test/models/sensor.onnx")
   ament_add_gtest(test_shipped_models test/test_shipped_models.cpp TIMEOUT 300)
   target_link_libraries(test_shipped_models ${PROJECT_NAME})
   ament_add_pytest_test(test_kangaroo_launch test/test_kangaroo_launch.py)
