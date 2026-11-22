@@ -296,6 +296,47 @@ TEST_F(RunnerSafetyTest, RunsTheMonitorWithItsOwnReactions)
   EXPECT_EQ(runner.update_safety(9.7, 10.0), FaultReaction::SAFE);
 }
 
+TEST_F(RunnerSafetyTest, FaultsWhenASourceStopsReceivingForLongerThanItsMaxAge)
+{
+  auto params = runner_params("/runner_safety_max_age");
+  params.push_back({"js.max_age", 0.2});
+  params.push_back({"js.max_age_on_fault", "safe"});
+  configure(params);
+  const auto reactions = runner.fault_reactions();
+  EXPECT_NE(std::find(reactions.begin(), reactions.end(), FaultReaction::SAFE), reactions.end());
+  const double now = node->now().seconds();
+  EXPECT_FALSE(runner.update_safety(0.0, now + 10.0).has_value());  // nothing received yet
+
+  auto pub = helper->create_publisher<sensor_msgs::msg::JointState>("/runner_safety_max_age", 10);
+  sensor_msgs::msg::JointState js;
+  js.name = {"j1", "j2", "j3"};
+  js.position = {1.0, 2.0, 3.0};
+  for (int i = 0; i < 100 && pub->get_subscription_count() == 0; ++i) {
+    spin_for(std::chrono::milliseconds(10));
+  }
+  pub->publish(js);
+  spin_for(std::chrono::milliseconds(100));
+  const double received = node->now().seconds();
+  EXPECT_FALSE(runner.update_safety(0.0, received).has_value());
+  EXPECT_EQ(runner.update_safety(0.0, received + 0.5), FaultReaction::SAFE);
+}
+
+TEST_F(RunnerSafetyTest, ASourceWithoutMaxAgeIsNotChecked)
+{
+  configure(runner_params("/runner_safety_no_max_age"));
+  auto pub = helper->create_publisher<sensor_msgs::msg::JointState>(
+    "/runner_safety_no_max_age", 10);
+  sensor_msgs::msg::JointState js;
+  js.name = {"j1"};
+  js.position = {1.0};
+  for (int i = 0; i < 100 && pub->get_subscription_count() == 0; ++i) {
+    spin_for(std::chrono::milliseconds(10));
+  }
+  pub->publish(js);
+  spin_for(std::chrono::milliseconds(100));
+  EXPECT_FALSE(runner.update_safety(0.0, node->now().seconds() + 100.0).has_value());
+}
+
 TEST_F(RunnerSafetyTest, JointPositionLimitsNeedARobotDescription)
 {
   auto params = runner_params("/runner_safety_limits");

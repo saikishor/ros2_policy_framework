@@ -31,7 +31,9 @@ namespace policy_framework
  *        plugins from parameters, owns the stores, serves `~/switch_policy` and runs the cycle.
  *
  * Parameters:
- * - `sources` (string array): input source names; each needs `<source>.type` (plugin class).
+ * - `sources` (string array): input source names; each needs `<source>.type` (plugin class),
+ *   and may have `<source>.max_age` (seconds, default 0: off): a fault, with the reaction
+ *   `<source>.max_age_on_fault` (default `error`), when its latest message arrived longer ago.
  * - `policies` (string array, required): policy names; the first one is active at start.
  *   Per policy:
  *   - `<policy>.preprocessor` (plugin class, required)
@@ -113,7 +115,10 @@ public:
   std::vector<FaultReaction> fault_reactions() const;
 
   /// @return Whether any `safety.*` check or `safety_checks` plugin is configured.
-  bool has_safety_checks() const {return monitor_enabled_ || !checks_.empty();}
+  bool has_safety_checks() const
+  {
+    return monitor_enabled_ || !checks_.empty() || !source_ages_.empty();
+  }
 
   /**
    * @return The reaction of a failed @p verdict: the one it asks for when @p declared has it,
@@ -231,6 +236,15 @@ private:
   FaultReaction input_age_on_fault_ = FaultReaction::ERROR;
   std::vector<FaultReaction> monitor_reactions_;  ///< Of the enabled monitor checks.
   std::vector<Check> checks_;
+  /// A source with a `max_age`.
+  struct SourceAge
+  {
+    std::string name;
+    std::shared_ptr<InputSource> source;
+    double max_age;
+    FaultReaction on_fault;
+  };
+  std::vector<SourceAge> source_ages_;
   std::optional<FaultReaction> latched_;   ///< Latched reaction, until restart().
   std::optional<FaultReaction> reported_;  ///< Reaction in effect when last logged.
   std::string reason_;        ///< Of the most severe failing check of the current cycle.

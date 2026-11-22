@@ -144,6 +144,21 @@ TEST_F(TopicSourcesTest, TwistIsZeroBeforeFirstMessageAndAfterTimeout)
   EXPECT_DOUBLE_EQ(store.get(wz), 0.0);
 }
 
+TEST_F(TopicSourcesTest, ReportsWhenItsLatestMessageArrived)
+{
+  make_node({{"js.topic", "/test_receive_time"}});
+  policy_framework::JointStateSource src;
+  src.configure({node, "js"});
+  EXPECT_DOUBLE_EQ(src.receive_time(), 0.0);  // nothing yet
+  sensor_msgs::msg::JointState msg;
+  msg.name = {"j1"};
+  msg.position = {1.0};
+  const double before = node->get_clock()->now().seconds();
+  publish("/test_receive_time", msg);
+  EXPECT_GE(src.receive_time(), before);
+  EXPECT_LE(src.receive_time(), node->get_clock()->now().seconds());
+}
+
 TEST_F(TopicSourcesTest, TwistRejectsADisabledTimeout)
 {
   make_node({{"cmd_vel.timeout", 0.0}});
