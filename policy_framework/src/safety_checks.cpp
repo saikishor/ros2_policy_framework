@@ -24,6 +24,9 @@ void StateBoundsCheck::configure(const PluginContext & ctx, const DataStore &, D
   const auto params = state_bounds_check::ParamListener(ctx.node, ctx.name).get_params();
   entries_.clear();
   trigger_cycles_ = static_cast<int>(params.trigger_cycles);
+  escalation_count_ = static_cast<int>(params.escalation.count);
+  // The parameter validation allows only the names it knows.
+  escalation_reaction_ = *fault_reaction_from_string(params.escalation.on_fault);
   for (const auto & interface : params.interfaces) {
     const auto & bounds = params.interfaces_map.at(interface);
     if (bounds.min <= -kUnbounded && bounds.max >= kUnbounded) {
@@ -76,7 +79,16 @@ SafetyCheck::Verdict StateBoundsCheck::check(
     std::to_string(first->min + first_margin) + ", " + std::to_string(first->max - first_margin) +
     "]";
   if (failing > 1) {reason += " (" + std::to_string(failing) + " entries failing)";}
+  if (escalation_count_ > 0 && failing >= escalation_count_) {
+    return {false, escalation_reaction_};
+  }
   return {false, std::nullopt};
+}
+
+std::vector<FaultReaction> StateBoundsCheck::possible_reactions() const
+{
+  if (escalation_count_ > 0) {return {escalation_reaction_};}
+  return {};
 }
 
 void StateBoundsCheck::reset()

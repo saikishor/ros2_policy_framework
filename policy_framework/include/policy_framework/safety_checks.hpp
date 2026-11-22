@@ -25,6 +25,9 @@ namespace policy_framework
  *   toggle the check (e.g. fail at 80 degrees, pass again below 70)
  * - `trigger_cycles` (int, default 1): consecutive violations of an entry before it fails, to
  *   ride out a single noisy reading
+ * - `escalation.count` (int, default 0: never), `escalation.on_fault` (default `error`): from
+ *   this many entries failing at once, the check asks for that reaction instead of its
+ *   configured `on_fault` (e.g. one actuator in error: neutral commands, two or more: error)
  *
  * A non-finite value is a violation; an entry never received is not checked.
  */
@@ -35,6 +38,8 @@ public:
   ///         hysteresis leaves no value to pass again.
   void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) override;
   Verdict check(const DataStore & state, double now, std::string & reason) override;
+  /// @return escalation.on_fault when escalation.count is set; nothing otherwise.
+  std::vector<FaultReaction> possible_reactions() const override;
   void reset() override;
 
 private:
@@ -49,6 +54,8 @@ private:
   };
   std::vector<Entry> entries_;
   int trigger_cycles_ = 1;
+  int escalation_count_ = 0;  ///< 0: no escalation.
+  FaultReaction escalation_reaction_ = FaultReaction::ERROR;
 };
 
 /**
