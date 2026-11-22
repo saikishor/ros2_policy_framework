@@ -58,9 +58,9 @@ void SafetyMonitor::configure(const Config & config, const DataStore & commands,
 }
 
 std::optional<SafetyMonitor::Violation> SafetyMonitor::check(
-  const DataStore & state, double observation_stamp, double now) const
+  const DataStore & state, double observation_stamp, double now, const Checks & skipped) const
 {
-  if (!orientation_.empty() && state.all_received(orientation_)) {
+  if (!skipped[bit(Check::TILT)] && !orientation_.empty() && state.all_received(orientation_)) {
     const double x = state.get(orientation_[0]);
     const double y = state.get(orientation_[1]);
     const double z = state.get(orientation_[2]);
@@ -74,12 +74,13 @@ std::optional<SafetyMonitor::Violation> SafetyMonitor::check(
     }
   }
   for (const auto & j : positions_) {
+    if (skipped[bit(Check::JOINT_POSITION)]) {break;}
     if (!state.received(j.index)) {continue;}
     const double q = state.get(j.index);
     if (q < j.lower || q > j.upper) {return Violation{Check::JOINT_POSITION, q, j.name};}
   }
-  if (config_.max_input_age > 0.0 && observation_stamp > 0.0 &&
-    now - observation_stamp > config_.max_input_age)
+  if (!skipped[bit(Check::INPUT_AGE)] && config_.max_input_age > 0.0 &&
+    observation_stamp > 0.0 && now - observation_stamp > config_.max_input_age)
   {
     return Violation{Check::INPUT_AGE, now - observation_stamp, ""};
   }

@@ -4,6 +4,7 @@
 #ifndef POLICY_FRAMEWORK__SAFETY_MONITOR_HPP_
 #define POLICY_FRAMEWORK__SAFETY_MONITOR_HPP_
 
+#include <bitset>
 #include <map>
 #include <optional>
 #include <string>
@@ -43,6 +44,10 @@ public:
   };
 
   enum class Check {TILT, JOINT_POSITION, INPUT_AGE};
+  /// A set of checks, one bit per Check.
+  using Checks = std::bitset<3>;
+  /// @return The bit of @p check in Checks.
+  static constexpr size_t bit(Check check) {return static_cast<size_t>(check);}
 
   /// A violated check.
   struct Violation
@@ -68,9 +73,11 @@ public:
    *         violated (the joint name is copied).
    * @param observation_stamp Stamp of the observation of the last policy step (0: none yet).
    * @param now Current time, on the clock of the stamps.
+   * @param skipped Checks not evaluated (e.g. disabled by the active policy).
    */
-  std::optional<Violation> check(const DataStore & state, double observation_stamp, double now)
-  const;
+  std::optional<Violation> check(
+    const DataStore & state, double observation_stamp, double now,
+    const Checks & skipped = {}) const;
 
   /**
    * @return Position limits (lower, upper) of every single-dof joint of the URDF @p urdf that

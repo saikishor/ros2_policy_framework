@@ -105,6 +105,8 @@ public:
     return entries_.at(active_.load()).policy.preprocessor->input_stamps();
   }
 
+  /// @return Index of the active policy, in the order they were added. Thread-safe.
+  size_t active_index() const {return active_.load();}
   /// @return Name of the active policy. Thread-safe.
   const std::string & active_policy() const {return entries_.at(active_.load()).policy.name;}
   /// @return All policies, in the order they were added.
