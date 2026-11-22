@@ -167,12 +167,12 @@ name. Write floating point values with a decimal point (`50.0`).
 | `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
 | `kinematics.enabled`, `kinematics.joints` | Whole-body kinematics (default false), see below |
 | `safety_entry` | State entry that is 0 while user commands must be ignored (default empty: always accepted), see Safety |
-| `on_fault` | Reaction to a fault without one of its own (default `error`): `neutral_commands`, `hold`, `damp`, `safe`, `error`; a failed policy step uses it too (`error` instead of `neutral_commands`), see `docs/safety.rst` |
 | `safety.max_tilt`, `safety.imu` | Fault when the IMU z axis tilts more than this from the vertical, in rad (default 0: off) |
 | `safety.joint_position_limits`, `safety.position_margin` | Fault when a commanded joint leaves its robot description limits narrowed by the margin (default false, 0) |
 | `safety.max_input_age` | Fault when the observation of the last step is older than this, in s (default 0: off) |
-| `safety.tilt_on_fault`, `.joint_position_on_fault`, `.input_age_on_fault` | Reaction to each of these checks (default empty: `on_fault`) |
-| `safety_checks` | `SafetyCheck` plugin names; each needs `<check>.type`, may have `<check>.on_fault` (default empty: `on_fault`) |
+| `safety.tilt_on_fault`, `.joint_position_on_fault`, `.input_age_on_fault` | Reaction to each of these checks (default `error`): `neutral_commands`, `hold`, `damp`, `safe`, `error`, see `docs/safety.rst` |
+| `safety_checks` | `SafetyCheck` plugin names; each needs `<check>.type` and has a reaction `<check>.on_fault` (default `error`). There is no global default reaction: every check states its own |
+| `on_policy_failure` | Reaction to a failed policy step, including a non-finite model output (default `error`): `hold`, `damp`, `safe` or `error` (not `neutral_commands`: the policy itself failed) |
 | `policy_rate` | Controller: policy rate in Hz (default 0 = every update) |
 | `max_failed_reads` | Controller: consecutive updates with an unreadable state interface that are tolerated (default 5) |
 | `async_inference`, `inference_thread_priority` | Controller: policy step in its own thread (default false), its priority (default 40) |

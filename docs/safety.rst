@@ -156,8 +156,8 @@ jump. Do not use it on values that wrap, such as the position of a continuous jo
      interfaces: [position]
      position: {max_delta: 0.2}
 
-They are listed in ``safety_checks``, each with its ``type`` and an optional ``on_fault`` (see
-`Fault reactions`_). ``policy_node`` runs them on every tick, before the policy step.
+They are listed in ``safety_checks``, each with its ``type`` and its reaction ``on_fault``
+(default ``error``, see `Fault reactions`_). ``policy_node`` runs them on every tick, before the policy step.
 ``PolicyController`` loads them and claims what they read, but does not run them yet (it
 warns about it).
 
@@ -200,7 +200,7 @@ limit per interface and only on the joints you list:
 Its parameters are ``safety.max_tilt`` with ``safety.imu``, ``safety.joint_position_limits``
 (the limits of the robot description) with ``safety.position_margin``, and
 ``safety.max_input_age``; each check has its reaction (``safety.tilt_on_fault``,
-``safety.joint_position_on_fault``, ``safety.input_age_on_fault``, default: ``on_fault``).
+``safety.joint_position_on_fault``, ``safety.input_age_on_fault``, default ``error``).
 ``policy_node`` runs it with the safety checks; ``PolicyController`` does not yet.
 
 Fault reactions
@@ -262,14 +262,12 @@ The plugin decides *whether*, the configuration decides *what*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A safety check only says whether the state is unsafe, and why. The reaction is set in the
-configuration, per instance of a check, next to its ``type``; ``on_fault`` is the default for
-every check without its own and for the other faults (a failed policy step, unreadable state
-interfaces). Several instances of the same plugin, each on its own joints or with its own
+configuration, per instance of a check, next to its ``type`` (``on_fault``, default
+``error``). Several instances of the same plugin, each on its own joints or with its own
 bounds, give each group its reaction:
 
 .. code-block:: yaml
 
-   on_fault: error
    safety_checks: [leg_actuators, arm_actuators, motors_warm, motors_hot]
    leg_actuators:            # a main joint fails: unload, the fallback controllers take over
      type: policy_framework/StateBoundsCheck
@@ -317,6 +315,11 @@ Why the reaction is set in the configuration rather than chosen by the plugins:
 - **Plugins stay simple and reusable**: they only answer "is this unsafe, and why"; the same
   ``StateBoundsCheck`` serves every joint group with a different reaction.
 
+There is no global default reaction on purpose. With one, a check without its own reaction
+would not say what it does, and changing the default would silently change every such check.
+Instead each check has its own, ``error`` until set: an unset check does the safest thing,
+and the reaction of every check can be read next to it.
+
 A reaction chosen while running
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -352,8 +355,10 @@ Going to a predefined pose, or any other recovery, is the job of a fallback cont
 example a joint trajectory controller): use ``ERROR``.
 
 ``PolicyRunner::update_safety()`` runs every check on every cycle and applies the most
-severe reaction. A failed policy step is a fault too, with ``on_fault`` (``error`` when
-``on_fault`` is ``neutral_commands``: the policy itself failed, it cannot keep running).
+severe reaction. A failed policy step (including a non-finite model output) is a fault too,
+with its own reaction ``on_policy_failure`` (default ``error``; ``hold``, ``damp`` or ``safe``
+otherwise, but not ``neutral_commands``: the policy itself failed, it cannot keep running).
+Unreadable state interfaces in the controller still return an error.
 
 - ``policy_node`` does not own the hardware: every latched reaction (anything but
   ``neutral_commands``) stops the commands until the node is reactivated; neutral commands keep
