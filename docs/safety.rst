@@ -122,8 +122,10 @@ Safety checks (not run yet)
 
 Checks specific to a robot, such as an actuator reporting an error or a motor running hot,
 are ``SafetyCheck`` plugins. Each one registers the state entries it reads in ``configure()``
-and says in ``check()`` whether the state is safe, with a reason when it is not. ``check()``
-runs in the control loop: it must not allocate while the state is safe.
+and returns from ``check()`` a ``Verdict``: whether the state is safe and, when it is not,
+optionally the reaction it asks for (see `A reaction chosen while running`_), with a reason.
+``check()`` runs in the control loop: it must not allocate while the state is safe. Writing
+one is shown in :doc:`extending`.
 
 ``StateBoundsCheck`` checks every ``<prefix>/<interface>`` entry against the bounds of its
 interface. A non-finite value is out of bounds; an entry never received is not checked. With a
