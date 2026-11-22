@@ -288,6 +288,11 @@ public:
    * @param now Current time in seconds.
    */
   virtual void read(DataStore & state, double now) = 0;
+  /**
+   * @return When the latest data arrived (seconds, node clock), 0 before any. The host faults
+   *         when it is older than the source's `max_age` (see PolicyRunner). Real-time safe.
+   */
+  virtual double receive_time() = 0;
 };
 
 /**

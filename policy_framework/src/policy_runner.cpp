@@ -33,6 +33,7 @@ void PolicyRunner::configure(
   logger_ = node->get_logger();
   const auto & logger = logger_;
   // Reconfiguration starts from scratch: drop plugins before their loaders.
+  source_ages_.clear();
   sources_.clear();
   executors_.clear();
   checks_.clear();
@@ -153,6 +154,14 @@ void PolicyRunner::configure_safety(
   if (s.max_input_age > 0.0) {monitor_reactions_.push_back(input_age_on_fault_);}
   monitor_enabled_ = !monitor_reactions_.empty();
 
+  for (size_t i = 0; i < params.sources.size(); ++i) {
+    const auto & entry = params.sources_map.at(params.sources[i]);
+    if (entry.max_age > 0.0) {
+      source_ages_.push_back(
+        {params.sources[i], sources_[i], entry.max_age, reaction(entry.max_age_on_fault)});
+    }
+  }
+
   for (const auto & name : params.safety_checks) {
     const auto & entry = params.safety_checks_map.at(name);
     Check c;
@@ -195,6 +204,7 @@ std::vector<FaultReaction> PolicyRunner::fault_reactions() const
 {
   std::vector<FaultReaction> all{policy_failure_reaction_};
   all.insert(all.end(), monitor_reactions_.begin(), monitor_reactions_.end());
+  for (const auto & s : source_ages_) {all.push_back(s.on_fault);}
   for (const auto & c : checks_) {
     all.push_back(c.on_fault);
     all.insert(all.end(), c.declared.begin(), c.declared.end());
@@ -214,6 +224,16 @@ std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stam
       v->check == SafetyMonitor::Check::JOINT_POSITION ? position_on_fault_ :
       input_age_on_fault_;
     reason_ = v->describe();
+  }
+  for (auto & s : source_ages_) {
+    const double received = s.source->receive_time();
+    // Nothing received yet: the policy waits for it, this is not a fault.
+    if (received <= 0.0 || now - received <= s.max_age) {continue;}
+    if (!worst || s.on_fault > *worst) {
+      worst = s.on_fault;
+      reason_ = "source '" + s.name + "': no message for " + std::to_string(now - received) +
+        " s, above its max_age";
+    }
   }
   // Every check runs, also after a failing one: the most severe reaction wins.
   for (auto & c : checks_) {

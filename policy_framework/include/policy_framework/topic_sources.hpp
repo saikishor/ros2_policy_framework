@@ -40,6 +40,8 @@ public:
     topic_.subscribe(ctx.node, topic);
   }
 
+  double receive_time() override {return topic_.get().receive_time;}
+
 protected:
   using Received = typename LatestMessage<MsgT>::Received;
 

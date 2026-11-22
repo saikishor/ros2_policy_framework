@@ -13,6 +13,20 @@ policy_runner:
       read_only: true
       validation:
         not_empty<>: null
+    max_age:
+      type: double
+      default_value: 0.0
+      description: "Fault when the latest message of the source arrived longer ago than this, in seconds (on the receive time); 0: off. Not for a command source: its timeout handles a stopped operator."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
+    max_age_on_fault:
+      type: string
+      default_value: "error"
+      description: "Reaction to max_age: neutral_commands, hold, damp, safe or error."
+      read_only: true
+      validation:
+        one_of<>: [["neutral_commands", "hold", "damp", "safe", "error"]]
   policies:
     type: string_array
     description: "Policy names; the first one is active at start and is the one max_steps returns to."
