@@ -112,6 +112,11 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
   if (executors_.empty()) {
     RCLCPP_WARN(get_node()->get_logger(), "No executors: the commands are not sent anywhere");
   }
+  if (runner_->has_safety_checks()) {
+    RCLCPP_WARN(
+      get_node()->get_logger(), "Safety checks are configured, but PolicyController does not run "
+      "them yet: they have no effect");
+  }
   if (params.async_inference) {
     // Allocated here, so that the control loop only copies values.
     async_state_ = runner_->state();
