@@ -132,9 +132,20 @@ struct has_header<MsgT, std::void_t<decltype(std::declval<MsgT>().header.stamp)>
  *   the current time (also for the neutral command);
  * - the user command flag: its stamp does not count for the observation stamp.
  *
- * Always ready: a policy does not wait for a command. Parameters (under the term's name):
- * `topic`, `timeout`. A derived term implements configure_command(), write_command() and
- * write_neutral(), and may refuse a message in usable().
+ * Always ready by default: a policy does not wait for a command (a term may override ready()
+ * to wait for something else, e.g. MotionGoalTerm waits for the base orientation). Parameters
+ * (under the term's name): `topic`, `timeout`.
+ *
+ * A derived term implements configure_command(), write_command() and write_neutral(), and may
+ * refuse a message in usable(). On every cycle exactly one of write_command() and
+ * write_neutral() is called, so write_neutral() runs on every cycle while the command is
+ * neutral, not once on the change: a term with state (e.g. the alignment of a stream) resets it
+ * there. These three run in the control cycle: no allocation, blocking or logging on every
+ * call.
+ *
+ * The gate reads the host's `safety_entry` from the PluginContext given to configure(): the
+ * preprocessors pass the host's; a term configured with a context without it (e.g. in a test)
+ * has a gate that only the NEUTRAL_COMMANDS reaction closes.
  */
 template<typename MsgT>
 class CommandTerm : public TopicTerm<MsgT>
@@ -152,6 +163,12 @@ public:
 
   bool ready(const DataStore &) override {return true;}
 
+  /**
+   * @brief Write the command, or the neutral command, and return its stamp. The command is
+   *        used when a message was received at most `timeout` seconds ago (on the receive
+   *        time), the CommandGate is open and usable() accepts it; otherwise the neutral
+   *        command, stamped now.
+   */
   double compute(const DataStore & state, const TensorMap &, float * out) final
   {
     const auto in = this->latest();
@@ -171,7 +188,12 @@ protected:
    * @return Number of floats of the term.
    */
   virtual size_t configure_command(const PluginContext & ctx, const ModelInfo & model) = 0;
-  /// @return false to use the neutral command instead of @p msg (e.g. a malformed message).
+  /**
+   * @return false to use the neutral command instead of @p msg (e.g. a malformed message).
+   *         Called on every cycle with the latest message, often the same one again: cache
+   *         what is costly to check per message (e.g. MotionGoalTerm maps its joints only when
+   *         they change), and throttle any log.
+   */
   virtual bool usable(const MsgT &) {return true;}
   /// Write the term from the command @p msg. Called from the control cycle.
   virtual void write_command(const MsgT & msg, const DataStore & state, float * out) = 0;

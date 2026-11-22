@@ -239,7 +239,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
 | `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `imu_frame` (URDF link of the IMU, for the base terms of pal_mjlab exports), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type`, `terms.motion_goal.topic` (`~/motion_reference`), `terms.motion_goal.timeout` (0.5 s) |
 | `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface` (`position`), `velocity_interface` (`velocity`, empty: none), `gains_controller` (empty: none), `gains_as_commands` (false) |
-| `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm | `topic` (`cmd_vel`), `timeout` (1.0 s, above zero; on the receive time) → linear.x, linear.y, angular.z, stamped now; zero when absent or stale; a user command |
+| `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm (a `CommandTerm`) | `topic` (`cmd_vel`), `timeout` (1.0 s, above zero; on the receive time) → linear.x, linear.y, angular.z, stamped now; zero when absent, stale or gated; a user command |
 
 Source and executor `topic` parameters default to `~/<name>` (also when empty).
 
@@ -297,8 +297,9 @@ When a stream starts it is turned about z to the robot's heading and keeps that 
 Without a usable reference (none yet, received longer ago than `terms.motion_goal.timeout`,
 0.5 s by default and above zero, malformed, or `safety_entry` at 0) the goal is a still stand
 at the robot's heading: `goal_hold_joint_pos`, else the default positions of the goal joints.
-The policy therefore never waits for a reference. The term is stamped with the reference's
-header stamp, else now, and is a user command (see [Timestamps](#timestamps)).
+The policy therefore never waits for a reference. It is a `CommandTerm` (see
+[Writing plugins](#writing-plugins)): stamped with the reference's header stamp, else now, and
+a user command (see [Timestamps](#timestamps)).
 
 ### MjlabPostprocessor
 

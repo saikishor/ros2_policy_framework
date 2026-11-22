@@ -177,6 +177,11 @@ does what keeps a command safe, so that no command term can forget it:
 
 .. code-block:: cpp
 
+   #include "policy_framework/observation_term.hpp"
+   #include "std_msgs/msg/float64.hpp"
+
+   using namespace policy_framework;
+
    class HeadingCommand : public CommandTerm<std_msgs::msg::Float64>
    {
    public:
@@ -193,6 +198,13 @@ does what keeps a command safe, so that no command term can forget it:
    };
 
    PLUGINLIB_EXPORT_CLASS(HeadingCommand, policy_framework::ObservationTerm)
+
+On every cycle exactly one of ``write_command()`` and ``write_neutral()`` is called, so
+``write_neutral()`` runs on every cycle while the command is neutral: a term with state (such
+as the alignment of a stream in ``MotionGoalTerm``) resets it there. Both run in the control
+cycle, like ``usable()``, which sees the same message again on every cycle until a new one
+arrives: cache what is costly to check, and throttle any log. ``ready()`` is true by default;
+a term may override it to wait for something else than the command.
 
 ``TwistCommandTerm`` and ``MotionGoalTerm`` are built this way.
 
