@@ -4,32 +4,27 @@
 #include "policy_framework_mjlab/twist_command_term.hpp"
 
 #include "pluginlib/class_list_macros.hpp"
-#include "policy_framework_mjlab/twist_command_term_parameters.hpp"
 
 namespace policy_framework_mjlab
 {
 
-size_t TwistCommandTerm::configure_term(
-  const policy_framework::PluginContext & ctx, const policy_framework::ModelInfo &)
+size_t TwistCommandTerm::configure_command(
+  const policy_framework::PluginContext &, const policy_framework::ModelInfo &)
 {
-  timeout_ = twist_command_term::ParamListener(ctx.node, ctx.name).get_params().timeout;
-  gate_ = policy_framework::CommandGate(ctx);
   return 3;
 }
 
-double TwistCommandTerm::compute(
-  const policy_framework::DataStore & state, const policy_framework::TensorMap &, float * out)
+void TwistCommandTerm::write_command(
+  const geometry_msgs::msg::Twist & msg, const policy_framework::DataStore &, float * out)
 {
-  const auto in = latest();
-  const double t = now();
-  if (!in.msg || (timeout_ > 0.0 && t - in.receive_time > timeout_) || !gate_.open(state)) {
-    out[0] = out[1] = out[2] = 0.0F;
-    return t;
-  }
-  out[0] = static_cast<float>(in.msg->linear.x);
-  out[1] = static_cast<float>(in.msg->linear.y);
-  out[2] = static_cast<float>(in.msg->angular.z);
-  return in.receive_time;
+  out[0] = static_cast<float>(msg.linear.x);
+  out[1] = static_cast<float>(msg.linear.y);
+  out[2] = static_cast<float>(msg.angular.z);
+}
+
+void TwistCommandTerm::write_neutral(const policy_framework::DataStore &, float * out)
+{
+  out[0] = out[1] = out[2] = 0.0F;
 }
 
 }  // namespace policy_framework_mjlab

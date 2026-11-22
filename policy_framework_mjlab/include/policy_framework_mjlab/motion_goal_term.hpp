@@ -35,12 +35,13 @@ namespace policy_framework_mjlab
  * The base orientation comes from the IMU through the kinematics (BaseFromImu), so it needs
  * `kinematics.enabled` and the preprocessor's `imu_frame`.
  *
- * Parameters (under `<policy>.terms.motion_goal.`): `topic` (default `~/motion_reference`),
- * `timeout` (seconds, default 0.5).
+ * A policy_framework::CommandTerm: parameters (under `<policy>.terms.motion_goal.`) `topic`
+ * (default `~/motion_reference`) and `timeout` (seconds, default 0.5, above zero); stamped
+ * with the header stamp of the reference, else now.
  *
  * Stamp: the receive time of the reference; the current time for a hold.
  */
-class MotionGoalTerm : public policy_framework::TopicTerm<pal_motion_msgs::msg::MotionReference>
+class MotionGoalTerm : public policy_framework::CommandTerm<pal_motion_msgs::msg::MotionReference>
 {
 public:
   /// @param imu_name Prefix of the IMU state entries. @param imu_frame URDF link of the IMU.
@@ -53,25 +54,28 @@ public:
   bool ready(const policy_framework::DataStore & state) override {return base_.ready(state);}
   /// The next reference starts a new stream.
   void reset() override {streaming_ = false;}
-  double compute(
-    const policy_framework::DataStore & state, const policy_framework::TensorMap & last_outputs,
-    float * out) override;
 
 protected:
-  size_t configure_term(
+  size_t configure_command(
     const policy_framework::PluginContext & ctx, const policy_framework::ModelInfo & model)
   override;
+  /// @return true when @p msg can be used; updates columns_ when its joints changed.
+  bool usable(const pal_motion_msgs::msg::MotionReference & msg) override;
+  void write_command(
+    const pal_motion_msgs::msg::MotionReference & msg, const policy_framework::DataStore & state,
+    float * out) override;
+  void write_neutral(const policy_framework::DataStore & state, float * out) override;
 
 private:
-  /// @return true when @p msg can be used; updates columns_ when its joints changed.
-  bool usable(const pal_motion_msgs::msg::MotionReference & msg);
+  /// The goal frames from @p reference, or the still stand without one (null).
+  void write(
+    const pal_motion_msgs::msg::MotionReference * reference,
+    const policy_framework::DataStore & state, float * out);
 
   std::string imu_name_, imu_frame_, base_body_;
   BaseFromImu base_;
-  policy_framework::CommandGate gate_;
   rclcpp::Logger logger_ = rclcpp::get_logger("motion_goal");
   rclcpp::Clock steady_clock_{RCL_STEADY_TIME};
-  double timeout_ = 0.5;
   std::vector<std::string> goal_joints_;
   std::vector<double> hold_positions_;
   size_t frames_ = 0;

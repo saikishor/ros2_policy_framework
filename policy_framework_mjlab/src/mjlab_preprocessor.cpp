@@ -280,7 +280,7 @@ void MjlabPreprocessor::configure(
     }
     single_dim += t.dim;
     terms_.push_back(std::move(t));
-    stamps_.push_back({name, 0.0});
+    stamps_.push_back({name, 0.0, false, terms_.back().term->user_command()});
   }
 
   const auto in = model.inputs.find(obs_input_);
@@ -351,7 +351,8 @@ bool MjlabPreprocessor::ready(const DataStore & state) const
 
 void MjlabPreprocessor::push(const DataStore & state, const TensorMap & last_outputs)
 {
-  double obs_stamp = 0.0;  // oldest known stamp of the terms not derived from previous outputs
+  // Oldest known stamp of the terms neither derived from previous outputs nor user commands.
+  double obs_stamp = 0.0;
   for (size_t k = 0; k < terms_.size(); ++k) {
     auto & t = terms_[k];
     // Drop the oldest entry, append the current value as the newest.
@@ -363,7 +364,9 @@ void MjlabPreprocessor::push(const DataStore & state, const TensorMap & last_out
     if (derived) {stamp = prev_obs_stamp_;}
     stamps_[k].stamp = stamp;
     stamps_[k].from_previous_outputs = derived;
-    if (!derived && stamp > 0.0 && (obs_stamp <= 0.0 || stamp < obs_stamp)) {
+    if (!derived && !stamps_[k].user_command && stamp > 0.0 &&
+      (obs_stamp <= 0.0 || stamp < obs_stamp))
+    {
       obs_stamp = stamp;
     }
     if (!history_filled_) {

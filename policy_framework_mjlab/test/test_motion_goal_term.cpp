@@ -45,11 +45,11 @@ MotionReference message(double root_yaw)
 class MotionGoalTermTest : public ::testing::Test
 {
 protected:
-  void configure(int frames = 1, const std::string & safety_entry = "")
+  void configure(int frames = 1, const std::string & safety_entry = "", double timeout = 0.4)
   {
     rclcpp::NodeOptions opts;
     opts.parameter_overrides({{"p.terms.motion_goal.topic", "/test_motion_reference"},
-        {"p.terms.motion_goal.timeout", 0.4}});
+        {"p.terms.motion_goal.timeout", timeout}});
     node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_motion_goal", opts);
     pub_node = std::make_shared<rclcpp::Node>("test_motion_goal_pub");
     pub = pub_node->create_publisher<MotionReference>("/test_motion_reference", 10);
@@ -172,6 +172,40 @@ TEST_F(MotionGoalTermTest, HoldsAgainWhenTheReferenceIsOldOrMalformed)
   std::this_thread::sleep_for(std::chrono::milliseconds(500));  // older than the 0.4 s timeout
   term.compute(state, TensorMap{}, out.data());
   expect_out(kHold);
+}
+
+TEST_F(MotionGoalTermTest, IsAUserCommandStampedWithItsHeaderElseNow)
+{
+  configure();
+  EXPECT_TRUE(term.user_command());
+  auto msg = message(0.0);
+  msg.header.stamp = rclcpp::Time(1234, 500000000, RCL_ROS_TIME);
+  stream(msg);
+  EXPECT_DOUBLE_EQ(term.compute(state, TensorMap{}, out.data()), 1234.5);
+
+  msg.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);  // no stamp: the reference applies now
+  out.assign(out.size(), 9.0F);
+  stream(msg);
+  const double before = node->now().seconds();
+  EXPECT_GE(term.compute(state, TensorMap{}, out.data()), before);
+}
+
+TEST(MotionGoalTerm, RejectsADisabledTimeout)
+{
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides({{"p.terms.motion_goal.timeout", 0.0}});
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("test_motion_no_timeout", opts);
+  std::ifstream f(TEST_URDF);
+  std::stringstream urdf;
+  urdf << f.rdbuf();
+  auto kinematics = std::make_shared<policy_framework::Kinematics>(urdf.str());
+  ModelInfo model;
+  model.metadata = {
+    {"joint_names", "a,b"}, {"default_joint_pos", "0.5,-0.5"}, {"goal_joint_names", "a,b"},
+    {"goal_num_future_frames", "1"}, {"goal_root_body", "base_link"}};
+  DataStore state;
+  MotionGoalTerm term{"imu", "imu_link"};
+  EXPECT_ANY_THROW(term.configure({node, "p.terms.motion_goal", kinematics}, model, state));
 }
 
 TEST_F(MotionGoalTermTest, HoldsWhileTheSafetyEntryIsZero)

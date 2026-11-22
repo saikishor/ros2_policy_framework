@@ -26,12 +26,12 @@ Eigen::Quaterniond heading(const Eigen::Quaterniond & orientation)
 }  // namespace
 
 MotionGoalTerm::MotionGoalTerm(std::string imu_name, std::string imu_frame)
-: TopicTerm("~/motion_reference"), imu_name_(std::move(imu_name)),
+: CommandTerm("~/motion_reference", 0.5), imu_name_(std::move(imu_name)),
   imu_frame_(std::move(imu_frame))
 {
 }
 
-size_t MotionGoalTerm::configure_term(
+size_t MotionGoalTerm::configure_command(
   const policy_framework::PluginContext & ctx, const policy_framework::ModelInfo & model)
 {
   const auto & md = model.metadata;
@@ -44,8 +44,6 @@ size_t MotionGoalTerm::configure_term(
   }
   frames_ = parse_counts(md, "goal_num_future_frames", 1).front();
   base_body_ = require(md, "goal_root_body");
-  timeout_ = policy_framework::get_parameter<double>(ctx, "timeout", 0.5);
-  gate_ = policy_framework::CommandGate(ctx);
   logger_ = ctx.node->get_logger().get_child("motion_goal");
   message_joints_.clear();
   columns_valid_ = false;
@@ -93,15 +91,23 @@ bool MotionGoalTerm::usable(const pal_motion_msgs::msg::MotionReference & msg)
   return columns_valid_ && well_formed;
 }
 
-double MotionGoalTerm::compute(
-  const policy_framework::DataStore & state, const policy_framework::TensorMap &, float * out)
+void MotionGoalTerm::write_command(
+  const pal_motion_msgs::msg::MotionReference & msg, const policy_framework::DataStore & state,
+  float * out)
+{
+  write(&msg, state, out);
+}
+
+void MotionGoalTerm::write_neutral(const policy_framework::DataStore & state, float * out)
+{
+  write(nullptr, state, out);
+}
+
+void MotionGoalTerm::write(
+  const pal_motion_msgs::msg::MotionReference * reference,
+  const policy_framework::DataStore & state, float * out)
 {
   const Eigen::Quaterniond base = base_.orientation(state);
-  const auto in = latest();
-  const double t = now();
-  const auto * reference =
-    in.msg && t - in.receive_time < timeout_ && gate_.open(state) && usable(*in.msg) ?
-    in.msg.get() : nullptr;
 
   auto root_of = [&](size_t frame) {
       const auto & q = reference->root_orientation[frame];
@@ -137,7 +143,6 @@ double MotionGoalTerm::compute(
       frame[2 * n + i] = static_cast<float>(r(static_cast<Eigen::Index>(i % 3), static_cast<Eigen::Index>(i / 3)));
     }
   }
-  return reference ? in.receive_time : t;
 }
 
 }  // namespace policy_framework_mjlab
