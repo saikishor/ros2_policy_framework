@@ -20,13 +20,16 @@ Standalone node
      subgraph cluster_node {
        label="policy_node (timer at update_rate)"; style="rounded,dashed"; fontname="Helvetica";
        sources [label="Input sources"];
+       kin [label="Kinematics\n(if enabled)"];
        safety [label="Safety checks", fillcolor="#fff6d9"];
        policy [label="Active policy\n(one step per tick)"];
+       ages [label="Term input ages", fillcolor="#fff6d9"];
        execs [label="Topic executors"];
        stop [label="No commands\nuntil reactivated", fillcolor="#fde8e8"];
-       sources -> safety -> policy -> execs;
+       sources -> kin -> safety -> policy -> ages -> execs;
        safety -> stop [label="latched fault"];
        policy -> stop [label="step fails"];
+       ages -> stop [label="stale input"];
      }
      joint_ctrl [label="Joint controller\n(runs elsewhere, at its own rate)", fillcolor="#e8f5e9"];
      topics -> sources;
@@ -39,9 +42,10 @@ Standalone node
   50 Hz).
 - Commands leave as topics. The node sends *references*; something else closes the joint
   loop at a high rate: a ros2_control ``pid_controller``, or the robot's own driver.
-- The safety checks run on every tick, before the step. The node does not own the hardware:
-  a fault with a latched reaction, or a failed step, stops the commands until the node is
-  reactivated; neutral commands keep the policy running (:doc:`safety`).
+- The safety checks run on every tick, before the step, and the ``max_age`` of the terms
+  after it. The node does not own the hardware: a fault with a latched reaction, a failed
+  step or a stale input stops the commands until the node is reactivated; neutral commands
+  keep the policy running (:doc:`safety`).
 
 Use it when the robot has no ros2_control, or when the policy should live outside the
 control process.
@@ -63,17 +67,21 @@ in the control loop.
      subgraph cluster_ctrl {
        label="PolicyController (update at update_rate)"; style="rounded,dashed"; fontname="Helvetica";
        read [label="Read state\ninterfaces"];
-       sources [label="Input sources"];
+       sources [label="Input sources\n(policy ticks only)"];
+       kin [label="Kinematics\n(every update, if enabled)"];
        safety [label="Safety checks\n(every update)", fillcolor="#fff6d9"];
        policy [label="Active policy\n(every N updates)"];
+       ages [label="Term input ages\n(after each step)", fillcolor="#fff6d9"];
        execs [label="Interface executors\n(every update)"];
        fault [label="Fault reaction\nexecutors hold, damp or zero;\nor an error", fillcolor="#fde8e8"];
-       read -> safety;
-       sources -> safety;
+       read -> kin;
+       sources -> kin;
+       kin -> safety;
        safety -> policy;
-       policy -> execs;
+       policy -> ages -> execs;
        safety -> fault [label="latched fault"];
        policy -> fault [label="step fails"];
+       ages -> fault [label="stale input"];
        read -> execs [label="joint feedback", style=dashed];
      }
      hw_out [label="Command interfaces\n(joint efforts)", shape=plaintext, fillcolor=none];
@@ -89,7 +97,8 @@ in the control loop.
   can compute: ``PdEffortExecutor`` runs a joint PD law and writes efforts, so no other
   controller is needed. ``ReferenceInterfaceExecutor`` only copies references into the
   interfaces of a chained controller.
-- **Two rates in one loop.** The executors run on every update, the policy only every
+- **Two rates in one loop.** The state interfaces, the kinematics, the safety checks and the
+  executors run on every update; the policy and the topic sources only every
   ``update_rate / policy_rate`` updates.
 - **Safety.** The safety checks run on every update, before the policy. While a reaction is
   latched the policy is neither stepped nor followed: the executors write their fault
@@ -148,7 +157,7 @@ With ``async_inference`` a policy step is spread over several updates:
        label="Control loop (every update)"; style="rounded,dashed"; fontname="Helvetica";
        tick [label="Policy tick:\ncopy the state,\ntrigger a step"];
        between [label="Following updates:\nexecutors keep using\nthe previous commands"];
-       collect [label="First update after\nthe step finished:\ntake its commands"];
+       collect [label="First update after\nthe step finished:\ncheck term input ages,\ntake its commands"];
        fault [label="Latched fault:\nno tick, no collect;\nexecutors write\ntheir fault reaction", fillcolor="#fde8e8"];
        tick -> between -> collect;
        between -> fault [style=dashed];
