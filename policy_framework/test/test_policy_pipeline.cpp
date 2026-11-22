@@ -173,6 +173,18 @@ TEST_F(PolicyPipelineTest, CommandsCarryTheOldestStampOfTheObservation)
   EXPECT_EQ(pipeline.input_stamps().size(), 4u);
 }
 
+TEST_F(PolicyPipelineTest, UserCommandsDoNotCountForTheObservationStamp)
+{
+  Fakes a(1.0F);
+  // A held command is old by design (its own timeout handles a stopped operator): it must not
+  // make the observation look old, nor hide a stale sensor.
+  a.pre->stamps = {{"imu", 5.0, false, false}, {"motion_reference", 1.0, false, true}};
+  pipeline.add_policy(a.policy("a"));
+  ASSERT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::OK);
+  EXPECT_DOUBLE_EQ(pipeline.observation_stamp(), 5.0);
+  EXPECT_DOUBLE_EQ(pipeline.input_stamps()[1].stamp, 1.0);  // still reported
+}
+
 TEST_F(PolicyPipelineTest, StepWaitsWhenPreprocessorHasNoData)
 {
   Fakes a(1.0F);

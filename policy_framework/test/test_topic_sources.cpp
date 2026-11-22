@@ -134,10 +134,21 @@ TEST_F(TopicSourcesTest, TwistIsZeroBeforeFirstMessageAndAfterTimeout)
   src.read(store, now);
   EXPECT_DOUBLE_EQ(store.get(vx), 0.3);
   EXPECT_DOUBLE_EQ(store.get(wz), -0.2);
+  // A Twist has no header: the command in effect is stamped now, not with its receive time.
+  src.read(store, now + 0.1);
+  EXPECT_DOUBLE_EQ(store.get(vx), 0.3);
+  EXPECT_DOUBLE_EQ(store.stamp(vx), now + 0.1);
 
   src.read(store, now + 1.0);  // older than the 0.5 s timeout
   EXPECT_DOUBLE_EQ(store.get(vx), 0.0);
   EXPECT_DOUBLE_EQ(store.get(wz), 0.0);
+}
+
+TEST_F(TopicSourcesTest, TwistRejectsADisabledTimeout)
+{
+  make_node({{"cmd_vel.timeout", 0.0}});
+  policy_framework::TwistSource src;
+  EXPECT_ANY_THROW(src.configure({node, "cmd_vel"}));
 }
 
 TEST_F(TopicSourcesTest, TwistIsZeroWhileTheSafetyEntryIsNotSet)

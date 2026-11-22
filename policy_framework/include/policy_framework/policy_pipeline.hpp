@@ -95,7 +95,7 @@ public:
   /**
    * @return Stamp of the observation of the last successful step: the oldest known input
    *         stamp of the active preprocessor, excluding inputs fed back from previous outputs
-   *         (0 when unknown). The commands of that step carry this stamp. Read it from the
+   *         and user commands (0 when unknown). The commands of that step carry this stamp. Read it from the
    *         thread calling step().
    */
   double observation_stamp() const {return observation_stamp_;}
