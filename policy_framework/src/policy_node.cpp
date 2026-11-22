@@ -42,6 +42,7 @@ PolicyNode::CallbackReturn PolicyNode::on_configure(const rclcpp_lifecycle::Stat
 PolicyNode::CallbackReturn PolicyNode::on_activate(const rclcpp_lifecycle::State &)
 {
   runner_->restart();
+  observation_stamp_ = 0.0;
   timer_ = rclcpp::create_timer(
     this, get_clock(), rclcpp::Duration::from_seconds(1.0 / update_rate_), [this]() {update();});
   return CallbackReturn::SUCCESS;
@@ -61,9 +62,23 @@ PolicyNode::CallbackReturn PolicyNode::on_cleanup(const rclcpp_lifecycle::State 
 
 void PolicyNode::update()
 {
-  runner_->read_sources(now().seconds());
+  const double t = now().seconds();
+  runner_->read_sources(t);
   runner_->update_kinematics();
-  if (runner_->step() == PolicyPipeline::Status::OK) {
+  // The node does not own the hardware: every latched reaction stops the commands, until
+  // reactivated. Neutral commands keep the policy running.
+  if (const auto r = runner_->update_safety(observation_stamp_, t);
+    r && *r != FaultReaction::NEUTRAL_COMMANDS)
+  {
+    return;
+  }
+  const auto status = runner_->step();
+  if (status == PolicyPipeline::Status::ERROR) {
+    runner_->fault("The policy step failed");
+    return;
+  }
+  if (status == PolicyPipeline::Status::OK) {
+    observation_stamp_ = runner_->pipeline().observation_stamp();
     runner_->write_executors();
   }
 }

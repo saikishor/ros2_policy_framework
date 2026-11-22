@@ -23,7 +23,12 @@ namespace policy_framework
  *
  * - configure: loads everything; fails when a policy input is not provided by any source.
  * - activate: starts the timer. Every activation starts from the default (first) policy with
- *   all policies cleared, even if a non-interruptible policy was active.
+ *   all policies cleared, even if a non-interruptible policy was active, and clears a fault.
+ *
+ * Safety (see PolicyRunner::update_safety()): the checks run on every tick, before the step. A
+ * fault with a latched reaction (anything but neutral_commands), including a failed policy
+ * step, stops the commands until the node is reactivated: the node does not own the hardware,
+ * so it cannot hold or damp the robot.
  * - deactivate: stops the timer.
  */
 class PolicyNode : public rclcpp_lifecycle::LifecycleNode
@@ -42,6 +47,7 @@ private:
   std::unique_ptr<PolicyRunner> runner_;
   rclcpp::TimerBase::SharedPtr timer_;
   double update_rate_ = 50.0;  ///< Hz, from the parameters at configure.
+  double observation_stamp_ = 0.0;  ///< Of the last successful step, for safety.max_input_age.
 };
 
 }  // namespace policy_framework
