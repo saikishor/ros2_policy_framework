@@ -40,6 +40,7 @@ pieces are at both ends and never see the model.
        inf -> post [label="tensors"];
      }
      commands [label="Command store\n(named values)", shape=cylinder, fillcolor="#fff6d9"];
+     safety [label="Safety checks\nfault reaction", fillcolor="#fde8e8"];
 
      subgraph cluster_out {
        label="Outputs (shared by all policies)"; style="rounded,dashed"; fontname="Helvetica";
@@ -53,10 +54,15 @@ pieces are at both ends and never see the model.
      post -> commands;
      commands -> topics_out;
      commands -> ifaces_out;
+     state -> safety;
+     safety -> pre [label="latched:\nnot stepped", style=dashed];
+     safety -> ifaces_out [label="hold, damp,\nsafe, error", style=dashed];
    }
 
 Read it left to right: sensors fill the *state store*; the active policy reads it, runs its
-three stages and fills the *command store*; executors send the commands to the robot.
+three stages and fills the *command store*; executors send the commands to the robot. The
+safety checks watch the state store on every cycle and, on a fault, stop the policy and tell
+the executors how to react (:doc:`safety`).
 
 The two packages
 ----------------
@@ -64,7 +70,8 @@ The two packages
 ``policy_framework``
    The core. It knows nothing about any training framework: the stores, the pipeline that
    runs and switches policies, the two hosts (node and controller), the kinematics model, and
-   generic plugins (ONNX inference, topic sources, executors).
+   generic plugins (ONNX inference, topic sources, executors), and the safety layer: the
+   built-in monitor checks, the ``SafetyCheck`` plugins and the fault reactions.
 
 ``policy_framework_mjlab``
    Everything specific to policies exported by mjlab and pal_mjlab: how their observation is
@@ -122,8 +129,23 @@ These words are used with one meaning throughout the code and the documentation.
    * - Update
      - One run of the host's loop. In the controller there can be several updates per step.
    * - Plugin
-     - A class loaded by name at start-up (pluginlib). Every stage, source and executor is
-       one, so new ones can be added from other packages.
+     - A class loaded by name at start-up (pluginlib). Every stage, source, executor and
+       safety check is one, so new ones can be added from other packages.
+   * - User command
+     - An input a person or a planner sends, such as a velocity command or a motion
+       reference. It is replaced by a *neutral command* (zero velocity, a still stand) when
+       it times out or must be ignored.
+   * - Safety check
+     - A test of the state on every cycle: built into the ``SafetyMonitor`` (tilt, joint
+       limits, input age) or a ``SafetyCheck`` plugin. It returns a ``Verdict``: safe or
+       not, and why.
+   * - Fault reaction
+     - What a failing check makes the host do: ``neutral_commands``, ``hold``, ``damp``,
+       ``safe`` or ``error``. Every reaction but ``neutral_commands`` is *latched*: it stays
+       until the host is reactivated.
+   * - Safety entry
+     - A state entry that is 0 while user commands must be ignored, for example a dead-man
+       switch. ``CommandGate`` applies it, and the ``neutral_commands`` reaction.
 
 Where to go next
 ----------------
