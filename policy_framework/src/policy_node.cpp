@@ -74,7 +74,7 @@ void PolicyNode::update()
   }
   const auto status = runner_->step();
   if (status == PolicyPipeline::Status::ERROR) {
-    runner_->fault("The policy step failed");
+    runner_->policy_failure("The policy step failed");
     return;
   }
   if (status == PolicyPipeline::Status::OK) {

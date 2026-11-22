@@ -57,13 +57,13 @@ policy_runner:
     default_value: ""
     description: "State entry (a state interface in PolicyController, e.g. rl_safety_controller/safe) that is 0 while user commands (velocity command, motion reference) must be ignored and replaced by neutral ones. Empty: always accepted."
     read_only: true
-  on_fault:
+  on_policy_failure:
     type: string
     default_value: "error"
-    description: "Reaction to a fault without a reaction of its own: a safety check without on_fault, a failed policy step, unreadable state interfaces (neutral_commands: error for these two). From the most control kept to the least: neutral_commands, hold, damp, safe, error."
+    description: "Reaction to a failed policy step, including a model answering a non-finite value. Not neutral_commands: the policy itself failed."
     read_only: true
     validation:
-      one_of<>: [["neutral_commands", "hold", "damp", "safe", "error"]]
+      one_of<>: [["hold", "damp", "safe", "error"]]
   safety:
     max_tilt:
       type: double
@@ -98,29 +98,29 @@ policy_runner:
         gt_eq<>: [0.0]
     tilt_on_fault:
       type: string
-      default_value: ""
-      description: "Reaction to max_tilt; empty: on_fault."
+      default_value: "error"
+      description: "Reaction to max_tilt: neutral_commands, hold, damp, safe or error."
       read_only: true
       validation:
-        one_of<>: [["", "neutral_commands", "hold", "damp", "safe", "error"]]
+        one_of<>: [["neutral_commands", "hold", "damp", "safe", "error"]]
     joint_position_on_fault:
       type: string
-      default_value: ""
-      description: "Reaction to joint_position_limits; empty: on_fault."
+      default_value: "error"
+      description: "Reaction to joint_position_limits: neutral_commands, hold, damp, safe or error."
       read_only: true
       validation:
-        one_of<>: [["", "neutral_commands", "hold", "damp", "safe", "error"]]
+        one_of<>: [["neutral_commands", "hold", "damp", "safe", "error"]]
     input_age_on_fault:
       type: string
-      default_value: ""
-      description: "Reaction to max_input_age; empty: on_fault."
+      default_value: "error"
+      description: "Reaction to max_input_age: neutral_commands, hold, damp, safe or error."
       read_only: true
       validation:
-        one_of<>: [["", "neutral_commands", "hold", "damp", "safe", "error"]]
+        one_of<>: [["neutral_commands", "hold", "damp", "safe", "error"]]
   safety_checks:
     type: string_array
     default_value: []
-    description: "SafetyCheck plugin names; each needs <check>.type, and may have <check>.on_fault."
+    description: "SafetyCheck plugin names; each needs <check>.type, and has a <check>.on_fault (default error)."
     read_only: true
     validation:
       unique<>: null
@@ -133,11 +133,11 @@ policy_runner:
         not_empty<>: null
     on_fault:
       type: string
-      default_value: ""
-      description: "Reaction to this check failing; empty: on_fault."
+      default_value: "error"
+      description: "Reaction to this check failing: neutral_commands, hold, damp, safe or error."
       read_only: true
       validation:
-        one_of<>: [["", "neutral_commands", "hold", "damp", "safe", "error"]]
+        one_of<>: [["neutral_commands", "hold", "damp", "safe", "error"]]
   executors:
     type: string_array
     default_value: []

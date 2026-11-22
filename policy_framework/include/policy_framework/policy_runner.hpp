@@ -42,13 +42,15 @@ namespace policy_framework
  *   plus the parameters of each of its plugins, also under `<policy>.`.
  * - `safety_entry` (string, default empty): state entry that is 0 while user commands must be
  *   ignored (see CommandGate), registered here and handed to the plugins.
- * - `on_fault` (string, default `error`): reaction to a fault without one of its own (see
- *   FaultReaction for the names and their order).
  * - `safety.*`: the checks of a SafetyMonitor, all off by default (`max_tilt` with `imu`,
- *   `joint_position_limits` with `position_margin`, `max_input_age`), each with an optional
- *   reaction (`tilt_on_fault`, `joint_position_on_fault`, `input_age_on_fault`).
- * - `safety_checks` (string array): SafetyCheck plugin names; each needs `<check>.type`, may
- *   have `<check>.on_fault`, plus the parameters of the plugin under `<check>.`.
+ *   `joint_position_limits` with `position_margin`, `max_input_age`), each with its reaction
+ *   (`tilt_on_fault`, `joint_position_on_fault`, `input_age_on_fault`, default `error`; see
+ *   FaultReaction for the names and their order).
+ * - `safety_checks` (string array): SafetyCheck plugin names; each needs `<check>.type`, has a
+ *   reaction `<check>.on_fault` (default `error`), plus the parameters of the plugin under
+ *   `<check>.`. There is no global default: every check states its reaction.
+ * - `on_policy_failure` (string, default `error`): reaction to a failed policy step (hold, damp,
+ *   safe or error).
  * - `executors` (string array): executor names; each needs `<executor>.type` (plugin class).
  * - `kinematics.enabled`, `kinematics.joints`: optional whole-body Kinematics model, fed from
  *   the `<joint>/position` and `<joint>/velocity` state entries (registered here). The host
@@ -101,12 +103,11 @@ public:
   std::optional<FaultReaction> update_safety(double observation_stamp, double now);
 
   /**
-   * @brief Latch a fault of the host itself (a failed policy step, unreadable state
-   *        interfaces) with `on_fault`, or ERROR when `on_fault` is neutral_commands (the
-   *        policy, or what it reads, failed: it cannot keep running).
+   * @brief Latch a failed policy step (including a non-finite model output) with
+   *        `on_policy_failure`.
    * @return The reaction in effect.
    */
-  FaultReaction fault(const std::string & reason);
+  FaultReaction policy_failure(const std::string & reason);
 
   /// @return Every reaction the configuration can lead to, for hosts to check their support.
   std::vector<FaultReaction> fault_reactions() const;
@@ -224,7 +225,7 @@ private:
 
   SafetyMonitor monitor_;
   bool monitor_enabled_ = false;
-  FaultReaction on_fault_ = FaultReaction::ERROR;
+  FaultReaction policy_failure_reaction_ = FaultReaction::ERROR;
   FaultReaction tilt_on_fault_ = FaultReaction::ERROR;
   FaultReaction position_on_fault_ = FaultReaction::ERROR;
   FaultReaction input_age_on_fault_ = FaultReaction::ERROR;

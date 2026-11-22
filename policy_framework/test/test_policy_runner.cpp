@@ -144,15 +144,16 @@ std::vector<rclcpp::Parameter> safety_params(
     {"hot.prefixes", StringArray{"j1"}},
     {"hot.interfaces", StringArray{"temperature"}},
     {"hot.temperature.max", 80.0},
-    {"hot.on_fault", hot_reaction},
     {"errors.type", "policy_framework/StateBoundsCheck"},
     {"errors.prefixes", StringArray{"j1", "j2"}},
     {"errors.interfaces", StringArray{"error_code"}},
     {"errors.error_code.min", 0.0},
     {"errors.error_code.max", 0.0},
-    {"errors.on_fault", error_reaction},
   };
   params.insert(params.end(), more.begin(), more.end());
+  // Empty: the check keeps the default reaction.
+  if (!hot_reaction.empty()) {params.push_back({"hot.on_fault", hot_reaction});}
+  if (!error_reaction.empty()) {params.push_back({"errors.on_fault", error_reaction});}
   return params;
 }
 
@@ -218,25 +219,42 @@ TEST_F(RunnerSafetyTest, OnlyEverEscalatesAndTheMostSevereFailingCheckWins)
   EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::SAFE);  // never back
 }
 
-TEST_F(RunnerSafetyTest, UsesOnFaultForAChecksWithoutItsOwnAndForHostFaults)
+TEST_F(RunnerSafetyTest, ACheckWithoutItsOwnReactionIsAnError)
 {
-  auto params = safety_params("/runner_safety_default", "", "");
-  params.push_back({"on_fault", "hold"});
-  configure(params);
+  configure(safety_params("/runner_safety_default", "", ""));
   set("j1/error_code", 1.0);
-  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::HOLD);
-  runner.restart();
-  set("j1/error_code", 0.0);
-  EXPECT_EQ(runner.fault("The policy step failed"), FaultReaction::HOLD);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::ERROR);
 }
 
-TEST_F(RunnerSafetyTest, AHostFaultIsAnErrorWhenOnFaultIsNeutralCommands)
+TEST_F(RunnerSafetyTest, APolicyFailureHasItsOwnReaction)
+{
+  configure(runner_params("/runner_safety_host_default"));
+  EXPECT_EQ(runner.policy_failure("The policy step failed"), FaultReaction::ERROR);  // by default
+
+  auto params = runner_params("/runner_safety_host");
+  params.push_back({"on_policy_failure", "damp"});
+  configure(params);
+  EXPECT_EQ(runner.policy_failure("The policy step failed"), FaultReaction::DAMP);
+  const auto reactions = runner.fault_reactions();
+  EXPECT_NE(std::find(reactions.begin(), reactions.end(), FaultReaction::DAMP), reactions.end());
+}
+
+TEST_F(RunnerSafetyTest, RejectsNeutralCommandsForAPolicyFailure)
 {
   // Neutral commands keep the policy running: no answer when the policy itself failed.
-  auto params = runner_params("/runner_safety_host");
-  params.push_back({"on_fault", "neutral_commands"});
+  auto params = runner_params("/runner_safety_host_neutral");
+  params.push_back({"on_policy_failure", "neutral_commands"});
+  EXPECT_ANY_THROW(configure(params));
+}
+
+TEST_F(RunnerSafetyTest, ThereIsNoGlobalOnFault)
+{
+  // Every check states its reaction; a global default would hide it.
+  auto params = safety_params("/runner_safety_no_global", "", "");
+  params.push_back({"on_fault", "hold"});  // not a parameter: ignored
   configure(params);
-  EXPECT_EQ(runner.fault("The policy step failed"), FaultReaction::ERROR);
+  set("j1/error_code", 1.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::ERROR);
 }
 
 TEST_F(RunnerSafetyTest, AsksForTheReactionOfTheVerdictWhenDeclared)
