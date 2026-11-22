@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "policy_framework/policy_runner.hpp"
+#include "policy_framework/msg/mock_fault.hpp"
 #include "policy_framework/srv/switch_policy.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -334,6 +335,34 @@ TEST_F(RunnerSafetyTest, FaultsWhenASourceStopsReceivingForLongerThanItsMaxAge)
   const double received = node->now().seconds();
   EXPECT_FALSE(runner.update_safety(0.0, received).has_value());
   EXPECT_EQ(runner.update_safety(0.0, received + 0.5), FaultReaction::SAFE);
+}
+
+TEST_F(RunnerSafetyTest, AMockSafetyCheckInjectsAFaultOnRequest)
+{
+  auto params = runner_params("/runner_mock_js");
+  params.push_back({"safety_checks", StringArray{"mock"}});
+  params.push_back({"mock.type", "policy_framework/MockSafetyCheck"});
+  params.push_back({"mock.topic", "/runner_mock_fault"});
+  params.push_back({"mock.on_fault", "hold"});
+  params.push_back({"mock.reactions", StringArray{"damp"}});
+  configure(params);
+  const auto reactions = runner.fault_reactions();
+  EXPECT_NE(std::find(reactions.begin(), reactions.end(), FaultReaction::DAMP), reactions.end());
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
+
+  auto pub = helper->create_publisher<policy_framework::msg::MockFault>("/runner_mock_fault", 10);
+  for (int i = 0; i < 100 && pub->get_subscription_count() == 0; ++i) {
+    spin_for(std::chrono::milliseconds(10));
+  }
+  policy_framework::msg::MockFault msg;
+  msg.fault = true;
+  pub->publish(msg);
+  spin_for(std::chrono::milliseconds(100));
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::HOLD);  // its on_fault
+  msg.reaction = "damp";
+  pub->publish(msg);
+  spin_for(std::chrono::milliseconds(100));
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::DAMP);  // escalates
 }
 
 TEST_F(RunnerSafetyTest, ASourceWithoutMaxAgeIsNotChecked)
