@@ -324,6 +324,20 @@ enum class FaultReaction
 };
 
 /**
+ * @return The reaction named @p name in a configuration (`neutral_commands`, `hold`, `damp`,
+ *         `safe`, `error`), or nothing for any other name.
+ */
+inline std::optional<FaultReaction> fault_reaction_from_string(const std::string & name)
+{
+  if (name == "neutral_commands") {return FaultReaction::NEUTRAL_COMMANDS;}
+  if (name == "hold") {return FaultReaction::HOLD;}
+  if (name == "damp") {return FaultReaction::DAMP;}
+  if (name == "safe") {return FaultReaction::SAFE;}
+  if (name == "error") {return FaultReaction::ERROR;}
+  return std::nullopt;
+}
+
+/**
  * @brief Turns the commands into ros2_control command interface values, inside
  *        PolicyController (the controller's counterpart of the topic Executor, which only
  *        runs in the standalone node).
@@ -430,11 +444,24 @@ public:
  * called with the state on every cycle of the control loop and returns false when the state is
  * unsafe, and reset() forgets what the check accumulated (filters, counters).
  *
+ * What to do about a failure is configured per instance (`on_fault`), not decided by the check;
+ * a failing check may ask for another reaction in its Verdict, among the ones it declares once
+ * configured (possible_reactions()), e.g. a more severe one when several actuators fail.
+ *
  * The hosts do not load SafetyCheck plugins yet: this is only the interface and its plugins.
  */
 class SafetyCheck
 {
 public:
+  /// The outcome of check(): no allocation, so that it can be returned from the control loop.
+  struct Verdict
+  {
+    bool safe = true;
+    /// When not safe: the reaction asked for, one of possible_reactions(); nothing: the
+    /// `on_fault` configured for this check.
+    std::optional<FaultReaction> reaction;
+  };
+
   virtual ~SafetyCheck() = default;
 
   /**
@@ -454,9 +481,17 @@ public:
    * @param now Current time in seconds, on the clock of the state stamps.
    * @param[out] reason Why it failed; written only on failure (so that passing never
    *             allocates).
-   * @return false when the state is unsafe.
+   * @return Whether the state is safe and, when it is not, the reaction asked for (e.g. a more
+   *         severe one when several actuators fail at once).
    */
-  virtual bool check(const DataStore & state, double now, std::string & reason) = 0;
+  virtual Verdict check(const DataStore & state, double now, std::string & reason) = 0;
+
+  /**
+   * @return The reactions a Verdict may ask for, besides the `on_fault` configured for this
+   *         check, known once configured: hosts refuse while configuring one that an executor
+   *         does not support. Default: none.
+   */
+  virtual std::vector<FaultReaction> possible_reactions() const {return {};}
 
   /// Forget filters and counters, so that a new run does not inherit the previous one's.
   virtual void reset() {}

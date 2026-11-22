@@ -13,6 +13,7 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
 using policy_framework::DataStore;
+using policy_framework::FaultReaction;
 using policy_framework::StateBoundsCheck;
 using StringArray = std::vector<std::string>;
 
@@ -39,13 +40,18 @@ protected:
   }
 
   void set(const std::string & name, double v) {state.set(state.index(name), v, 0.0);}
-  bool ok() {return check.check(state, 0.0, reason);}
+  bool ok()
+  {
+    verdict = check.check(state, 0.0, reason);
+    return verdict.safe;
+  }
 
   rclcpp_lifecycle::LifecycleNode::SharedPtr node;
   StateBoundsCheck check;
   DataStore commands;
   DataStore state;
   std::string reason;
+  policy_framework::SafetyCheck::Verdict verdict;
 };
 
 TEST_F(StateBoundsCheckTest, RegistersAnEntryPerPrefixAndInterface)
@@ -129,6 +135,28 @@ TEST_F(StateBoundsCheckTest, RejectsAHysteresisThatLeavesNothingToPass)
   EXPECT_THROW(check.configure({node, "motors"}, commands, state), std::runtime_error);
 }
 
+TEST_F(StateBoundsCheckTest, AsksForNoOtherReactionWithoutEscalation)
+{
+  configure({});
+  EXPECT_TRUE(check.possible_reactions().empty());
+  set("j1/temperature", 81.0);
+  set("j2/temperature", 81.0);
+  EXPECT_FALSE(ok());
+  EXPECT_FALSE(verdict.reaction.has_value());  // the configured on_fault
+}
+
+TEST(FaultReaction, IsParsedFromItsConfigurationName)
+{
+  using policy_framework::fault_reaction_from_string;
+  EXPECT_EQ(fault_reaction_from_string("neutral_commands"), FaultReaction::NEUTRAL_COMMANDS);
+  EXPECT_EQ(fault_reaction_from_string("hold"), FaultReaction::HOLD);
+  EXPECT_EQ(fault_reaction_from_string("damp"), FaultReaction::DAMP);
+  EXPECT_EQ(fault_reaction_from_string("safe"), FaultReaction::SAFE);
+  EXPECT_EQ(fault_reaction_from_string("error"), FaultReaction::ERROR);
+  EXPECT_FALSE(fault_reaction_from_string("ERROR").has_value());
+  EXPECT_FALSE(fault_reaction_from_string("").has_value());
+}
+
 TEST_F(StateBoundsCheckTest, RejectsAnInterfaceWithoutBounds)
 {
   rclcpp::NodeOptions opts;
@@ -161,12 +189,17 @@ protected:
   }
 
   void set(const std::string & name, double v) {state.set(state.index(name), v, 0.0);}
-  bool ok() {return check.check(state, 0.0, reason);}
+  bool ok()
+  {
+    verdict = check.check(state, 0.0, reason);
+    return verdict.safe;
+  }
 
   policy_framework::JumpCheck check;
   DataStore commands;
   DataStore state;
   std::string reason;
+  policy_framework::SafetyCheck::Verdict verdict;
 };
 
 TEST_F(JumpCheckTest, FaultsOnAChangeAboveMaxDeltaBetweenTwoCycles)

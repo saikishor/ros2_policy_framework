@@ -34,7 +34,7 @@ public:
   /// @throws std::runtime_error when an interface has neither `min` nor `max`, or when its
   ///         hysteresis leaves no value to pass again.
   void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) override;
-  bool check(const DataStore & state, double now, std::string & reason) override;
+  Verdict check(const DataStore & state, double now, std::string & reason) override;
   void reset() override;
 
 private:
@@ -68,7 +68,7 @@ class JumpCheck : public SafetyCheck
 public:
   /// @throws std::runtime_error when an interface has no `max_delta` above zero.
   void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) override;
-  bool check(const DataStore & state, double now, std::string & reason) override;
+  Verdict check(const DataStore & state, double now, std::string & reason) override;
   void reset() override;
 
 private:
