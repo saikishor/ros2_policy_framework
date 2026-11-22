@@ -1,8 +1,10 @@
 Safety behaviour
 ================
 
-This page lists what the framework does when something is missing, late or wrong. All of it
-applies to the controller; the parts that apply to the node are marked.
+This page lists what the framework does when something is missing, late or wrong. Both hosts
+run the same safety checks, input age checks and command gating. They differ in what they can
+do about a fault: the controller owns the hardware and applies a reaction through its
+executors, while the node only stops sending commands. Where the node differs, it is said.
 
 From activation to deactivation
 -------------------------------
@@ -22,7 +24,8 @@ From activation to deactivation
      start -> hold [label="activate"];
      hold -> run [label="first commands\nfrom the policy"];
      run -> run [label="policy waits for data:\nkeep the last commands"];
-     hold -> fault [label="latched fault\n(error: to Error)"];
+     hold -> fault [label="latched fault"];
+     hold -> error [label="reaction error, or\ninterfaces unreadable"];
      run -> fault [label="latched fault\n(a check, or a failed step)"];
      fault -> fault [label="escalates"];
      run -> error [label="reaction error, or\ninterfaces unreadable"];
@@ -57,15 +60,10 @@ step has to wait for data, the last commands stay applied.
 Safe values
 ~~~~~~~~~~~
 
-When the controller is deactivated, or when the state interfaces cannot be read (below),
-every executor writes its *safe values*: zero effort for ``PdEffortExecutor``, nothing for
-``ReferenceInterfaceExecutor``. When they cannot be read, ``update()`` also returns an error
-to the controller manager.
-
-A stage of the policy that fails, including a model that answers a non-finite value (NaN or
-infinity) as a diverged one does, is a fault with the reaction ``on_policy_failure`` (default
-``error``: the safe values and an error; see `Fault reactions`_). Its values never reach the
-commands.
+When the controller is deactivated, when the state interfaces cannot be read (below), or on
+the ``ERROR`` fault reaction, every executor writes its *safe values*: zero effort for
+``PdEffortExecutor``, nothing for ``ReferenceInterfaceExecutor``. In the last two cases
+``update()`` also returns an error to the controller manager.
 
 Inputs that are missing or late
 -------------------------------
@@ -149,6 +147,11 @@ optionally the reaction it asks for (see `A reaction chosen while running`_), wi
 ``check()`` runs in the control loop: it must not allocate while the state is safe. Writing
 one is shown in :doc:`extending`.
 
+They are listed in ``safety_checks``, each with its ``type`` and its reaction ``on_fault``
+(default ``error``, see `Fault reactions`_). ``policy_node`` runs them on every tick, before
+the policy step. ``PolicyController`` runs them on every update, before the policy, and claims
+what they read as state interfaces. The framework ships three:
+
 ``StateBoundsCheck`` checks every ``<prefix>/<interface>`` entry against the bounds of its
 interface. A non-finite value is out of bounds; an entry never received is not checked. With a
 ``hysteresis``, an entry that failed passes again only within the bounds narrowed by it:
@@ -181,9 +184,10 @@ jump. Do not use it on values that wrap, such as the position of a continuous jo
 moment (standing, walking, during a jump) before a real one happens. It subscribes to
 ``topic`` (default ``~/<name>``, ``policy_framework/msg/MockFault``) and fails on every cycle
 while the latest message has ``fault: true``, with the message's ``reaction`` (empty: its
-``on_fault``), for its ``duration`` in seconds (0: until the next message). A message may ask only for the reactions listed in ``reactions``, which the host
-checks against its executors at configure, like any reaction a check declares; an unknown name
-asks for ``error``, and the host applies ``error`` for a valid but undeclared one. As for any
+``on_fault``), for its ``duration`` in seconds (0: until the next message). A message may
+ask only for the reactions listed in ``reactions``, which the host checks against its
+executors at configure, like any reaction a check declares; an unknown name asks for
+``error``, and the host applies ``error`` for a valid but undeclared one. As for any
 fault, every reaction but ``neutral_commands`` stays latched until reactivation, which also
 forgets the latest message, so that the robot does not fault again at once:
 
@@ -207,31 +211,28 @@ forgets the latest message, so that the robot does not fault again at once:
 Remove it from the configuration outside of testing: anyone who can publish on its topic can
 stop the robot.
 
-They are listed in ``safety_checks``, each with its ``type`` and its reaction ``on_fault``
-(default ``error``, see `Fault reactions`_). ``policy_node`` runs them on every tick, before the policy step.
-``PolicyController`` runs them on every update, before the policy, and claims what they read
-as state interfaces.
-
 Safety monitor
 --------------
 
 Besides the plugins, ``SafetyMonitor`` has built-in checks of the measured state, each off
-until it is given a limit. ``check()`` returns the first one violated; a value that was never
-received is not checked.
+until it is given a limit. The first one violated is reported; a value that was never
+received is not checked. The name in the first column is the one
+``disabled_safety_checks`` uses (see `Checks per policy`_).
 
 .. list-table::
    :header-rows: 1
    :widths: 34 66
 
-   * - Check
+   * - Check (parameters)
      - Violated when
-   * - Tilt (``max_tilt``, ``imu``)
+   * - ``tilt`` (``safety.max_tilt``, ``safety.imu``)
      - the IMU z axis is tilted more than ``max_tilt`` (rad) from the vertical: the robot is
        falling. Reads ``<imu>/orientation.{x,y,z,w}``.
-   * - Joint position (``joint_limits``, ``position_margin``)
-     - the position of a commanded joint leaves its limits, narrowed by the margin. The limits
-       can be read from the robot description; continuous joints have none.
-   * - Input age (``max_input_age``)
+   * - ``joint_position_limits`` (``safety.joint_position_limits``,
+       ``safety.position_margin``)
+     - the position of a commanded joint leaves the limits of the robot description, narrowed
+       by the margin; continuous joints have none.
+   * - ``max_input_age`` (``safety.max_input_age``)
      - the observation of the last policy step (its oldest input, user commands excluded) is
        older than this many seconds: a topic stopped, so the policy acts on the past.
 
@@ -248,9 +249,7 @@ limit per interface and only on the joints you list:
      interfaces: [velocity]
      velocity: {min: -12.0, max: 12.0}
 
-Its parameters are ``safety.max_tilt`` with ``safety.imu``, ``safety.joint_position_limits``
-(the limits of the robot description) with ``safety.position_margin``, and
-``safety.max_input_age``; each check has its reaction (``safety.tilt_on_fault``,
+Each check has its reaction (``safety.tilt_on_fault``,
 ``safety.joint_position_on_fault``, ``safety.input_age_on_fault``, default ``error``).
 Both hosts run it with the safety checks.
 
@@ -544,8 +543,10 @@ example a joint trajectory controller): use ``ERROR``.
 
 ``PolicyRunner::update_safety()`` runs every check on every cycle and applies the most
 severe reaction; ``PolicyRunner::check_input_ages()`` checks the ``max_age`` of the terms
-after each successful step, before its commands are applied. A failed policy step (including a non-finite model output) is a fault too,
-with its own reaction ``on_policy_failure`` (default ``error``; ``hold``, ``damp`` or ``safe``
+after each successful step, before its commands are applied. A failed policy step is a fault
+too: a stage that fails, including a model that answers a non-finite value (NaN or infinity)
+as a diverged one does, whose values therefore never reach the commands. Its reaction is
+``on_policy_failure`` (default ``error``; ``hold``, ``damp`` or ``safe``
 otherwise, but not ``neutral_commands``: the policy itself failed, it cannot keep running).
 Unreadable state interfaces in the controller still return an error.
 
@@ -562,6 +563,14 @@ Unreadable state interfaces in the controller still return an error.
 What the framework does not do
 ------------------------------
 
-It does not limit joint positions or velocities, detect falls, or decide when to stop a
-policy. ``PdEffortExecutor`` can clamp efforts (``effort_limits``). Anything beyond that
-belongs to the robot's safety layer.
+The checks above detect a fault and the reactions stop the policy; nothing corrects the
+commands instead:
+
+- Commands are never clamped to joint position or velocity limits: leaving a limit is a
+  fault. Only ``PdEffortExecutor`` clamps its efforts (``effort_limits``).
+- There is no self-collision check.
+- There is no recovery motion, such as going to a predefined pose: that is the job of a
+  fallback controller, reached with ``ERROR``.
+- There is no grace period after a policy switch (see `Checks per policy`_).
+
+Anything beyond that belongs to the robot's safety layer.
