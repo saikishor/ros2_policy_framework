@@ -49,7 +49,8 @@ namespace policy_framework
  * the policy step in its own thread (SCHED_FIFO `inference_thread_priority`): every policy
  * tick the state is handed over and the step triggered; update() never waits for it, and its
  * commands apply from the first update after it finished (until then the previous ones are
- * held). A tick that finds the previous step still running is skipped with a warning.
+ * held). A tick that finds the previous step still running, or the inference thread busy for
+ * an instant (the trigger never waits for its lock), is skipped with a warning.
  * Exclusive with is_async.
  *
  * Safety: from activation until the active policy produced its first commands (it may wait for

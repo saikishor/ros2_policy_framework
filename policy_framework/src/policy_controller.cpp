@@ -320,7 +320,8 @@ controller_interface::return_type PolicyController::update(
       if (!triggered) {
         RCLCPP_WARN_THROTTLE(
           get_node()->get_logger(), *get_node()->get_clock(), 1000,
-          "Inference is slower than policy_rate: skipping a policy step");
+          "Could not trigger a policy step (the inference thread is still running or busy): "
+          "skipping it");
       }
     }
   }
