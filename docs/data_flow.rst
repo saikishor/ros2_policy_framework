@@ -111,12 +111,13 @@ Every entry carries the time its data was produced. The stamps travel with the d
    * - Data
      - Its stamp
    * - Entry written by a topic source
-     - The message header stamp, or the time it was received when the message has none
+     - The message header stamp, or the time it is read when the message has none (a Twist)
    * - Entry read from a state interface
      - The time of the update that read it
    * - Observation of a step
-     - The oldest stamp among its inputs (inputs fed back from the previous outputs do not
-       count)
+     - The oldest stamp among its inputs. Inputs fed back from the previous outputs do not
+       count, nor do user commands: a command is held until its own timeout, so it is old by
+       design, and counting it would hide a stale sensor behind it
    * - Command entry
      - The stamp of the observation it was computed from
 

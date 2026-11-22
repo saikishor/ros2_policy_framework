@@ -17,6 +17,7 @@ Which plugin to write
      q1 [label="What do you need?", shape=diamond, fillcolor="#fff6d9"];
      source [label="InputSource"];
      term [label="ObservationTerm\n(or TopicTerm)"];
+     command [label="CommandTerm"];
      pre [label="Preprocessor\n+ Postprocessor"];
      inf [label="Inference"];
      exec [label="Executor\n(node)"];
@@ -24,6 +25,7 @@ Which plugin to write
      check [label="SafetyCheck"];
      q1 -> source [label="A sensor topic as\nnamed state entries"];
      q1 -> term [label="A new observation\nterm for mjlab policies"];
+     q1 -> command [label="A user command\nfor mjlab policies"];
      q1 -> pre [label="Policies from another\ntraining framework"];
      q1 -> inf [label="Another model format\nor runtime"];
      q1 -> exec [label="Commands on\nanother topic type"];
@@ -131,7 +133,9 @@ safely. A term only says how big it is and how to write its value:
        out[0] = static_cast<float>(in.msg->point.x);
        out[1] = static_cast<float>(in.msg->point.y);
        out[2] = static_cast<float>(in.msg->point.z);
-       return rclcpp::Time(in.msg->header.stamp).seconds();   // when the value was produced
+       // When the value was produced: the header stamp, else now.
+       const auto & h = in.msg->header.stamp;
+       return h.sec == 0 && h.nanosec == 0 ? now() : rclcpp::Time(h).seconds();
      }
 
    protected:
@@ -155,6 +159,42 @@ Then use it for the term of that name in a policy:
        target:
          type: my_package/TargetTerm
          topic: /target
+
+Example: a user command term
+----------------------------
+
+A term that feeds a user command, such as a velocity command or a motion reference, derives
+from ``CommandTerm``. It only says how to write the command and the neutral command; the base
+does what keeps a command safe, so that no command term can forget it:
+
+- the neutral command before the first message, once the last one was received longer ago
+  than ``timeout`` (above zero), while ``usable()`` refuses the message, and while the
+  ``CommandGate`` is closed (the safety entry is 0, or the ``NEUTRAL_COMMANDS`` reaction is
+  active);
+- the stamp: the header stamp when the message type has one and it is set, else now;
+- the user command flag, so that its stamp does not count for the observation stamp
+  (:doc:`data_flow`).
+
+.. code-block:: cpp
+
+   class HeadingCommand : public CommandTerm<std_msgs::msg::Float64>
+   {
+   public:
+     HeadingCommand() : CommandTerm("heading", 0.5) {}   // default topic, default timeout (s)
+
+   protected:
+     size_t configure_command(const PluginContext &, const ModelInfo &) override {return 1;}
+     void write_command(const std_msgs::msg::Float64 & msg, const DataStore &, float * out)
+     override
+     {
+       out[0] = static_cast<float>(msg.data);
+     }
+     void write_neutral(const DataStore &, float * out) override {out[0] = 0.0F;}
+   };
+
+   PLUGINLIB_EXPORT_CLASS(HeadingCommand, policy_framework::ObservationTerm)
+
+``TwistCommandTerm`` and ``MotionGoalTerm`` are built this way.
 
 Example: a term from the state and the kinematics
 -------------------------------------------------
@@ -297,7 +337,8 @@ the situations described in the other pages:
    * - ``CommandGate::open()``
      - Check it in any plugin that feeds user commands, and use a neutral command while it
        is false: the safety entry is 0, or the ``NEUTRAL_COMMANDS`` fault reaction is active
-       (:doc:`safety`).
+       (:doc:`safety`), and fall back to the neutral command after a timeout above zero,
+       measured on the receive time. A ``CommandTerm`` does both for a term.
 
 Testing a plugin
 ----------------
