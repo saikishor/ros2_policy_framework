@@ -36,5 +36,24 @@ def affine_model():
     onnx.save(model, "affine.onnx")
 
 
+def sensor_model():
+    """mjlab model reading only a 3-float `sensor` term (a plugin): actions = sensor.x."""
+    w = numpy_helper.from_array(np.array([[1], [0], [0]], dtype=np.float32), "W")
+    graph = helper.make_graph(
+        [helper.make_node("MatMul", ["obs", "W"], ["actions"])],
+        "sensor",
+        [helper.make_tensor_value_info("obs", TensorProto.FLOAT, [1, 3])],
+        [helper.make_tensor_value_info("actions", TensorProto.FLOAT, [1, 1])],
+        initializer=[w],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model.ir_version = 7
+    helper.set_model_props(
+        model, {"joint_names": "a", "default_joint_pos": "0.0", "observation_names": "sensor"})
+    onnx.checker.check_model(model)
+    onnx.save(model, "sensor.onnx")
+
+
 if __name__ == "__main__":
     affine_model()
+    sensor_model()

@@ -1,7 +1,16 @@
-<library path="frame_position_term">
-  <class name="policy_framework_mjlab_test/FramePositionTerm"
-    type="policy_framework_mjlab_test::FramePositionTerm"
-    base_class_type="policy_framework::ObservationTerm">
-    <description>Test only: position of imu_link from the kinematics.</description>
-  </class>
-</library>
+<class_libraries>
+  <library path="frame_position_term">
+    <class name="policy_framework_mjlab_test/FramePositionTerm"
+      type="policy_framework_mjlab_test::FramePositionTerm"
+      base_class_type="policy_framework::ObservationTerm">
+      <description>Test only: position of imu_link from the kinematics.</description>
+    </class>
+  </library>
+  <library path="vector_term">
+    <class name="policy_framework_mjlab_test/VectorTerm"
+      type="policy_framework_mjlab_test::VectorTerm"
+      base_class_type="policy_framework::ObservationTerm">
+      <description>Test only: vector of a geometry_msgs/Vector3Stamped topic.</description>
+    </class>
+  </library>
+</class_libraries>
