@@ -82,8 +82,11 @@ The life of a plugin
      edge [fontname="Helvetica", fontsize=10];
      configure [label="configure()\nread parameters,\nregister entries,\nallocate", fillcolor="#fff6d9"];
      cycle [label="Control cycle\ncompute() / read() / write() / check()\nindices only, no allocation", fillcolor="#e8f5e9"];
-     configure -> cycle [label="host activated"];
+     reset [label="reset() / clear()\nforget per-run state"];
+     configure -> reset [label="host activated"];
+     reset -> cycle;
      cycle -> cycle [label="every step\nor update"];
+     cycle -> reset [label="policy activated,\nhost reactivated", style=dashed];
    }
 
 Two phases, with different rules:
@@ -355,11 +358,17 @@ the situations described in the other pages:
        update while faulted. Default: the safe values. ``supports_fault_reaction()`` tells
        which reactions the configuration allows; ``PolicyController`` refuses to configure
        with one an executor does not support.
+   * - ``SafetyCheck::possible_reactions()``
+     - Once configured: the reactions a ``Verdict`` may ask for besides ``on_fault``. The
+       host refuses to configure when an executor cannot apply one. Default: none.
+   * - ``SafetyCheck::reset()``
+     - When the host is reactivated, and when a check disabled by the previous policy
+       applies again (:ref:`checks-per-policy`): forget filters and counters.
    * - ``CommandGate::open()``
-     - Check it in any plugin that feeds user commands, and use a neutral command while it
-       is false: the safety entry is 0, or the ``NEUTRAL_COMMANDS`` fault reaction is active
-       (:doc:`safety`), and fall back to the neutral command after a timeout above zero,
-       measured on the receive time. A ``CommandTerm`` does both for a term.
+     - False while the safety entry is 0 or the ``NEUTRAL_COMMANDS`` fault reaction is active
+       (:doc:`safety`). Any plugin that feeds user commands checks it and writes a neutral
+       command while it is false, and also after a timeout above zero, measured on the
+       receive time. A ``CommandTerm`` does both for a term.
 
 Testing a plugin
 ----------------
