@@ -380,14 +380,20 @@ TEST_F(PolicyControllerTest, AsyncInferenceKeepsThePdLawInTheUpdateLoop)
   ASSERT_EQ(update(), controller_interface::return_type::OK);
   EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
 
-  // Once the step finished, its references (j1 4.5) apply from the next update, PD on the
-  // latest state. Polled rather than a fixed sleep: the first inference can be slow on a
-  // loaded machine.
-  set_state("j1/position", 2.0);
+  // Once a step finished, its references (j1 4.5) apply from the next update. Polled rather
+  // than a fixed sleep: the first inference can be slow on a loaded machine, and a trigger can
+  // be skipped (the inference thread holds its lock at that moment), so the first step may be
+  // a later one; every step sees the same state until the joint moves below.
   for (int i = 0; i < 200 && command("j1/effort") <= 0.0; ++i) {  // 0 until applied
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     ASSERT_EQ(update(), controller_interface::return_type::OK);
   }
+  ASSERT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+
+  // The PD law runs on every update with the latest state, between the policy steps: a step
+  // triggered in this update cannot apply before the next one.
+  set_state("j1/position", 2.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
   EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 2.0));
 
   ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
