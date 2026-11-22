@@ -114,9 +114,10 @@ private:
  * @brief geometry_msgs/Twist → `<name>/linear.{x,y,z}`, `<name>/angular.{x,y,z}`.
  *
  * A velocity command that never arrived, is older than `timeout` seconds (parameter, default
- * 1.0, <= 0 disables it) or arrives while the host's `safety_entry` is 0 (CommandGate) is written
- * as zero, so a policy never acts on a stale or unsafe command and does not wait for a command
- * to start.
+ * 1.0, above zero; measured on the receive time) or arrives while the host's `safety_entry` is 0
+ * (CommandGate) is written as zero, so a policy never acts on a stale or unsafe command and does
+ * not wait for a command to start. The entries are stamped with the current time: a Twist has
+ * no header, and the command applies now.
  */
 class TwistSource : public TopicSource<geometry_msgs::msg::Twist>
 {

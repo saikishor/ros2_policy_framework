@@ -80,7 +80,7 @@ PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore &
   }
   observation_stamp_ = 0.0;
   for (const auto & s : e.policy.preprocessor->input_stamps()) {
-    if (!s.from_previous_outputs && s.stamp > 0.0 &&
+    if (!s.from_previous_outputs && !s.user_command && s.stamp > 0.0 &&
       (observation_stamp_ <= 0.0 || s.stamp < observation_stamp_))
     {
       observation_stamp_ = s.stamp;

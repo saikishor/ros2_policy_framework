@@ -71,6 +71,9 @@ struct InputStamp
   /// The input is fed back from the policy's previous outputs (e.g. the last action) and has
   /// the stamp of the previous observation; it does not count for the observation stamp.
   bool from_previous_outputs = false;
+  /// The input is a user command (a velocity command, a motion reference): held until its own
+  /// timeout, so it is old by design; it does not count for the observation stamp.
+  bool user_command = false;
 };
 using InputStamps = std::vector<InputStamp>;
 

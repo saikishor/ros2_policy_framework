@@ -137,7 +137,7 @@ void TwistSource::configure_source(const PluginContext & ctx)
 void TwistSource::read(DataStore & state, double now)
 {
   const auto in = latest();
-  const bool stale = in.msg && timeout_ > 0.0 && now - in.receive_time > timeout_;
+  const bool stale = in.msg && now - in.receive_time > timeout_;
   if (stale != timed_out_) {
     // Edge triggered: logs once per transition, not every cycle.
     RCLCPP_WARN_EXPRESSION(logger_, stale, "No velocity command for %.2f s, using zero", timeout_);
@@ -151,7 +151,8 @@ void TwistSource::read(DataStore & state, double now)
   }
   const auto & m = *in.msg;
   const double v[] = {m.linear.x, m.linear.y, m.linear.z, m.angular.x, m.angular.y, m.angular.z};
-  fields_.write(state, v, in.receive_time);
+  // A Twist has no header: the command in effect now (its staleness is the timeout's job).
+  fields_.write(state, v, now);
 }
 
 // ------------------------------------------------------------------------------------ Odometry

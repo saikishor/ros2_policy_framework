@@ -4,7 +4,9 @@
 #ifndef POLICY_FRAMEWORK__OBSERVATION_TERM_HPP_
 #define POLICY_FRAMEWORK__OBSERVATION_TERM_HPP_
 
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "policy_framework/latest_message.hpp"
@@ -47,15 +49,25 @@ public:
   /// Called whenever the policy becomes active. Real-time safe.
   virtual void reset() {}
   /**
+   * @return true for a user command term (derived from CommandTerm): its stamp does not count
+   *         for the observation stamp, since a command is held until its own timeout and is old
+   *         by design.
+   */
+  bool user_command() const {return user_command_;}
+  /**
    * @brief Write the current value. Called from the control cycle, only when ready().
    * @param last_outputs Model outputs of the previous step of the policy.
    * @param out The configure()d number of floats.
-   * @return Stamp of the written value (seconds, node clock): when the data was produced,
-   *         e.g. the message header stamp, else its receive time; the current time for a
+   * @return Stamp of the written value (seconds, node clock): when the data was produced, i.e.
+   *         the message header stamp; the current time for a message without one, and for a
    *         value generated now (e.g. a default). Read it from the same message as the value.
    *         kFromPreviousOutputs for a value taken from @p last_outputs.
    */
   virtual double compute(const DataStore & state, const TensorMap & last_outputs, float * out) = 0;
+
+protected:
+  /// Set by CommandTerm only.
+  bool user_command_ = false;
 };
 
 /**
@@ -95,6 +107,100 @@ protected:
 private:
   std::string default_topic_;
   LatestMessage<MsgT> topic_;
+};
+
+namespace detail
+{
+template<typename MsgT, typename = void>
+struct has_header : std::false_type {};
+template<typename MsgT>
+struct has_header<MsgT, std::void_t<decltype(std::declval<MsgT>().header.stamp)>>
+  : std::true_type {};
+}  // namespace detail
+
+/**
+ * @brief An observation term fed by a user command topic (a velocity command, a motion
+ *        reference), with everything a command needs to be safe handled here, so that a command
+ *        term cannot get it wrong:
+ *
+ * - the neutral command (write_neutral()) before the first message, once the last one was
+ *   received longer ago than `timeout` (parameter, seconds, above zero: a command that never
+ *   expired would stay applied after the operator is lost), while usable() refuses it, and
+ *   while the CommandGate is closed (the host's `safety_entry` is 0, or the NEUTRAL_COMMANDS
+ *   fault reaction is active);
+ * - the stamp: the header stamp of the message when its type has a header and it is set, else
+ *   the current time (also for the neutral command);
+ * - the user command flag: its stamp does not count for the observation stamp.
+ *
+ * Always ready: a policy does not wait for a command. Parameters (under the term's name):
+ * `topic`, `timeout`. A derived term implements configure_command(), write_command() and
+ * write_neutral(), and may refuse a message in usable().
+ */
+template<typename MsgT>
+class CommandTerm : public TopicTerm<MsgT>
+{
+public:
+  /**
+   * @param default_topic Topic when the `topic` parameter is not set.
+   * @param default_timeout Seconds, when the `timeout` parameter is not set.
+   */
+  CommandTerm(std::string default_topic, double default_timeout)
+  : TopicTerm<MsgT>(std::move(default_topic)), default_timeout_(default_timeout)
+  {
+    this->user_command_ = true;
+  }
+
+  bool ready(const DataStore &) override {return true;}
+
+  double compute(const DataStore & state, const TensorMap &, float * out) final
+  {
+    const auto in = this->latest();
+    const double t = this->now();
+    // Measured on the receive time: whatever clock the publisher stamps with.
+    if (in.msg && t - in.receive_time <= timeout_ && gate_.open(state) && usable(*in.msg)) {
+      write_command(*in.msg, state, out);
+      return stamp_of(*in.msg, t);
+    }
+    write_neutral(state, out);
+    return t;
+  }
+
+protected:
+  /**
+   * @brief Read the term parameters and check the model.
+   * @return Number of floats of the term.
+   */
+  virtual size_t configure_command(const PluginContext & ctx, const ModelInfo & model) = 0;
+  /// @return false to use the neutral command instead of @p msg (e.g. a malformed message).
+  virtual bool usable(const MsgT &) {return true;}
+  /// Write the term from the command @p msg. Called from the control cycle.
+  virtual void write_command(const MsgT & msg, const DataStore & state, float * out) = 0;
+  /// Write the neutral command (e.g. zero velocity, a still stand). Called from the control cycle.
+  virtual void write_neutral(const DataStore & state, float * out) = 0;
+
+  size_t configure_term(const PluginContext & ctx, const ModelInfo & model) final
+  {
+    timeout_ = get_parameter<double>(ctx, "timeout", default_timeout_);
+    if (!(timeout_ > 0.0)) {
+      throw std::runtime_error(ctx.name + ".timeout must be above zero");
+    }
+    gate_ = CommandGate(ctx);
+    return configure_command(ctx, model);
+  }
+
+private:
+  static double stamp_of(const MsgT & msg, double now)
+  {
+    if constexpr (detail::has_header<MsgT>::value) {
+      const auto & s = msg.header.stamp;
+      if (s.sec != 0 || s.nanosec != 0) {return s.sec + s.nanosec * 1e-9;}
+    }
+    return now;
+  }
+
+  double default_timeout_;
+  double timeout_ = 0.0;
+  CommandGate gate_;
 };
 
 }  // namespace policy_framework
