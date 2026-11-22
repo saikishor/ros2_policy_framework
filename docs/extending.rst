@@ -58,7 +58,8 @@ Which plugin to write
      - command entries into command interface values (controller)
      - ``PdEffortExecutor``, ``ReferenceInterfaceExecutor``
    * - ``SafetyCheck``
-     - state entries (and the kinematics) into a verdict: safe or not, and why
+     - state entries (and the kinematics) into a ``Verdict``: safe or not, why, and
+       optionally the reaction to a fault
      - ``StateBoundsCheck``, ``JumpCheck``
 
 The hosts do not run ``SafetyCheck`` plugins yet (:doc:`safety`).
@@ -183,6 +184,82 @@ store, so the controller gets them in real time:
      std::shared_ptr<Kinematics> kinematics_;
      size_t hand_ = 0;
    };
+
+Example: a safety check
+-----------------------
+
+A ``SafetyCheck`` registers what it reads, and returns a ``Verdict`` on every cycle. This one
+fails on any leg actuator error, and asks for ``ERROR`` when both legs have one; with a single
+leg it leaves the reaction to the configured ``on_fault``:
+
+.. code-block:: cpp
+
+   #include <algorithm>
+   #include <cmath>
+
+   #include "policy_framework/plugin_interfaces.hpp"
+
+   using namespace policy_framework;
+
+   class LegActuatorsCheck : public SafetyCheck
+   {
+   public:
+     void configure(const PluginContext & ctx, const DataStore &, DataStore & state) override
+     {
+       using Names = std::vector<std::string>;
+       for (const auto & j : get_parameter<Names>(ctx, "left", {})) {
+         left_.push_back(state.add(j + "/error_code"));   // the controller claims it
+       }
+       for (const auto & j : get_parameter<Names>(ctx, "right", {})) {
+         right_.push_back(state.add(j + "/error_code"));
+       }
+     }
+
+     // Every reaction a Verdict may ask for, known once configured: checked at startup.
+     std::vector<FaultReaction> possible_reactions() const override
+     {
+       return {FaultReaction::ERROR};
+     }
+
+     Verdict check(const DataStore & state, double, std::string & reason) override
+     {
+       const bool left = any_error(state, left_);
+       const bool right = any_error(state, right_);
+       if (!left && !right) {return {};}                // safe: nothing allocated
+       if (left && right) {
+         reason = "actuator errors on both legs";
+         return {false, FaultReaction::ERROR};
+       }
+       reason = left ? "an actuator error on the left leg" : "an actuator error on the right leg";
+       return {false, std::nullopt};                    // the configured on_fault
+     }
+
+   private:
+     static bool any_error(const DataStore & state, const std::vector<size_t> & entries)
+     {
+       return std::any_of(
+         entries.begin(), entries.end(),
+         // An integer code stored as a double; written so that NaN is an error too.
+         [&](size_t i) {return state.received(i) && !(std::abs(state.get(i)) < 0.5);});
+     }
+
+     std::vector<size_t> left_, right_;
+   };
+
+   PLUGINLIB_EXPORT_CLASS(LegActuatorsCheck, policy_framework::SafetyCheck)
+
+The ``Verdict`` carries the whole answer of a cycle, so a check keeps no state between
+``check()`` and its host besides its own filters and counters (forgotten in ``reset()``). Its
+configuration, once the hosts run the checks:
+
+.. code-block:: yaml
+
+   safety_checks: [legs]
+   legs:
+     type: my_package/LegActuatorsCheck
+     left: [leg_left_1_joint, leg_left_2_joint]
+     right: [leg_right_1_joint, leg_right_2_joint]
+     on_fault: neutral_commands   # one leg: stop walking; both legs: ERROR from the Verdict
 
 Hooks beyond the basic cycle
 ----------------------------
