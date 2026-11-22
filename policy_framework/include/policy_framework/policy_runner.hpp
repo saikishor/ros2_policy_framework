@@ -111,6 +111,23 @@ public:
    */
   FaultReaction policy_failure(const std::string & reason);
 
+  /**
+   * @brief Check the inputs of the step that just finished against their `max_age` (see
+   *        TopicTerm), and latch the reaction of the most severe stale one. Hosts call it right
+   *        after a successful step, in their own thread (with an inference thread: when they
+   *        collect the step's result, before the next step starts).
+   * @param now Current time in seconds, on the clock of the receive times.
+   * @return The latched reaction in effect, if any.
+   */
+  std::optional<FaultReaction> check_input_ages(double now);
+
+  /**
+   * @return The index in @p stamps of the stale input (received longer ago than its max_age)
+   *         with the most severe reaction; nothing when none is. An input that never received
+   *         anything, or without a max_age, is not checked.
+   */
+  static std::optional<size_t> stale_input(const InputStamps & stamps, double now);
+
   /// @return Every reaction the configuration can lead to, for hosts to check their support.
   std::vector<FaultReaction> fault_reactions() const;
 
@@ -245,6 +262,7 @@ private:
     FaultReaction on_fault;
   };
   std::vector<SourceAge> source_ages_;
+  std::vector<FaultReaction> input_age_reactions_;  ///< Of the inputs with a max_age.
   std::optional<FaultReaction> latched_;   ///< Latched reaction, until restart().
   std::optional<FaultReaction> reported_;  ///< Reaction in effect when last logged.
   std::string reason_;        ///< Of the most severe failing check of the current cycle.

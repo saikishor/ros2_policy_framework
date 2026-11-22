@@ -388,6 +388,8 @@ TEST(MjlabPreprocessor, TermPluginReplacesABuiltinTerm)
   for (size_t i = 8; i < 11; ++i) {EXPECT_FLOAT_EQ(in["obs"].data[i], 0.0F);}  // command
   EXPECT_GE(pre.input_stamps()[4].stamp, before);  // stamp from the plugin: zero made now
   EXPECT_TRUE(pre.input_stamps()[4].user_command);  // not part of the observation stamp
+  EXPECT_DOUBLE_EQ(pre.input_stamps()[4].receive_time, 0.0);  // from the term: no message yet
+  EXPECT_DOUBLE_EQ(pre.input_stamps()[4].max_age, 0.0);
   EXPECT_FALSE(pre.input_stamps()[0].user_command);
   EXPECT_FLOAT_EQ(in["obs"].data[13], -1.0F);  // gravity z still after it
 }

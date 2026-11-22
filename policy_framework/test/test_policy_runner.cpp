@@ -271,6 +271,21 @@ TEST_F(RunnerSafetyTest, AsksForTheReactionOfTheVerdictWhenDeclared)
   EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::ERROR);
 }
 
+TEST(PolicyRunnerInputAges, FindsTheMostSevereInputOlderThanItsMaxAge)
+{
+  using policy_framework::InputStamp;
+  // name, stamp, from_previous_outputs, user_command, receive_time, max_age, max_age_on_fault
+  const policy_framework::InputStamps stamps = {
+    {"a", 9.0, false, false, 9.0, 0.5, FaultReaction::HOLD},
+    {"b", 9.9, false, false, 9.9, 0.5, FaultReaction::SAFE},
+    {"never", 0.0, false, false, 0.0, 0.1, FaultReaction::ERROR},  // nothing received yet
+    {"unlimited", 1.0, false, false, 1.0, 0.0, FaultReaction::ERROR},  // no max_age
+  };
+  EXPECT_FALSE(PolicyRunner::stale_input(stamps, 9.2).has_value());
+  EXPECT_EQ(PolicyRunner::stale_input(stamps, 10.0), 0U);  // a only
+  EXPECT_EQ(PolicyRunner::stale_input(stamps, 10.6), 1U);  // a and b: b is more severe
+}
+
 TEST(PolicyRunnerReaction, AnUndeclaredReactionOfAVerdictIsAnError)
 {
   using policy_framework::SafetyCheck;
