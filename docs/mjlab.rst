@@ -92,8 +92,6 @@ The terms
      - The velocity the user asks for: forward, sideways, turning
    * - ``command`` of a motion policy
      - The joint reference the policy itself predicted at the previous step
-   * - ``motion_goal``
-     - The reference motion of a supermimic policy (pal_mjlab, see below)
 
 Any term can be replaced, and new ones added, without touching the preprocessor: set
 ``<policy>.terms.<name>.type`` to an ``ObservationTerm`` plugin. The Kangaroo configuration
@@ -134,39 +132,6 @@ The last one matters because the IMU is not always mounted on the base. With
 ``goal_root_body`` set, the terms ``base_ang_vel`` and ``base_projected_gravity`` describe
 that link: the IMU measurement is moved to it with the :doc:`kinematics`. This needs
 ``kinematics.enabled`` and the parameter ``imu_frame`` (the URDF link of the IMU).
-
-Tracking a motion: ``motion_goal``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-A *supermimic* policy tracks a reference motion that is sent to it while it runs. Its
-``motion_goal`` term reads a ``pal_motion_msgs/MotionReference`` topic.
-
-.. graphviz::
-
-   digraph motion_goal {
-     rankdir=LR;
-     node [shape=box, style="rounded,filled", fillcolor="#eef3fb", fontname="Helvetica", fontsize=11];
-     edge [fontname="Helvetica", fontsize=10];
-     topic [label="MotionReference\nframes of joint targets\n+ root orientation", shape=plaintext, fillcolor=none];
-     usable [label="Recent, well formed,\nand safety allows it?", shape=diamond, fillcolor="#fff6d9"];
-     align [label="Turn the stream to the\nrobot's heading\n(once, when it starts)"];
-     hold [label="Still stand at the\nrobot's heading", fillcolor="#fde8e8"];
-     goal [label="motion_goal\nper frame: joint positions,\nvelocities, root orientation\nin the base frame", fillcolor="#e8f5e9"];
-     base [label="Base orientation\n(IMU + kinematics)"];
-     topic -> usable;
-     usable -> align [label="yes"];
-     usable -> hold [label="no"];
-     align -> goal;
-     hold -> goal;
-     base -> goal;
-   }
-
-- The policy looks a fixed number of frames ahead (``goal_num_future_frames``). A message
-  with fewer frames has its last one repeated, so a live source can send one frame at a time.
-- When a stream starts, it is rotated about the vertical axis so that its first frame faces
-  where the robot faces. The motion is then tracked relative to that heading.
-- Without a usable reference the goal is a still stand. The policy never waits for a
-  reference, and stops moving when the reference stops arriving.
 
 From actions to commands
 ------------------------

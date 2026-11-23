@@ -118,9 +118,6 @@ mjlab policies out of the box
   the names, joints and defaults mjlab exports, with the history laid out as in training.
 - **pal_mjlab exports** are recognised by their extra metadata (observation joints, per-term
   history lengths, base link).
-- **Motion tracking**: ``MotionGoalTerm`` feeds a supermimic policy from a
-  ``MotionReference`` topic, aligned to the robot's heading, with a still stand when no
-  reference arrives.
 - **Actions to commands**: ``MjlabPostprocessor`` scales the actions into joint positions and
   hands over the policy's gains.
 - **Kangaroo example**: a launch file runs several walking and imitation policies, in
