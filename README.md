@@ -181,7 +181,8 @@ or, chaining into a pid_controller that closes the loop:
     `ConcatPreprocessor`; 0 for the inputs of an inactive policy).
 
   Also available as `PolicyController::timing()` and `PolicyController::input_age_ms()`.
-  For example: `ros2 topic echo /policy_controller/introspection_data/full`.
+  For example: `ros2 topic echo /policy_controller/introspection_data/full`, or plot them
+  with PlotJuggler (see the Introspection section of `docs/data_flow.rst`).
 
   > Changed: these values used to be on ros2_control's introspection as
   > `<controller>.<name>`, with `policy_step_time_us` now named `step_time_us`.
