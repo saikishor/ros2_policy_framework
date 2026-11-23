@@ -166,7 +166,7 @@ struct has_header<MsgT, std::void_t<decltype(std::declval<MsgT>().header.stamp)>
  * - the user command flag: its stamp does not count for the observation stamp.
  *
  * Always ready by default: a policy does not wait for a command (a term may override ready()
- * to wait for something else, e.g. MotionGoalTerm waits for the base orientation). Parameters
+ * to wait for something else, e.g. the base orientation). Parameters
  * (under the term's name): `topic`, `timeout`.
  *
  * A derived term implements configure_command(), write_command() and write_neutral(), and may
@@ -224,7 +224,7 @@ protected:
   /**
    * @return false to use the neutral command instead of @p msg (e.g. a malformed message).
    *         Called on every cycle with the latest message, often the same one again: cache
-   *         what is costly to check per message (e.g. MotionGoalTerm maps its joints only when
+   *         what is costly to check per message (e.g. map the joints of a message only when
    *         they change), and throttle any log.
    */
   virtual bool usable(const MsgT &) {return true;}

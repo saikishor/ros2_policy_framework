@@ -9,7 +9,7 @@ mjlab_preprocessor:
   imu_frame:
     type: string
     default_value: ""
-    description: "URDF link of the IMU. Needed (with kinematics.enabled) by the terms of pal_mjlab exports that observe the base: base_ang_vel, base_projected_gravity, motion_goal."
+    description: "URDF link of the IMU. Needed (with kinematics.enabled) by the terms of pal_mjlab exports that observe the base: base_ang_vel, base_projected_gravity."
     read_only: true
   velocity_command_name:
     type: string

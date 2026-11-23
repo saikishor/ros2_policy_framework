@@ -46,7 +46,6 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * (parameter `imu_frame`, its URDF link; needs `kinematics.enabled`):
  * - `base_ang_vel`: the angular velocity of the base, in its axes (BaseFromImu)
  * - `base_projected_gravity`: gravity in the base frame
- * - `motion_goal`: the reference motion of a supermimic policy (MotionGoalTerm)
  *
  * History: each term is laid out as its own block, oldest first and newest last (matching
  * mjlab's per-term history with flattening). Its length is the term's
