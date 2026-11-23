@@ -61,9 +61,9 @@ add_library(${PROJECT_NAME} SHARED
   src/multi_dof_command_executor.cpp
   src/generic_stages.cpp
   src/interface_executors.cpp
-  src/policy_runner.cpp
-  src/policy_node.cpp
-  src/policy_controller.cpp
+  src/hosts/policy_runner.cpp
+  src/hosts/policy_node.cpp
+  src/hosts/policy_controller.cpp
 )
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -79,7 +79,7 @@ target_link_libraries(${PROJECT_NAME}
   PUBLIC "${cpp_typesupport_target}" Eigen3::Eigen
   PRIVATE onnxruntime::onnxruntime pinocchio::pinocchio ${PARAMETER_LIBRARIES})
 
-add_executable(policy_node src/policy_node_main.cpp)
+add_executable(policy_node src/hosts/policy_node_main.cpp)
 target_link_libraries(policy_node ${PROJECT_NAME} policy_node_parameters)
 
 # All plugin base classes live in this package, so every plugin type is exported against it.
@@ -119,8 +119,13 @@ if(BUILD_TESTING)
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
   ament_add_gtest(test_generic_stages test/test_generic_stages.cpp)
   target_link_libraries(test_generic_stages ${PROJECT_NAME})
-  foreach(test IN ITEMS test_onnx_inference test_policy_runner test_policy_controller test_policy_node)
-    ament_add_gtest(${test} test/${test}.cpp)
+  foreach(path IN ITEMS
+      test/test_onnx_inference.cpp
+      test/hosts/test_policy_runner.cpp
+      test/hosts/test_policy_controller.cpp
+      test/hosts/test_policy_node.cpp)
+    get_filename_component(test ${path} NAME_WE)
+    ament_add_gtest(${test} ${path})
     target_link_libraries(${test} ${PROJECT_NAME})
     target_compile_definitions(${test} PRIVATE TEST_MODELS_DIR="${TEST_MODELS_DIR}"
       TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")

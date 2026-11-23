@@ -25,7 +25,7 @@
 #include <vector>
 
 #include "geometry_msgs/msg/vector3_stamped.hpp"
-#include "policy_framework/policy_runner.hpp"
+#include "policy_framework/hosts/policy_runner.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using policy_framework::FaultReaction;

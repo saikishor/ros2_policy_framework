@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "policy_framework/policy_controller.hpp"
+#include "policy_framework/hosts/policy_controller.hpp"
 
 #include <algorithm>
 #include <chrono>

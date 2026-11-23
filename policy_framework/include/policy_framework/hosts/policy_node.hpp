@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef POLICY_FRAMEWORK__POLICY_NODE_HPP_
-#define POLICY_FRAMEWORK__POLICY_NODE_HPP_
+#ifndef POLICY_FRAMEWORK__HOSTS__POLICY_NODE_HPP_
+#define POLICY_FRAMEWORK__HOSTS__POLICY_NODE_HPP_
 
 #include <memory>
 
-#include "policy_framework/policy_runner.hpp"
+#include "policy_framework/hosts/policy_runner.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
 namespace policy_framework
@@ -64,4 +64,4 @@ private:
 
 }  // namespace policy_framework
 
-#endif  // POLICY_FRAMEWORK__POLICY_NODE_HPP_
+#endif  // POLICY_FRAMEWORK__HOSTS__POLICY_NODE_HPP_

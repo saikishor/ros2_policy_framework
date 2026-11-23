@@ -32,7 +32,7 @@
 #include "hardware_interface/loaned_state_interface.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
 #include "policy_framework/core/kinematics.hpp"
-#include "policy_framework/policy_controller.hpp"
+#include "policy_framework/hosts/policy_controller.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using controller_interface::interface_configuration_type;
