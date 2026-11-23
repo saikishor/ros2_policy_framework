@@ -235,6 +235,26 @@ TEST_F(PolicyControllerTest, MeasuresThePolicyStepAndTheAgeOfItsObservation)
   EXPECT_DOUBLE_EQ(controller.timing().observation_age_ms, 0.0);
 }
 
+TEST_F(PolicyControllerTest, MeasuresEveryItemOfTheUpdate)
+{
+  init();
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  EXPECT_DOUBLE_EQ(controller.update_timing().update_time_us, 0.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  const auto & u = controller.update_timing();
+  EXPECT_GT(u.state_read_time_us, 0.0);
+  EXPECT_GT(u.read_sources_time_us, 0.0);
+  EXPECT_GT(u.kinematics_time_us, 0.0);
+  EXPECT_GT(u.safety_time_us, 0.0);
+  EXPECT_GT(u.executors_time_us, 0.0);
+  // Synchronous: the policy step is one of the items of the update.
+  EXPECT_LE(
+    u.state_read_time_us + u.read_sources_time_us + u.kinematics_time_us + u.safety_time_us +
+    controller.timing().step_time_us + u.executors_time_us, u.update_time_us);
+}
+
 TEST_F(PolicyControllerTest, PublishesItsIntrospectionOnItsOwnTopic)
 {
   init();
@@ -255,7 +275,9 @@ TEST_F(PolicyControllerTest, PublishesItsIntrospectionOnItsOwnTopic)
   // Local to the controller: no `<controller>.` prefix as in ros2_control's shared topic.
   for (const auto & expected : StringArray{
       "step_time_us", "preprocessor_time_us", "inference_time_us", "postprocessor_time_us",
-      "observation_age_ms", "input_age_ms.walk.j1/position"})
+      "observation_age_ms", "input_age_ms.walk.j1/position", "update_time_us",
+      "state_read_time_us", "read_sources_time_us", "kinematics_time_us", "safety_time_us",
+      "executors_time_us"})
   {
     EXPECT_NE(std::find(names.begin(), names.end(), expected), names.end()) << expected;
   }

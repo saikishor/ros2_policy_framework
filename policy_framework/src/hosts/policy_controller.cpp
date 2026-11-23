@@ -32,6 +32,15 @@
 namespace policy_framework
 {
 
+namespace
+{
+double elapsed_us(std::chrono::steady_clock::time_point start)
+{
+  return std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start)
+         .count();
+}
+}  // namespace
+
 PolicyController::~PolicyController()
 {
   // The global map would otherwise keep the registry, and its publisher thread reading our
@@ -52,6 +61,13 @@ PolicyController::CallbackReturn PolicyController::on_init()
   REGISTER_ENTITY(introspection_key_, "inference_time_us", &timing_.inference_time_us);
   REGISTER_ENTITY(introspection_key_, "postprocessor_time_us", &timing_.postprocessor_time_us);
   REGISTER_ENTITY(introspection_key_, "observation_age_ms", &timing_.observation_age_ms);
+  REGISTER_ENTITY(introspection_key_, "update_time_us", &update_timing_.update_time_us);
+  REGISTER_ENTITY(introspection_key_, "state_read_time_us", &update_timing_.state_read_time_us);
+  REGISTER_ENTITY(
+    introspection_key_, "read_sources_time_us", &update_timing_.read_sources_time_us);
+  REGISTER_ENTITY(introspection_key_, "kinematics_time_us", &update_timing_.kinematics_time_us);
+  REGISTER_ENTITY(introspection_key_, "safety_time_us", &update_timing_.safety_time_us);
+  REGISTER_ENTITY(introspection_key_, "executors_time_us", &update_timing_.executors_time_us);
   START_PUBLISH_THREAD(introspection_key_);
   return CallbackReturn::SUCCESS;
 }
@@ -220,6 +236,7 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
   hold_start_ = true;
   failed_reads_ = 0;
   timing_ = Timing();
+  update_timing_ = UpdateTiming();
   updates_ = 0;
   inference_pending_ = false;
   observation_stamp_ = 0.0;
@@ -292,18 +309,21 @@ double PolicyController::input_age_ms(const std::string & name) const
 
 controller_interface::return_type PolicyController::react(FaultReaction reaction)
 {
+  const auto start = std::chrono::steady_clock::now();
   if (reaction == FaultReaction::ERROR) {
     // The controller manager deactivates the controller (which writes the safe values again)
     // and activates its fallback controllers.
     write_safe_values();
+    update_timing_.executors_time_us = elapsed_us(start);
     return controller_interface::return_type::ERROR;
   }
-  const bool start = fault_applied_ != reaction;
+  const bool first = fault_applied_ != reaction;
   fault_applied_ = reaction;
   for (size_t k = 0; k < values_.size(); ++k) {
-    executors_[k]->fault(runner_->commands(), runner_->state(), values_[k], reaction, start);
+    executors_[k]->fault(runner_->commands(), runner_->state(), values_[k], reaction, first);
   }
   apply_values();
+  update_timing_.executors_time_us = elapsed_us(start);
   return controller_interface::return_type::OK;
 }
 
@@ -318,11 +338,22 @@ void PolicyController::write_safe_values()
 controller_interface::return_type PolicyController::update(
   const rclcpp::Time & time, const rclcpp::Duration & period)
 {
+  const auto start = std::chrono::steady_clock::now();
   // Node clock (not the update time) so that it compares with the topic receive times.
   const double now = get_node()->now().seconds();
-  // The previous update's values, here so that every return path below is covered.
+  // The previous update's values: every return path of the update is covered.
   // Real-time safe: copies the values for the publisher thread (skipped if it holds the lock).
   PUBLISH_ASYNC_STATISTICS(introspection_key_);
+  update_timing_ = UpdateTiming();  // the items that do not run this time read 0
+  const auto result = update_items(time, period, now);
+  update_timing_.update_time_us = elapsed_us(start);
+  return result;
+}
+
+controller_interface::return_type PolicyController::update_items(
+  const rclcpp::Time & time, const rclcpp::Duration & period, double now)
+{
+  auto item_start = std::chrono::steady_clock::now();
   auto & state = runner_->state();
   bool read_failed = false;
   for (size_t i = 0; i < state_interfaces_.size(); ++i) {
@@ -335,28 +366,38 @@ controller_interface::return_type PolicyController::update(
     }
   }
   failed_reads_ = read_failed ? failed_reads_ + 1 : 0;
+  update_timing_.state_read_time_us = elapsed_us(item_start);
   if (failed_reads_ > max_failed_reads_) {
     RCLCPP_ERROR_THROTTLE(
       get_node()->get_logger(), *get_node()->get_clock(), 1000,
       "State interfaces could not be read for %u updates in a row", failed_reads_);
+    item_start = std::chrono::steady_clock::now();
     write_safe_values();
+    update_timing_.executors_time_us = elapsed_us(item_start);
     return controller_interface::return_type::ERROR;
   }
 
   // The policy steps every decimation_ updates (starting with the first); executors run on
   // every update with the fresh state.
   const bool policy_tick = updates_++ % decimation_ == 0;
-  if (policy_tick) {runner_->read_sources(now);}
+  if (policy_tick) {
+    item_start = std::chrono::steady_clock::now();
+    runner_->read_sources(now);
+    update_timing_.read_sources_time_us = elapsed_us(item_start);
+  }
   // On every update, so that other readers see the current joint state; before the step so
   // that it sees this cycle's (an inference thread updates its own model from its snapshot).
+  item_start = std::chrono::steady_clock::now();
   runner_->update_kinematics();
+  update_timing_.kinematics_time_us = elapsed_us(item_start);
   // Before the step: the policy must not act on a state that is already unsafe. While a
   // reaction is latched the policy is neither stepped nor followed (a step still running in the
   // inference thread is ignored).
-  if (const auto r = runner_->update_safety(observation_stamp_, now);
-    r && *r != FaultReaction::NEUTRAL_COMMANDS)
-  {
-    return react(*r);
+  item_start = std::chrono::steady_clock::now();
+  const auto reaction = runner_->update_safety(observation_stamp_, now);
+  update_timing_.safety_time_us = elapsed_us(item_start);
+  if (reaction && *reaction != FaultReaction::NEUTRAL_COMMANDS) {
+    return react(*reaction);
   }
   std::optional<PolicyPipeline::Status> status;  // of a step whose result arrived now
   // Called right after a step finished, before the next one may start in the inference thread.
@@ -375,10 +416,9 @@ controller_interface::return_type PolicyController::update(
     };
   if (!inference_) {
     if (policy_tick) {
-      const auto start = std::chrono::steady_clock::now();
+      item_start = std::chrono::steady_clock::now();
       status = runner_->step();
-      timing_.step_time_us =
-        std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
+      timing_.step_time_us = elapsed_us(item_start);
       record_step();
       if (status == PolicyPipeline::Status::OK) {
         if (const auto r = runner_->check_input_ages(now)) {return react(*r);}
@@ -419,6 +459,7 @@ controller_interface::return_type PolicyController::update(
   if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
   // Before the first commands since activation the command store may still hold the previous
   // activation's references: the executors hold the robot instead of following them.
+  item_start = std::chrono::steady_clock::now();
   for (size_t k = 0; k < executors_.size(); ++k) {
     if (policy_ready_) {
       executors_[k]->write(runner_->commands(), state, values_[k]);
@@ -428,6 +469,7 @@ controller_interface::return_type PolicyController::update(
   }
   hold_start_ = false;
   apply_values();
+  update_timing_.executors_time_us = elapsed_us(item_start);
   return controller_interface::return_type::OK;
 }
 
