@@ -1,11 +1,18 @@
 cmake_minimum_required(VERSION 3.16)
 project(policy_framework_mjlab)
 
-# Warnings-as-errors set of ros2_control_cmake's set_compiler_options(), plus uninitialized.
+# ros2_control's warnings-as-errors set (set_compiler_options()), plus stricter checks below.
+find_package(ros2_control_cmake REQUIRED)
+set_compiler_options()
+# Appended to the set above: virtual-interface mistakes in plugins, unsafe casts, signedness and
+# uninitialized reads (most of those are only found in optimized builds).
 if(CMAKE_CXX_COMPILER_ID MATCHES "(GNU|Clang)")
-  add_compile_options(-Wall -Wextra -Wpedantic -Werror=conversion -Werror=unused-but-set-variable
-                      -Werror=return-type -Werror=shadow -Werror=format -Werror=missing-braces
-                      -Werror=range-loop-construct -Werror=uninitialized)
+  add_compile_options(-Werror=uninitialized -Werror=non-virtual-dtor -Werror=overloaded-virtual
+                      -Werror=suggest-override -Werror=implicit-fallthrough -Werror=old-style-cast
+                      -Werror=cast-qual -Werror=sign-conversion)
+endif()
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  add_compile_options(-Werror=duplicated-cond -Werror=duplicated-branches -Werror=logical-op)
 endif()
 add_compile_options(-Werror=uninitialized)
 
