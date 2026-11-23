@@ -147,3 +147,78 @@ first as ``observation_age_ms``, the age of each input of the active policy as
 ``input_age_ms.<policy>.<input>``, and the duration of each step as ``step_time_us`` (with
 its stages as ``preprocessor_time_us``, ``inference_time_us`` and ``postprocessor_time_us``)
 on its own topic, ``/<controller>/introspection_data``.
+
+Introspection
+-------------
+
+``PolicyController`` publishes its timings and input ages with `pal_statistics
+<https://github.com/pal-robotics/pal_statistics>`_, the library behind ros2_control's
+`introspection <https://control.ros.org/rolling/doc/ros2_control/doc/introspection.html>`_,
+but on its own topic instead of the controller manager's shared
+``/controller_manager/introspection_data``. On every update it publishes:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Name
+     - Meaning
+   * - ``step_time_us``
+     - Total duration of the last policy step: its three stages plus the work around them
+       (policy switch, inactive policies observing), so at least their sum
+   * - ``preprocessor_time_us``, ``inference_time_us``, ``postprocessor_time_us``
+     - Duration of each stage of that step; 0 for a stage that did not run (e.g. inference
+       while the preprocessor waits for data)
+   * - ``observation_age_ms``
+     - Age of the observation of that step when its commands were applied
+   * - ``input_age_ms.<policy>.<input>``
+     - Age of each input of the active policy; 0 for the inputs of inactive policies
+
+The registry also adds its own ``topic_stats.*`` entries, e.g. how many asynchronous
+publications were attempted and failed.
+
+These values are published on three topics, under the controller's namespace (e.g.
+``/policy_controller``):
+
+- ``~/introspection_data/full``: names and values in one message, for the command line
+  (``ros2 topic echo /policy_controller/introspection_data/full``) or custom tools.
+- ``~/introspection_data/names``: the names, published again only when they change (e.g. on
+  reconfiguration). Latched.
+- ``~/introspection_data/values``: the values only, on every update.
+
+Prefer ``names`` and ``values`` for plotting and recording: they carry far less data than
+``full`` at the update rate.
+
+Visualizing with PlotJuggler
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+`PlotJuggler <https://github.com/facontidavide/PlotJuggler>`_ plots these values live or from
+a bag:
+
+1. Start it with ``ros2 run plotjuggler plotjuggler``.
+2. Under *Streaming*, choose *ROS2 Topic Subscriber* and press *Start*. Or load a bag
+   recorded with
+   ``ros2 bag record /policy_controller/introspection_data/names /policy_controller/introspection_data/values``.
+3. Select ``/policy_controller/introspection_data/names`` and
+   ``/policy_controller/introspection_data/values``.
+4. Drag the values of interest from the *Timeseries List* onto a plot.
+
+.. figure:: images/plotjuggler_input_ages.png
+   :alt: PlotJuggler showing the input ages of the active policy
+   :width: 100%
+
+   Input ages of the active policy ``loco_v1734``. The state inputs (joint positions and
+   velocities, IMU) are read from state interfaces in the same update, so they are 0. Here
+   ``actions``, fed back from the previous step's outputs, are about 20 ms old.
+   ``command`` is a user command: its age grows until the next message arrives, then drops
+   back (a command is held until its own timeout). The inputs of the inactive
+   ``imitation_v30`` stay at 0.
+
+.. figure:: images/plotjuggler_stage_times.png
+   :alt: PlotJuggler showing the durations of the preprocessor, inference, postprocessor and
+         the whole step
+   :width: 100%
+
+   Durations of the preprocessor, inference and postprocessor, and of the whole step
+   (``step_time_us``). Here inference takes most of the step, and its spikes show directly
+   in the step time. Compare ``step_time_us`` with the policy period to check the step fits.
