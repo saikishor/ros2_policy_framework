@@ -178,9 +178,17 @@ or, chaining into a pid_controller that closes the loop:
   - `observation_age_ms`: age of the oldest input of that step when its commands were
     applied;
   - `input_age_ms.<policy>.<input>`: age of each input (a term, or an entry for
-    `ConcatPreprocessor`; 0 for the inputs of an inactive policy).
+    `ConcatPreprocessor`; 0 for the inputs of an inactive policy);
+  - `update_time_us`: duration of the whole last update (with `async_inference`, only the
+    hand-over to the inference thread, not the step);
+  - `state_read_time_us`, `read_sources_time_us`, `kinematics_time_us`, `safety_time_us`,
+    `executors_time_us`: its items: reading the state interfaces, reading the input sources
+    (policy ticks only), updating the kinematics, the safety checks, and the executors
+    writing the command interfaces (including a fault reaction). 0 for an item that did not
+    run, e.g. after a fault.
 
-  Also available as `PolicyController::timing()` and `PolicyController::input_age_ms()`.
+  Also available as `PolicyController::timing()`, `PolicyController::update_timing()` and
+  `PolicyController::input_age_ms()`.
   For example: `ros2 topic echo /policy_controller/introspection_data/full`, or plot them
   with PlotJuggler (see the Introspection section of `docs/data_flow.rst`).
 
