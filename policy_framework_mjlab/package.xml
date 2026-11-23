@@ -16,7 +16,6 @@
   <depend>policy_framework</depend>
   <depend>generate_parameter_library</depend>
   <depend>geometry_msgs</depend>
-  <depend>pal_motion_msgs</depend>
   <depend>backward_ros</depend>
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
