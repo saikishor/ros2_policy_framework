@@ -29,6 +29,7 @@
   <depend>lifecycle_msgs</depend>
   <depend>controller_interface</depend>
   <depend>hardware_interface</depend>
+  <depend>pal_statistics</depend>
   <depend>pinocchio</depend>
   <depend>eigen</depend>
 

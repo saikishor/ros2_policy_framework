@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "controller_interface/controller_interface.hpp"
+#include "pal_statistics/pal_statistics.hpp"
 #include "pluginlib/class_loader.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 #include "policy_framework/hosts/policy_runner.hpp"
@@ -72,9 +73,11 @@ namespace policy_framework
  * previous value is used meanwhile), every executor's safe_values() are written (zero effort
  * for PdEffortExecutor).
  *
- * Introspection: the duration of each policy step and the age of its observation (see Timing),
- * and the age of each input of the active policy (see input_age_ms()), are registered with
- * ros2_control's introspection.
+ * Introspection: the durations of each policy step and of its stages and the age of its
+ * observation (see Timing), and the age of each input of the active policy (see
+ * input_age_ms()), are published by the controller itself (pal_statistics) on
+ * `~/introspection_data/{names,values,full}`, e.g. `/<controller>/introspection_data/full`,
+ * on every update. Not on the controller manager's shared introspection topic.
  *
  * On activation the first policy restarts from scratch. Policies are switched with the
  * `~/switch_policy` service.
@@ -91,8 +94,8 @@ public:
   controller_interface::return_type update(
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
-  /// Measurements of the last finished policy step, also published by ros2_control's
-  /// introspection as `<controller>.<field>` (`policy_step_time_us` for step_time_us).
+  /// Measurements of the last finished policy step, also published on the controller's
+  /// introspection topic under the names of the fields (e.g. `inference_time_us`).
   struct Timing
   {
     /// Total duration of the step, microseconds: its stages plus the work around them
@@ -113,8 +116,8 @@ public:
    * @return Age in milliseconds of the input `<policy>.<input>` (a term or an entry, see
    *         PolicyRunner::policy_inputs()) when the commands of the last step were applied: now
    *         minus its stamp. 0 for the inputs of an inactive policy or when unknown, NaN for a
-   *         name that is no input. Also published by ros2_control's introspection as
-   *         `<controller>.input_age_ms.<policy>.<input>`. Not real-time (looks the name up).
+   *         name that is no input. Also published on the controller's introspection topic as
+   *         `input_age_ms.<policy>.<input>`. Not real-time (looks the name up).
    */
   double input_age_ms(const std::string & name) const;
 
@@ -165,11 +168,13 @@ private:
   std::vector<std::string> input_age_names_;  ///< `<policy>.<input>`, every policy's inputs.
   std::vector<double> input_ages_ms_;         ///< Same order; registered: never reallocated.
   std::vector<size_t> input_age_offsets_;     ///< Index of each policy's first input, + end.
-  std::vector<std::string> registered_ages_;  ///< Introspection names registered.
   unsigned int decimation_ = 1;  ///< Updates per policy step.
   double observation_stamp_ = 0.0;  ///< Of the last successful step, for safety.max_input_age.
   std::optional<FaultReaction> fault_applied_;  ///< Reaction of the previous update, if any.
   uint64_t updates_ = 0;         ///< Updates since activation.
+  /// Publishes timing_ and input_ages_ms_ on `~/introspection_data`. Last member: destroyed
+  /// (publisher thread stopped) before the values it reads.
+  std::shared_ptr<pal_statistics::StatisticsRegistry> introspection_;
 };
 
 }  // namespace policy_framework
