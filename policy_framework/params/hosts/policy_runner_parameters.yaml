@@ -73,6 +73,13 @@ policy_runner:
       read_only: true
       validation:
         unique<>: null
+    transition_time:
+      type: double
+      default_value: 0.0
+      description: "Seconds over which the commands the executors read ramp from where they are to this policy's commands when it takes over (after an activation: from the measured joint positions). 0: at once."
+      read_only: true
+      validation:
+        gt_eq<>: [0.0]
   safety_entry:
     type: string
     default_value: ""

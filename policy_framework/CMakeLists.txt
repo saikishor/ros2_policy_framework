@@ -60,6 +60,7 @@ foreach(path IN ITEMS
     params/plugins/sources/topic_parameters.yaml
     params/plugins/sources/twist_source_parameters.yaml
     params/plugins/stages/concat_preprocessor_parameters.yaml
+    params/plugins/stages/fixed_pose_postprocessor_parameters.yaml
     params/plugins/stages/split_postprocessor_parameters.yaml
   )
   get_filename_component(params ${path} NAME_WE)
@@ -119,6 +120,8 @@ if(BUILD_TESTING)
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/urdf/test_robot.urdf")
   ament_add_gtest(test_safety_checks test/plugins/safety/test_safety_checks.cpp)
   target_link_libraries(test_safety_checks ${PROJECT_NAME})
+  ament_add_gtest(test_command_blender test/core/test_command_blender.cpp)
+  target_link_libraries(test_command_blender ${PROJECT_NAME})
   ament_add_gtest(test_policy_pipeline test/core/test_policy_pipeline.cpp)
   target_link_libraries(test_policy_pipeline ${PROJECT_NAME})
   ament_add_gtest(test_topic_sources test/plugins/sources/test_topic_sources.cpp)

@@ -41,7 +41,7 @@ is applied at the beginning of the next step, so one step never mixes two polici
      loco -> loco [label="switch_policy(loco)\nrestarts it"];
    }
 
-Two per-policy parameters shape this:
+Three per-policy parameters shape this:
 
 ``max_steps``
    After this many steps the pipeline returns to the default (first) policy by itself. Use it
@@ -51,8 +51,71 @@ Two per-policy parameters shape this:
    When false, switch requests are rejected while the policy is active. Use it for a motion
    that must not be cut short, such as a jump.
 
-A third one, ``disabled_safety_checks``, skips some safety checks while the policy is active,
+``transition_time``
+   Seconds over which the commands ramp to this policy's commands when it takes over
+   (default 0: at once). See below.
+
+A fourth one, ``disabled_safety_checks``, skips some safety checks while the policy is active,
 for instance a joint velocity bound during a jump; see :ref:`checks-per-policy`.
+
+Transitions
+-----------
+
+Two policies rarely agree on where the joints should be at the moment of a switch, and a
+policy's first commands after activation rarely match where the robot stands. With
+``transition_time`` the executors do not jump: what they read moves linearly, in that time,
+from the commands they had to the new policy's commands.
+
+.. graphviz::
+
+   digraph transition {
+     rankdir=LR;
+     node [shape=box, style="rounded,filled", fillcolor="#eef3fb", fontname="Helvetica", fontsize=11];
+     edge [fontname="Helvetica", fontsize=10];
+     policy [label="Active policy\n(commands)"];
+     blend [label="Command blender\nstart → policy commands\nover transition_time", fillcolor="#fff6d9"];
+     execs [label="Executors"];
+     policy -> blend -> execs;
+   }
+
+- The ramp starts from the commands the executors had, and after an activation from the
+  measured joint positions (the hold).
+- Every command is blended: positions, velocities and the gains of ``PdEffortExecutor``.
+- The policy keeps running during the ramp; the ramp ends at its latest commands, wherever
+  they moved meanwhile.
+- In the controller the ramp advances on every update, so it is smooth even at a 50 Hz policy
+  rate. It also works with ``async_inference``: it starts when the new policy's first commands
+  are collected.
+- A fault reaction (``hold``, ``damp``, ``safe``, ``error``) takes over at once, without a
+  ramp; the next activation starts a new ramp from the measured joint positions.
+  ``neutral_commands`` keeps the policy running, so its ramp goes on.
+
+A model-free policy
+-------------------
+
+A policy does not need a model. ``NullInference``, ``NullPreprocessor`` and
+``FixedPosePostprocessor`` make one that commands a fixed pose. With a ``transition_time`` it
+is the stand-up or stand-by state other frameworks implement as a state machine:
+
+.. code-block:: yaml
+
+   policies: [stand, walk]         # stand first: the robot stands up on activation
+   stand:
+     inference: policy_framework/NullInference
+     preprocessor: policy_framework/NullPreprocessor
+     postprocessor: policy_framework/FixedPosePostprocessor
+     joints: [leg_left_1_joint, leg_left_2_joint]
+     positions: [0.0, -0.3]
+     stiffness: [150.0, 150.0]     # optional, for PdEffortExecutor
+     damping: [5.0, 5.0]
+     transition_time: 2.0          # from where the robot lies to the pose in 2 s
+   walk:
+     preprocessor: policy_framework_mjlab/MjlabPreprocessor
+     postprocessor: policy_framework_mjlab/MjlabPostprocessor
+     model_path: /path/to/walk
+     transition_time: 0.5
+
+``switch_policy`` then moves between standing and walking, each way in its own time.
 
 What a policy remembers
 -----------------------

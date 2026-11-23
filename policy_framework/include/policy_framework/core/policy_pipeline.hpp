@@ -37,6 +37,9 @@ struct Policy
   int max_steps = 0;
   /// false: switch requests are rejected while this policy is active (e.g. a jump motion).
   bool interruptible = true;
+  /// Seconds over which the commands the executors read ramp to this policy's commands when
+  /// it takes over (see CommandBlender); 0: at once.
+  double transition_time = 0.0;
 };
 
 /**
@@ -120,6 +123,8 @@ public:
   size_t active_index() const {return active_.load();}
   /// @return Name of the active policy. Thread-safe.
   const std::string & active_policy() const {return entries_.at(active_.load()).policy.name;}
+  /// @return The policy of index @p i, see policy_names().
+  const Policy & policy(size_t i) const {return entries_.at(i).policy;}
   /// @return All policies, in the order they were added.
   std::vector<std::string> policy_names() const;
 

@@ -106,9 +106,10 @@ void PolicyRunner::configure(
     p.postprocessor->configure(ctx, p.inference->model(), commands_);
     p.max_steps = static_cast<int>(stages.max_steps);
     p.interruptible = stages.interruptible;
+    p.transition_time = stages.transition_time;
     RCLCPP_INFO(
-      logger, "Policy '%s': max_steps=%d interruptible=%s", name.c_str(), p.max_steps,
-      p.interruptible ? "true" : "false");
+      logger, "Policy '%s': max_steps=%d interruptible=%s transition_time=%.3f", name.c_str(),
+      p.max_steps, p.interruptible ? "true" : "false", p.transition_time);
     pipeline_->add_policy(std::move(p));
   }
 
@@ -134,6 +135,7 @@ void PolicyRunner::configure(
 
   latched_.reset();
   reported_.reset();
+  blender_.configure(commands_);
   last_status_ = PolicyPipeline::Status::OK;
   last_policy_.clear();
   RCLCPP_INFO(
@@ -247,6 +249,36 @@ void PolicyRunner::restart()
   latched_.reset();
   reported_.reset();
   for (auto & c : checks_) {c.check->reset();}
+  blender_.reset();
+  blend_policy_ = -1;
+  // Here rather than in configure(): the controller's executors register their feedback
+  // entries (e.g. <joint>/position) after the runner was configured.
+  measured_positions_.clear();
+  const std::string suffix = "/position";
+  for (size_t c = 0; c < commands_.size(); ++c) {
+    const auto & name = commands_.names()[c];
+    if (name.size() > suffix.size() &&
+      name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0)
+    {
+      if (const auto s = state_.find(name)) {measured_positions_.emplace_back(c, *s);}
+    }
+  }
+}
+
+void PolicyRunner::blend_commands(bool stepped, double dt)
+{
+  if (stepped) {
+    const auto active = pipeline_->active_index();
+    if (static_cast<int>(active) != blend_policy_) {
+      blender_.start(pipeline_->policy(active).transition_time);
+      // Nothing was commanded since the activation: start from where the joints are.
+      for (const auto & [c, s] : measured_positions_) {
+        if (!blender_.has_start(c) && state_.received(s)) {blender_.set_start(c, state_.get(s));}
+      }
+      blend_policy_ = static_cast<int>(active);
+    }
+  }
+  blender_.update(commands_, dt);
 }
 
 FaultReaction PolicyRunner::reaction_of(
@@ -493,7 +525,7 @@ PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & c
 
 void PolicyRunner::write_executors()
 {
-  for (const auto & e : executors_) {e->write(commands_);}
+  for (const auto & e : executors_) {e->write(blender_.output());}
 }
 
 }  // namespace policy_framework

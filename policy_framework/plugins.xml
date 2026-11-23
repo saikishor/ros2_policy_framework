@@ -23,6 +23,15 @@
   <class name="policy_framework/SplitPostprocessor" type="policy_framework::SplitPostprocessor" base_class_type="policy_framework::Postprocessor">
     <description>Writes each value of one model output to a command entry.</description>
   </class>
+  <class name="policy_framework/NullInference" type="policy_framework::NullInference" base_class_type="policy_framework::Inference">
+    <description>Inference of a model-free policy: no tensors.</description>
+  </class>
+  <class name="policy_framework/NullPreprocessor" type="policy_framework::NullPreprocessor" base_class_type="policy_framework::Preprocessor">
+    <description>Preprocessor of a model-free policy: no inputs, always ready.</description>
+  </class>
+  <class name="policy_framework/FixedPosePostprocessor" type="policy_framework::FixedPosePostprocessor" base_class_type="policy_framework::Postprocessor">
+    <description>Commands a fixed joint pose (standby, stand-up), with optional gains.</description>
+  </class>
   <class name="policy_framework/PdEffortExecutor" type="policy_framework::PdEffortExecutor" base_class_type="policy_framework::InterfaceExecutor">
     <description>Controller-side joint PD law writing effort command interfaces.</description>
   </class>
