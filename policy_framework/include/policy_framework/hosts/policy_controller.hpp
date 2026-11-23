@@ -73,8 +73,8 @@ namespace policy_framework
  * for PdEffortExecutor).
  *
  * Introspection: the durations of each policy step and of its stages and the age of its
- * observation (see Timing), and the age of each input of the active policy (see
- * input_age_ms()), are published by the controller itself (pal_statistics) on
+ * observation (see Timing), the duration of each item of update() (see UpdateTiming), and the
+ * age of each input of the active policy (see input_age_ms()), are published by the controller itself (pal_statistics) on
  * `~/introspection_data/{names,values,full}`, e.g. `/<controller>/introspection_data/full`,
  * on every update. Not on the controller manager's shared introspection topic.
  *
@@ -116,6 +116,24 @@ public:
   };
   const Timing & timing() const {return timing_;}
 
+  /// Durations of the items of the last update(), microseconds, also published on the
+  /// controller's introspection topic under the names of the fields. An item that did not run
+  /// (e.g. after an early return on a fault) is 0. The policy step is in Timing.
+  struct UpdateTiming
+  {
+    /// Whole update(), including the policy step when synchronous (with `async_inference`
+    /// only the hand-over to the inference thread).
+    double update_time_us = 0.0;
+    double state_read_time_us = 0.0;    ///< Reading the state interfaces.
+    double read_sources_time_us = 0.0;  ///< Reading the input sources (policy ticks only).
+    double kinematics_time_us = 0.0;    ///< Updating the kinematics from the state.
+    double safety_time_us = 0.0;        ///< Evaluating the safety checks.
+    /// The executors computing and writing the command interfaces: write(), hold(), or a
+    /// fault reaction's fault() or safe_values().
+    double executors_time_us = 0.0;
+  };
+  const UpdateTiming & update_timing() const {return update_timing_;}
+
   /**
    * @return Age in milliseconds of the input `<policy>.<input>` (a term or an entry, see
    *         PolicyRunner::policy_inputs()) when the commands of the last step were applied: now
@@ -135,6 +153,9 @@ public:
   }
 
 private:
+  /// The body of update(), timed by it.
+  controller_interface::return_type update_items(
+    const rclcpp::Time & time, const rclcpp::Duration & period, double now);
   /// Load the `executors` parameter as InterfaceExecutor plugins. @throws on any error.
   void load_executors();
   /// Apply a latched fault @p reaction: the executors' fault() values, or for ERROR the safe
@@ -169,6 +190,7 @@ private:
   unsigned int max_failed_reads_ = 5;
   unsigned int failed_reads_ = 0;  ///< Consecutive updates with an unreadable state interface.
   Timing timing_;
+  UpdateTiming update_timing_;
   std::vector<std::string> input_age_names_;  ///< `<policy>.<input>`, every policy's inputs.
   std::vector<double> input_ages_ms_;         ///< Same order; registered: never reallocated.
   std::vector<size_t> input_age_offsets_;     ///< Index of each policy's first input, + end.
@@ -176,8 +198,8 @@ private:
   double observation_stamp_ = 0.0;  ///< Of the last successful step, for safety.max_input_age.
   std::optional<FaultReaction> fault_applied_;  ///< Reaction of the previous update, if any.
   uint64_t updates_ = 0;         ///< Updates since activation.
-  /// pal_statistics registry key of `~/introspection_data`, which publishes timing_ and
-  /// input_ages_ms_; the registry is deleted in the destructor, before those values.
+  /// pal_statistics registry key of `~/introspection_data`, which publishes timing_,
+  /// update_timing_ and input_ages_ms_; the registry is deleted in the destructor, before those values.
   std::string introspection_key_;
 };
 
