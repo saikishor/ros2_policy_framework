@@ -175,7 +175,9 @@ does what keeps a command safe, so that no command term can forget it:
   than ``timeout`` (above zero), while ``usable()`` refuses the message, and while the
   ``CommandGate`` is closed (the safety entry is 0, or the ``NEUTRAL_COMMANDS`` reaction is
   active);
-- the stamp: the header stamp when the message type has one and it is set, else now;
+- the stamp: the header stamp when the message type has one and it is set, else the receive
+  time, so that the input age of the command is how long ago it arrived (the neutral command
+  is stamped now);
 - the user command flag, so that its stamp does not count for the observation stamp
   (:doc:`data_flow`).
 

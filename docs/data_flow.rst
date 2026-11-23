@@ -129,6 +129,10 @@ Every entry carries the time its data was produced. The stamps travel with the d
      - The message header stamp, or the time it is read when the message has none (a Twist)
    * - Entry read from a state interface
      - The time of the update that read it
+   * - User command term (derived from ``CommandTerm``)
+     - The message header stamp, or its receive time when the message has none (a Twist), so
+       that its input age is how long ago it arrived; the neutral command is stamped when it
+       is written
    * - Observation of a step
      - The oldest stamp among its inputs. Inputs fed back from the previous outputs do not
        count, nor do user commands (the terms derived from ``CommandTerm``, see
