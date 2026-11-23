@@ -88,6 +88,66 @@ The two packages
 To support another training framework you would write a package like the second one, without
 changing the first.
 
+Where the files are
+-------------------
+
+``policy_framework`` groups its files by the role they play. The same folders appear under
+``include/policy_framework/`` (headers), ``src/`` (sources), ``test/`` (tests) and
+``params/`` (parameter definitions), so a class, its implementation, its test and its
+parameters are always found under the same path.
+
+.. code-block:: text
+
+   policy_framework/
+     include/policy_framework/
+       interfaces/      what plugins derive from
+       core/            what the hosts are built on
+       hosts/           the programs that run the cycle
+       plugins/
+         sources/       where the data comes from
+         inference/     what runs the model
+         stages/        generic preprocessors and postprocessors
+         executors/     where the commands go
+         safety/        SafetyCheck plugins
+       plugin_interfaces.hpp
+     src/  test/  params/   same folders as above
+     test/fixtures/         test models and URDF
+     msg/  srv/             MockFault, SwitchPolicy
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 52 30
+
+   * - Folder
+     - Content
+     - Example include
+   * - ``interfaces/``
+     - One header per plugin base class (``Inference``, ``Preprocessor``, ``Postprocessor``,
+       ``InputSource``, ``Executor``, ``InterfaceExecutor``, ``SafetyCheck``, the observation
+       terms) and the types they share (``types.hpp``, ``plugin_context.hpp``). This is the
+       API a plugin package depends on.
+     - ``policy_framework/interfaces/preprocessor.hpp``
+   * - ``core/``
+     - The pieces the hosts are built on: the stores, the pipeline, the kinematics model and
+       the safety monitor.
+     - ``policy_framework/core/data_store.hpp``
+   * - ``hosts/``
+     - The runner and the two hosts: standalone node and ros2_control controller.
+     - ``policy_framework/hosts/policy_controller.hpp``
+   * - ``plugins/<kind>/``
+     - The generic plugins shipped with the framework, one folder per kind of plugin.
+     - ``policy_framework/plugins/sources/topic_sources.hpp``
+
+``policy_framework/plugin_interfaces.hpp`` includes every interface except the observation
+terms, for a plugin that needs several of them.
+
+``policy_framework_mjlab`` is small and stays flat (``include/``, ``src/``, ``test/``,
+``params/``). Its test-only plugins are in ``test/plugins/``, and the deployment
+configuration has one folder per robot (``config/kangaroo/``) next to the ``launch/`` files.
+
+A new file goes in the folder of its role. For example, a new input source plugin goes in
+``plugins/sources/`` in all four trees: header, source, test and parameters.
+
 Vocabulary
 ----------
 
