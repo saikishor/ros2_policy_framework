@@ -25,24 +25,34 @@
 #include <string>
 #include <vector>
 
+#include "pal_statistics/pal_statistics_macros.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework/policy_controller_parameters.hpp"
 
 namespace policy_framework
 {
 
+PolicyController::~PolicyController()
+{
+  // The global map would otherwise keep the registry, and its publisher thread reading our
+  // members, alive after us. Its destructor joins that thread.
+  DELETE_REGISTRY(introspection_key_);
+}
+
 PolicyController::CallbackReturn PolicyController::on_init()
 {
-  // Own registry rather than ros2_control's (global, shared by every controller): the values
-  // land on this controller's topic, without the `<controller>.` prefix.
-  introspection_ =
-    std::make_shared<pal_statistics::StatisticsRegistry>(get_node(), "~/introspection_data");
-  introspection_->registerVariable("step_time_us", &timing_.step_time_us);
-  introspection_->registerVariable("preprocessor_time_us", &timing_.preprocessor_time_us);
-  introspection_->registerVariable("inference_time_us", &timing_.inference_time_us);
-  introspection_->registerVariable("postprocessor_time_us", &timing_.postprocessor_time_us);
-  introspection_->registerVariable("observation_age_ms", &timing_.observation_age_ms);
-  introspection_->startPublishThread();
+  // Own registry rather than ros2_control's (shared by every controller): the values land on
+  // this controller's topic, without the `<controller>.` prefix. Keyed by the resolved topic,
+  // unique per controller.
+  const std::string topic = "~/introspection_data";
+  introspection_key_ = get_node()->get_node_topics_interface()->resolve_topic_name(topic);
+  INITIALIZE_REGISTRY(get_node(), topic, introspection_key_);
+  REGISTER_ENTITY(introspection_key_, "step_time_us", &timing_.step_time_us);
+  REGISTER_ENTITY(introspection_key_, "preprocessor_time_us", &timing_.preprocessor_time_us);
+  REGISTER_ENTITY(introspection_key_, "inference_time_us", &timing_.inference_time_us);
+  REGISTER_ENTITY(introspection_key_, "postprocessor_time_us", &timing_.postprocessor_time_us);
+  REGISTER_ENTITY(introspection_key_, "observation_age_ms", &timing_.observation_age_ms);
+  START_PUBLISH_THREAD(introspection_key_);
   return CallbackReturn::SUCCESS;
 }
 
@@ -241,7 +251,7 @@ void PolicyController::apply_values()
 void PolicyController::register_input_ages()
 {
   for (const auto & name : input_age_names_) {
-    introspection_->unregisterVariable("input_age_ms." + name);
+    UNREGISTER_ENTITY(introspection_key_, "input_age_ms." + name);
   }
   input_age_names_.clear();
   input_age_offsets_.clear();
@@ -253,7 +263,7 @@ void PolicyController::register_input_ages()
   // Sized once, before registering: the registry keeps the addresses.
   input_ages_ms_.assign(input_age_names_.size(), 0.0);
   for (size_t i = 0; i < input_age_names_.size(); ++i) {
-    introspection_->registerVariable("input_age_ms." + input_age_names_[i], &input_ages_ms_[i]);
+    REGISTER_ENTITY(introspection_key_, "input_age_ms." + input_age_names_[i], &input_ages_ms_[i]);
   }
 }
 
@@ -312,7 +322,7 @@ controller_interface::return_type PolicyController::update(
   const double now = get_node()->now().seconds();
   // The previous update's values, here so that every return path below is covered.
   // Real-time safe: copies the values for the publisher thread (skipped if it holds the lock).
-  introspection_->publishAsync();
+  PUBLISH_ASYNC_STATISTICS(introspection_key_);
   auto & state = runner_->state();
   bool read_failed = false;
   for (size_t i = 0; i < state_interfaces_.size(); ++i) {

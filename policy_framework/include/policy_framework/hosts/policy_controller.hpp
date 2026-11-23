@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "controller_interface/controller_interface.hpp"
-#include "pal_statistics/pal_statistics.hpp"
 #include "pluginlib/class_loader.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 #include "policy_framework/hosts/policy_runner.hpp"
@@ -85,6 +84,11 @@ namespace policy_framework
 class PolicyController : public controller_interface::ControllerInterface
 {
 public:
+  /// Deletes the introspection registry from pal_statistics' global map (see on_init()).
+  ~PolicyController() override;
+  /// Creates the introspection registry, keyed by its resolved topic
+  /// (`/<controller>/introspection_data`) in pal_statistics' global map, and starts its
+  /// publisher thread.
   CallbackReturn on_init() override;
   controller_interface::InterfaceConfiguration command_interface_configuration() const override;
   controller_interface::InterfaceConfiguration state_interface_configuration() const override;
@@ -172,9 +176,9 @@ private:
   double observation_stamp_ = 0.0;  ///< Of the last successful step, for safety.max_input_age.
   std::optional<FaultReaction> fault_applied_;  ///< Reaction of the previous update, if any.
   uint64_t updates_ = 0;         ///< Updates since activation.
-  /// Publishes timing_ and input_ages_ms_ on `~/introspection_data`. Last member: destroyed
-  /// (publisher thread stopped) before the values it reads.
-  std::shared_ptr<pal_statistics::StatisticsRegistry> introspection_;
+  /// pal_statistics registry key of `~/introspection_data`, which publishes timing_ and
+  /// input_ages_ms_; the registry is deleted in the destructor, before those values.
+  std::string introspection_key_;
 };
 
 }  // namespace policy_framework
