@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 project(policy_framework_mjlab)
 
-# Same warnings-as-errors set as ros2_control and ros2_controllers.
-find_package(ros2_control_cmake REQUIRED)
-set_compiler_options()
+# Warnings-as-errors set of ros2_control_cmake's set_compiler_options(), plus uninitialized.
+if(CMAKE_CXX_COMPILER_ID MATCHES "(GNU|Clang)")
+  add_compile_options(-Wall -Wextra -Wpedantic -Werror=conversion -Werror=unused-but-set-variable
+                      -Werror=return-type -Werror=shadow -Werror=format -Werror=missing-braces
+                      -Werror=range-loop-construct -Werror=uninitialized)
+endif()
+add_compile_options(-Werror=uninitialized)
 
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
