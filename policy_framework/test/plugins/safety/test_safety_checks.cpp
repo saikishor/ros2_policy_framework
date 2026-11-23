@@ -308,14 +308,14 @@ protected:
 
   // It arrived between `sent` and the returned time (node clock, seconds).
   double send(
-    bool fault, const std::string & reaction = "", const std::string & reason = "",
+    bool fault, const std::string & reaction = "", const std::string & fault_reason = "",
     double duration = 0.0)
   {
     for (int i = 0; i < 100 && pub->get_subscription_count() == 0; ++i) {spin_for(10);}
     policy_framework::msg::MockFault msg;
     msg.fault = fault;
     msg.reaction = reaction;
-    msg.reason = reason;
+    msg.reason = fault_reason;
     msg.duration = duration;
     sent = node->now().seconds();
     pub->publish(msg);
