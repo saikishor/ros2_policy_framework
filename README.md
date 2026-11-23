@@ -163,7 +163,7 @@ or, chaining into a pid_controller that closes the loop:
 
 All parameters are declared and validated with
 [generate_parameter_library](https://github.com/PickNikRobotics/generate_parameter_library)
-(definitions in `params/*.yaml` of each package), read at configure time and read-only, except
+(definitions in the `params/` YAML files of each package), read at configure time and read-only, except
 the on-demand `<policy>.terms.<term>.type`. Invalid values fail configuration with the parameter
 name. Write floating point values with a decimal point (`50.0`).
 

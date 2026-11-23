@@ -40,15 +40,31 @@ rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces 
 # that makes rosidl's PythonInterp lookup fail on a fresh configure.
 find_package(pinocchio REQUIRED)
 
-# Parameter declaration and validation, generated from params/*.yaml (header-only targets).
+# Parameter declaration and validation, generated from params/**/*.yaml (header-only targets,
+# named after the file: params/hosts/policy_node_parameters.yaml -> policy_node_parameters).
 set(PARAMETER_LIBRARIES)
-foreach(params IN ITEMS
-    policy_runner policy_node policy_controller onnx_inference topic joint_state_source
-    imu_source twist_source multi_dof_command_executor concat_preprocessor split_postprocessor
-    pd_effort_executor reference_interface_executor kinematics state_bounds_check
-    jump_check mock_safety_check)
-  generate_parameter_library(${params}_parameters params/${params}_parameters.yaml)
-  list(APPEND PARAMETER_LIBRARIES ${params}_parameters)
+foreach(path IN ITEMS
+    params/core/kinematics_parameters.yaml
+    params/hosts/policy_controller_parameters.yaml
+    params/hosts/policy_node_parameters.yaml
+    params/hosts/policy_runner_parameters.yaml
+    params/plugins/executors/multi_dof_command_executor_parameters.yaml
+    params/plugins/executors/pd_effort_executor_parameters.yaml
+    params/plugins/executors/reference_interface_executor_parameters.yaml
+    params/plugins/inference/onnx_inference_parameters.yaml
+    params/plugins/safety/jump_check_parameters.yaml
+    params/plugins/safety/mock_safety_check_parameters.yaml
+    params/plugins/safety/state_bounds_check_parameters.yaml
+    params/plugins/sources/imu_source_parameters.yaml
+    params/plugins/sources/joint_state_source_parameters.yaml
+    params/plugins/sources/topic_parameters.yaml
+    params/plugins/sources/twist_source_parameters.yaml
+    params/plugins/stages/concat_preprocessor_parameters.yaml
+    params/plugins/stages/split_postprocessor_parameters.yaml
+  )
+  get_filename_component(params ${path} NAME_WE)
+  generate_parameter_library(${params} ${path})
+  list(APPEND PARAMETER_LIBRARIES ${params})
 endforeach()
 
 add_library(${PROJECT_NAME} SHARED
