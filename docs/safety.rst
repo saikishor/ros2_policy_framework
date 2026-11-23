@@ -132,7 +132,7 @@ balancing:
    }
 
 The plugins that feed user commands implement this with ``CommandGate``: ``TwistSource``, and
-the terms derived from ``CommandTerm`` (``TwistCommandTerm``, ``MotionGoalTerm``), which also
+the terms derived from ``CommandTerm`` (``TwistCommandTerm``), which also
 handles their timeout. Every change of the signal is logged once.
 Without ``safety_entry`` commands are accepted unless the ``NEUTRAL_COMMANDS`` reaction is
 active.

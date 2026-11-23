@@ -48,7 +48,7 @@ Which plugin to write
      - ``MjlabPreprocessor``, ``ConcatPreprocessor``
    * - ``ObservationTerm``
      - state entries (or a topic) into one block of the observation
-     - ``TwistCommandTerm``, ``MotionGoalTerm``
+     - ``TwistCommandTerm``
    * - ``Inference``
      - input tensors into output tensors
      - ``OnnxInference``
@@ -206,13 +206,13 @@ does what keeps a command safe, so that no command term can forget it:
    PLUGINLIB_EXPORT_CLASS(HeadingCommand, policy_framework::ObservationTerm)
 
 On every cycle exactly one of ``write_command()`` and ``write_neutral()`` is called, so
-``write_neutral()`` runs on every cycle while the command is neutral: a term with state (such
-as the alignment of a stream in ``MotionGoalTerm``) resets it there. Both run in the control
+``write_neutral()`` runs on every cycle while the command is neutral: a term with state resets
+it there. Both run in the control
 cycle, like ``usable()``, which sees the same message again on every cycle until a new one
 arrives: cache what is costly to check, and throttle any log. ``ready()`` is true by default;
 a term may override it to wait for something else than the command.
 
-``TwistCommandTerm`` and ``MotionGoalTerm`` are built this way.
+``TwistCommandTerm`` is built this way.
 
 Example: a term from the state and the kinematics
 -------------------------------------------------
