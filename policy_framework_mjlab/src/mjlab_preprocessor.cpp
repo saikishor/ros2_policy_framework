@@ -15,6 +15,7 @@
 #include "policy_framework_mjlab/mjlab_preprocessor.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <limits>
 #include <stdexcept>
@@ -367,7 +368,8 @@ void MjlabPreprocessor::push(const DataStore & state, const TensorMap & last_out
   for (size_t k = 0; k < terms_.size(); ++k) {
     auto & t = terms_[k];
     // Drop the oldest entry, append the current value as the newest.
-    std::copy(t.history.data() + t.dim, t.history.data() + t.history.size(), t.history.data());
+    const auto dim = static_cast<std::ptrdiff_t>(t.dim);
+    std::copy(t.history.begin() + dim, t.history.end(), t.history.begin());
     float * newest = t.history.data() + t.history.size() - t.dim;
     double stamp = t.term->compute(state, last_outputs, newest);
     // A value derived from the previous outputs has the stamp of the previous observation.
@@ -383,7 +385,7 @@ void MjlabPreprocessor::push(const DataStore & state, const TensorMap & last_out
     }
     if (!history_filled_) {
       // Like mjlab's CircularBuffer: the first push after clear back-fills the whole history.
-      for (float * frame = t.history.data(); frame < newest; frame += t.dim) {
+      for (auto frame = t.history.begin(); frame + dim < t.history.end(); frame += dim) {
         std::copy(newest, newest + t.dim, frame);
       }
     }
@@ -406,7 +408,8 @@ bool MjlabPreprocessor::compute(
   auto & obs = inputs.at(obs_input_).data;
   size_t offset = 0;
   for (const auto & t : terms_) {
-    std::copy(t.history.begin(), t.history.end(), obs.data() + offset);
+    std::copy(
+      t.history.begin(), t.history.end(), obs.begin() + static_cast<std::ptrdiff_t>(offset));
     offset += t.history.size();
   }
   if (has_time_step_) {
