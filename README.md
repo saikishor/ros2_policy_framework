@@ -168,12 +168,23 @@ or, chaining into a pid_controller that closes the loop:
     `TwistCommandTerm`). Transitions are logged. The same
     neutral commands are used while the runner's `set_neutral_commands()` is on (the
     `NEUTRAL_COMMANDS` fault reaction; see `docs/safety.rst`).
-- **Introspection**: `<controller>.policy_step_time_us` (duration of the last policy step) and
-  `<controller>.observation_age_ms` (age of the oldest input of that step when its commands
-  were applied) are registered with ros2_control's introspection, and available as
-  `PolicyController::timing()`. So is the age of each input, per policy:
-  `<controller>.input_age_ms.<policy>.<input>` (a term, or an entry for `ConcatPreprocessor`;
-  0 for the inputs of an inactive policy), available as `PolicyController::input_age_ms()`.
+- **Introspection**: the controller publishes its own pal_statistics topic,
+  `/<controller>/introspection_data/{names,values,full}` (not the controller manager's
+  shared `introspection_data`), on every update:
+  - `step_time_us`: total duration of the last policy step;
+  - `preprocessor_time_us`, `inference_time_us`, `postprocessor_time_us`: its stages
+    (0 for a stage that did not run, e.g. while waiting for data). Their sum is at most
+    `step_time_us`, which also covers switching and the inactive policies' `observe()`;
+  - `observation_age_ms`: age of the oldest input of that step when its commands were
+    applied;
+  - `input_age_ms.<policy>.<input>`: age of each input (a term, or an entry for
+    `ConcatPreprocessor`; 0 for the inputs of an inactive policy).
+
+  Also available as `PolicyController::timing()` and `PolicyController::input_age_ms()`.
+  For example: `ros2 topic echo /policy_controller/introspection_data/full`.
+
+  > Changed: these values used to be on ros2_control's introspection as
+  > `<controller>.<name>`, with `policy_step_time_us` now named `step_time_us`.
 
 ## Configuration
 

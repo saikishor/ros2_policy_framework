@@ -144,5 +144,6 @@ Every entry carries the time its data was produced. The stamps travel with the d
 This makes two questions answerable at any time: *how old was the data the policy just
 acted on?* and *how long did it take from sensor to command?* The controller publishes the
 first as ``observation_age_ms``, the age of each input of the active policy as
-``input_age_ms.<policy>.<input>``, and the duration of each step as ``policy_step_time_us``
-through ros2_control's introspection.
+``input_age_ms.<policy>.<input>``, and the duration of each step as ``step_time_us`` (with
+its stages as ``preprocessor_time_us``, ``inference_time_us`` and ``postprocessor_time_us``)
+on its own topic, ``/<controller>/introspection_data``.
