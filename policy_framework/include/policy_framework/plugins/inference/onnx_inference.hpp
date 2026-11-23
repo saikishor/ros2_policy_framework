@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef POLICY_FRAMEWORK__ONNX_INFERENCE_HPP_
-#define POLICY_FRAMEWORK__ONNX_INFERENCE_HPP_
+#ifndef POLICY_FRAMEWORK__PLUGINS__INFERENCE__ONNX_INFERENCE_HPP_
+#define POLICY_FRAMEWORK__PLUGINS__INFERENCE__ONNX_INFERENCE_HPP_
 
 #include <memory>
 #include <string>
@@ -66,4 +66,4 @@ private:
 
 }  // namespace policy_framework
 
-#endif  // POLICY_FRAMEWORK__ONNX_INFERENCE_HPP_
+#endif  // POLICY_FRAMEWORK__PLUGINS__INFERENCE__ONNX_INFERENCE_HPP_

@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-#include "policy_framework/onnx_inference.hpp"
+#include "policy_framework/plugins/inference/onnx_inference.hpp"
 #include "policy_framework/core/policy_pipeline.hpp"
 #include "policy_framework_mjlab/metadata.hpp"
 #include "policy_framework_mjlab/mjlab_postprocessor.hpp"

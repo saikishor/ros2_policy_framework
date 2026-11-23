@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "policy_framework/generic_stages.hpp"
+#include "policy_framework/plugins/stages/generic_stages.hpp"
 
 #include <stdexcept>
 #include <string>

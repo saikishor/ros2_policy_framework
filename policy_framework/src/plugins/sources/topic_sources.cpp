@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "policy_framework/topic_sources.hpp"
+#include "policy_framework/plugins/sources/topic_sources.hpp"
 
 #include "core/entry_name.hpp"
 

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "policy_framework/interface_executors.hpp"
+#include "policy_framework/plugins/executors/interface_executors.hpp"
 
 #include "core/entry_name.hpp"
 

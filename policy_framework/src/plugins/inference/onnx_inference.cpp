@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "policy_framework/onnx_inference.hpp"
+#include "policy_framework/plugins/inference/onnx_inference.hpp"
 
 #include <onnxruntime_cxx_api.h>
 
