@@ -14,9 +14,11 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include "policy_framework/core/policy_pipeline.hpp"
 
@@ -45,11 +47,13 @@ public:
   bool run(const TensorMap & in, TensorMap & out) override
   {
     ++runs;
+    std::this_thread::sleep_for(delay);
     out.at("actions").data[0] = nan ? std::nanf("") : in.at("obs").data[0] + offset_;
     return true;
   }
   int runs = 0;
   bool nan = false;  ///< Answer NaN, as a diverged model does.
+  std::chrono::microseconds delay{0};  ///< Duration of each run.
 
 private:
   ModelInfo model_;
@@ -203,6 +207,25 @@ TEST_F(PolicyPipelineTest, StepWaitsWhenPreprocessorHasNoData)
   pipeline.add_policy(a.policy("a"));
   EXPECT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::WAITING_FOR_DATA);
   EXPECT_EQ(a.inf->runs, 0);
+}
+
+TEST_F(PolicyPipelineTest, MeasuresTheDurationOfEachStage)
+{
+  Fakes a(1.0F);
+  a.inf->delay = std::chrono::microseconds(2000);
+  pipeline.add_policy(a.policy("a"));
+  ASSERT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::OK);
+  const auto & t = pipeline.stage_times();
+  EXPECT_GE(t.inference_us, 2000.0);
+  EXPECT_GT(t.preprocessor_us, 0.0);
+  EXPECT_GT(t.postprocessor_us, 0.0);
+  EXPECT_LT(t.preprocessor_us + t.postprocessor_us, t.inference_us);
+
+  // Stages that did not run in the last step measure 0, not the previous step's duration.
+  a.pre->ready = false;
+  ASSERT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::WAITING_FOR_DATA);
+  EXPECT_DOUBLE_EQ(pipeline.stage_times().inference_us, 0.0);
+  EXPECT_DOUBLE_EQ(pipeline.stage_times().postprocessor_us, 0.0);
 }
 
 TEST_F(PolicyPipelineTest, NonFiniteOutputsAreAnErrorAndNeverReachTheCommands)

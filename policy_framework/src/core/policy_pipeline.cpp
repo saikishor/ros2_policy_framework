@@ -15,6 +15,7 @@
 #include "policy_framework/core/policy_pipeline.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <stdexcept>
 #include <utility>
@@ -86,7 +87,15 @@ PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore &
     needs_reset_ = false;
   }
 
-  if (!e.policy.preprocessor->compute(state, e.outputs, e.inputs)) {
+  stage_times_ = StageTimes();
+  using Clock = std::chrono::steady_clock;
+  const auto us_since = [](Clock::time_point t) {
+      return std::chrono::duration<double, std::micro>(Clock::now() - t).count();
+    };
+  auto start = Clock::now();
+  const bool ready = e.policy.preprocessor->compute(state, e.outputs, e.inputs);
+  stage_times_.preprocessor_us = us_since(start);
+  if (!ready) {
     return Status::WAITING_FOR_DATA;
   }
   observation_stamp_ = 0.0;
@@ -97,7 +106,10 @@ PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore &
       observation_stamp_ = s.stamp;
     }
   }
-  if (!e.policy.inference->run(e.inputs, e.outputs)) {
+  start = Clock::now();
+  const bool ran = e.policy.inference->run(e.inputs, e.outputs);
+  stage_times_.inference_us = us_since(start);
+  if (!ran) {
     return Status::ERROR;
   }
   // A diverged model must not command the robot: NaN would go through every comparison below.
@@ -106,7 +118,10 @@ PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore &
       if (!std::isfinite(v)) {return Status::ERROR;}
     }
   }
-  if (!e.policy.postprocessor->compute(e.outputs, observation_stamp_, commands)) {
+  start = Clock::now();
+  const bool written = e.policy.postprocessor->compute(e.outputs, observation_stamp_, commands);
+  stage_times_.postprocessor_us = us_since(start);
+  if (!written) {
     return Status::ERROR;
   }
 
