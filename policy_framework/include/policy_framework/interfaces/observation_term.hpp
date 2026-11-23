@@ -125,7 +125,7 @@ public:
               ctx.name + ".max_age: a command term has a timeout instead (its staleness is normal)");
     }
     const auto dim = configure_term(ctx, model);
-    topic_.subscribe(ctx.node, topic_parameter(ctx, default_topic_));
+    topic_.subscribe(ctx.node, topic_parameter(ctx, default_topic_), qos());
     return dim;
   }
 
@@ -140,6 +140,9 @@ protected:
    * @return Number of floats of the term.
    */
   virtual size_t configure_term(const PluginContext & ctx, const ModelInfo & model) = 0;
+
+  /// @return QoS of the subscription; e.g. rclcpp::SensorDataQoS() for a best effort sensor.
+  virtual rclcpp::QoS qos() const {return rclcpp::SystemDefaultsQoS();}
 
   /// @return The latest message (null until the first one) and when it arrived. Real-time safe.
   Received latest() {return topic_.get();}

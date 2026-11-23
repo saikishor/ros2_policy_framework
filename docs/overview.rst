@@ -163,7 +163,9 @@ These words are used with one meaning throughout the code and the documentation.
      - A trained model together with the three stages that run it: a preprocessor, an
        inference and a postprocessor. It has a name, for example ``loco``.
    * - Observation
-     - The input of the model: one flat vector of numbers, built every step.
+     - The input of the model: one flat vector of numbers, built every step. A camera image
+       is not part of it but a model input of its own, filled by an input term
+       (``MjlabPreprocessor``).
    * - Observation term
      - One named block of the observation, for example ``joint_pos`` or ``base_ang_vel``.
        The observation is its terms one after another.

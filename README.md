@@ -19,7 +19,7 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 
 | Package | Content |
 |---------|---------|
-| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`, `CommandTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck`, `JumpCheck` and `MockSafetyCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks), `SwitchPolicy` service, `MockFault` message |
+| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`, `CommandTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, `ImageTerm` camera observation term, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck`, `JumpCheck` and `MockSafetyCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks), `SwitchPolicy` service, `MockFault` message |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` observation term and the Kangaroo deployment config/launch |
 
 ### Repository layout
@@ -32,7 +32,7 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 | `interfaces/` | Plugin base classes, one header per kind (`Inference`, `Preprocessor`, `Postprocessor`, `InputSource`, `Executor`, `InterfaceExecutor`, `SafetyCheck`, observation terms) and their shared types (`types.hpp`, `plugin_context.hpp`) | `policy_framework/interfaces/preprocessor.hpp` |
 | `core/` | What the hosts are built on: `DataStore`, `PolicyPipeline`, `Kinematics`, `SafetyMonitor`, `LatestMessage` | `policy_framework/core/data_store.hpp` |
 | `hosts/` | `PolicyRunner`, `PolicyNode` (standalone), `PolicyController` (ros2_control) | `policy_framework/hosts/policy_controller.hpp` |
-| `plugins/<kind>/` | The generic plugins: `sources/`, `inference/`, `stages/`, `executors/`, `safety/` | `policy_framework/plugins/sources/topic_sources.hpp` |
+| `plugins/<kind>/` | The generic plugins: `sources/`, `inference/`, `stages/`, `terms/`, `executors/`, `safety/` | `policy_framework/plugins/sources/topic_sources.hpp` |
 
 `policy_framework/plugin_interfaces.hpp` includes every interface except the observation terms.
 Test models and URDF are in `policy_framework/test/fixtures/`.
@@ -273,9 +273,10 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/JumpCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.max_delta` (required): fails on a change above it between two cycles (e.g. an encoder glitch) or a non-finite value; do not use on wrapping values |
 | `policy_framework/MockSafetyCheck` | SafetyCheck | `topic` (`~/<name>`, `policy_framework/msg/MockFault`), `reactions` (default empty): fails while the latest message has `fault: true`, with its `reaction` (empty: `on_fault`; must be listed in `reactions`, else `error`) and for its `duration` (s, 0: until the next message); reactivation forgets the latest message. For testing how the robot reacts to a fault only, see [safety](docs/safety.rst) |
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
+| `policy_framework/ImageTerm` | ObservationTerm (a `TopicTerm`, best effort) | `topic` (`image`), `encoding` (`rgb8`, `bgr8`, `mono8`, `16UC1`, `32FC1`; `rgb8`/`bgr8` images converted into each other), `width`, `height`, `scale` (0: 1/255 for 8-bit, else 1), `max_age` → `[C, H, W]` float32 of `pixel · scale`, non-finite depth as 0, stamped with its header; not ready on an image of another size or encoding. See [Camera images](#camera-images-and-other-array-sensors) |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
-| `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `imu_frame` (URDF link of the IMU, for the base terms of pal_mjlab exports), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type` |
+| `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `imu_frame` (URDF link of the IMU, for the base terms of pal_mjlab exports), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type`, `input_terms` (none; each in its model input `terms.<term>.input`, default the term name) |
 | `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface` (`position`), `velocity_interface` (`velocity`, empty: none), `gains_controller` (empty: none), `gains_as_commands` (false) |
 | `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm (a `CommandTerm`) | `topic` (`cmd_vel`), `timeout` (1.0 s, above zero; on the receive time) → linear.x, linear.y, angular.z, stamped with its receive time; zero (stamped now) when absent, stale or gated; a user command |
 
@@ -366,11 +367,48 @@ Fixed-size float data such as a height scan works as a term (validate its size i
 `configure()`: only the total `obs` size is checked); do no non-real-time work (e.g. a TF
 lookup) in `compute()` in a synchronous controller.
 
-**Limitation: camera images are not supported as model inputs yet.** Terms only write the
-single flat float32 `observation_input` (no separate `image [1,3,H,W]` input, no `uint8`), the
-term-major history copied every cycle neither matches stacked image layouts nor scales to them,
-and image decoding does not belong in the control loop. Planned: a per-term model input
-(`terms.<term>.input`) with its own layout and history, and a `uint8` tensor type.
+### Camera images and other array sensors
+
+Camera images are supported as model inputs. An image does not go through the state store (a
+table of scalars, copied on every step with `async_inference`) nor into the flat `obs`: it is
+an **input term**, an observation term plugin that fills a model input of its own. List it in
+`input_terms` (it is not part of `observation_names`) and name its input with
+`terms.<term>.input` (default: the term name):
+
+```yaml
+nav:
+  preprocessor: policy_framework_mjlab/MjlabPreprocessor
+  input_terms: [front_camera]
+  terms:
+    front_camera:
+      type: policy_framework/ImageTerm
+      input: image            # model input [1, 3, 64, 64], or [1, 2·3, 64, 64] for 2 frames
+      topic: /head_front_camera/color/image_resized
+      encoding: rgb8
+      width: 64
+      height: 64
+      max_age: 0.2            # fault (error) when the camera stops
+```
+
+- **History**: the input holds as many frames of the term as fit (its size divided by the term
+  size), oldest first, back-filled on the first step like the observation history; e.g.
+  `[1, T, C, H, W]` or `[1, T·C, H, W]` for `T` stacked frames.
+- **`ImageTerm`** writes the image channels first (`[C, H, W]`) as float32 `pixel · scale`
+  (`scale` 0: 1/255 for 8-bit encodings, 1 otherwise; `0.001` turns `16UC1` millimeters into
+  meters), with NaN/inf depth as 0. It does not resize, crop or decompress: publish the image
+  at the model's resolution (`image_proc` resize/crop, `image_transport republish` for
+  compressed images). An image of another size or encoding is not used (the policy does not
+  step; an error is logged), and `max_age` faults when the camera stops. It subscribes best
+  effort (sensor data QoS), as camera drivers publish.
+- **Real time**: the image is converted in the policy step. Run it in `policy_node`, or in the
+  controller with `async_inference: true`; not in a synchronous high-rate controller update.
+- Any other array sensor (a height map, a laser scan, a depth point grid) works the same way:
+  a `TopicTerm` writing its values, listed in `input_terms`. Scalar sensors (joints, IMU,
+  force/torque) stay in the state store.
+- Model inputs are float32: a model with a `uint8` image input must be exported with a float
+  input. A dynamic dimension of an ONNX input counts as 1, so export the image size static.
+  Input terms are a `MjlabPreprocessor` feature; `ConcatPreprocessor` fills one tensor only. Inference is on CPU (`OnnxInference`); a large vision network may need a GPU
+  `Inference` plugin to keep up with the policy rate.
 
 ### Kangaroo
 
@@ -457,7 +495,9 @@ A term fed by a custom message derives from `TopicTerm<Msg>`, which owns the sub
 hands the latest message to the control cycle real-time safely. Its parameters are `topic`, and
 `max_age` (seconds, default 0: off) with `max_age_on_fault` (`hold`, `damp`, `safe` or
 `error`, default `error`): a fault when its latest message arrived longer ago, checked after
-each policy step (a `CommandTerm` refuses a `max_age`: it has its `timeout`):
+each policy step (a `CommandTerm` refuses a `max_age`: it has its `timeout`). It subscribes
+with the system default QoS; override `qos()` (e.g. `rclcpp::SensorDataQoS()`) for a best
+effort sensor:
 
 ```cpp
 using namespace policy_framework;

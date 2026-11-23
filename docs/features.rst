@@ -133,6 +133,10 @@ Easy to extend
 - **Observation terms**: replace or add a single term of an mjlab observation without writing
   a preprocessor. ``TopicTerm`` owns the subscription, and ``CommandTerm`` handles the gate,
   the timeout and the stamps of a user command so that a term cannot forget them.
+- **Camera images and array sensors** (``MjlabPreprocessor``): an *input term* fills a model input of its own (e.g.
+  ``image [1, 3, H, W]``) with its own frame history, next to the flat observation.
+  ``ImageTerm`` reads color (``rgb8``, ``bgr8``, ``mono8``) and depth (``16UC1``, ``32FC1``)
+  images, channels first, with ``max_age`` when the camera stops.
 - **Validated parameters**: every parameter is declared with generate_parameter_library, and
   an invalid value fails configuration with the parameter name.
 
@@ -141,6 +145,5 @@ See :doc:`extending`.
 Current limits
 --------------
 
-- Camera images are not supported as model inputs yet.
 - The kinematics has no base position or linear velocity in the world (that needs a state
   estimator).

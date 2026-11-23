@@ -52,12 +52,14 @@ public:
   LatestMessage(const LatestMessage &) = delete;
   LatestMessage & operator=(const LatestMessage &) = delete;
 
-  /// Subscribe to @p topic on @p node (replacing any previous subscription).
-  void subscribe(const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & topic)
+  /// Subscribe to @p topic on @p node with @p qos (replacing any previous subscription).
+  void subscribe(
+    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & topic,
+    const rclcpp::QoS & qos = rclcpp::SystemDefaultsQoS())
   {
     clock_ = node->get_clock();
     sub_ = node->template create_subscription<MsgT>(
-      topic, rclcpp::SystemDefaultsQoS(), [this](const std::shared_ptr<const MsgT> msg) {
+      topic, qos, [this](const std::shared_ptr<const MsgT> msg) {
         buffer_.writeFromNonRT(Received{msg, clock_->now().seconds()});
       });
   }

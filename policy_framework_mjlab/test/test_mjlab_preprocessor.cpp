@@ -14,13 +14,16 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
+#include "geometry_msgs/msg/vector3_stamped.hpp"
 #include "policy_framework_mjlab/mjlab_preprocessor.hpp"
 #include "policy_framework/core/kinematics.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -416,6 +419,73 @@ TEST(MjlabPreprocessor, TermPluginProvidesATermUnknownToThePreprocessor)
     make_context({{"p.terms.my_velocity.type", "policy_framework_mjlab/TwistCommandTerm"}}),
     model, state);
   EXPECT_EQ(pre.history_length(), 2U);
+}
+
+TEST(MjlabPreprocessor, InputTermsFillTheirOwnModelInputWithHistory)
+{
+  // A camera-like term outside `observation_names`, in its own model input with 2 frames.
+  auto model = twist_model(1);
+  model.inputs["vec"] = {{1, 2, 3}, Floats(6, 0.0F)};
+  DataStore state;
+  MjlabPreprocessor pre;
+  auto ctx = make_context(
+    {{"p.input_terms", std::vector<std::string>{"cam"}},
+      {"p.terms.cam.type", "policy_framework_mjlab_test/VectorTerm"},
+      {"p.terms.cam.topic", "/test_pre_input_term"},
+      {"p.terms.cam.input", "vec"}});
+  pre.configure(ctx, model, state);
+  EXPECT_EQ(pre.history_length(), 2U);
+  set_upright_robot(state, 1.1, 1.2);
+  pre.reset();
+  TensorMap in = model.inputs;
+  EXPECT_FALSE(pre.compute(state, model.outputs, in));  // waits for the term's first message
+
+  auto pub_node = std::make_shared<rclcpp::Node>("test_pre_input_term_pub");
+  auto pub = pub_node->create_publisher<geometry_msgs::msg::Vector3Stamped>(
+    "/test_pre_input_term", 10);
+  auto publish_and_compute = [&](double x) {
+      geometry_msgs::msg::Vector3Stamped msg;
+      msg.header.stamp.sec = 5;
+      msg.vector.x = x;
+      for (int i = 0; i < 100; ++i) {
+        pub->publish(msg);
+        rclcpp::spin_some(ctx.node->get_node_base_interface());
+        if (pre.compute(state, model.outputs, in) && in["vec"].data[3] == static_cast<float>(x)) {
+          return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      return false;
+    };
+  ASSERT_TRUE(publish_and_compute(1.0));
+  EXPECT_EQ(in["vec"].data, (Floats{1, 0, 0, 1, 0, 0}));  // back-filled
+  ASSERT_TRUE(publish_and_compute(2.0));
+  EXPECT_FLOAT_EQ(in["vec"].data[0], 1.0F);  // oldest first
+  EXPECT_FLOAT_EQ(in["obs"].data[0], 0.5F);  // the observation is untouched
+  ASSERT_EQ(pre.input_stamps().size(), 7U);
+  EXPECT_EQ(pre.input_stamps()[6].name, "cam");
+  EXPECT_DOUBLE_EQ(pre.input_stamps()[6].stamp, 5.0);
+}
+
+TEST(MjlabPreprocessor, RejectsInputTermsThatDoNotFitTheirInput)
+{
+  auto model = twist_model(1);
+  model.inputs["vec"] = zeros(4);  // not a multiple of 3
+  auto params = std::vector<rclcpp::Parameter>{
+    {"p.input_terms", std::vector<std::string>{"cam"}},
+    {"p.terms.cam.type", "policy_framework_mjlab_test/VectorTerm"},
+    {"p.terms.cam.input", "vec"}};
+  DataStore state;
+  EXPECT_ANY_THROW(MjlabPreprocessor().configure(make_context(params), model, state));
+  params[2] = {"p.terms.cam.input", "time_step"};  // filled by the preprocessor itself
+  model.inputs["vec"] = zeros(3);
+  model.inputs["time_step"] = zeros(3);
+  EXPECT_ANY_THROW(MjlabPreprocessor().configure(make_context(params), model, state));
+  params[2] = {"p.terms.cam.input", "missing"};
+  EXPECT_ANY_THROW(MjlabPreprocessor().configure(make_context(params), model, state));
+  params[1] = {"p.terms.cam.type", ""};  // an input term is always a plugin
+  params[2] = {"p.terms.cam.input", "vec"};
+  EXPECT_ANY_THROW(MjlabPreprocessor().configure(make_context(params), model, state));
 }
 
 TEST(MjlabPreprocessor, TermPluginsReadTheRunnerKinematics)

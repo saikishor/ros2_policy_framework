@@ -76,7 +76,14 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * above does not know. History and layout apply to plugin terms as to built-in ones; the cycle
  * is skipped while a plugin term is not ready().
  *
- * input_stamps(): one per term, in `observation_names` order. A state store term has the
+ * Input terms (parameter `input_terms`): term plugins that are not part of the observation
+ * but fill a model input of their own, `terms.<term>.input` (default: the term name), e.g. a
+ * camera image (policy_framework/ImageTerm) for an `image [1, 3, H, W]` input. The input holds
+ * as many frames of the term as fit (its size divided by the term size), oldest first, with the
+ * same back-filling and observe() as the observation history. They count in ready(),
+ * history_length() and input_stamps() (after the observation terms, in `input_terms` order).
+ *
+ * input_stamps(): one per term, in `observation_names` order, then the input terms. A state store term has the
  * oldest stamp of its entries, a plugin term the stamp it returns. `actions` and the motion
  * command fed back from the outputs derive from the previous observation, so they have its
  * stamp (the oldest of its other terms; 0 before the first step after clear()).
@@ -85,7 +92,8 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * motion command is re-seeded from the robot state after reset().
  *
  * Parameters (under `<policy>.`): `imu_name` (default `imu`), `imu_frame`, `velocity_command_name`
- * (default `cmd_vel`), `odometry_name` (default `odom`), `observation_input` (default `obs`).
+ * (default `cmd_vel`), `odometry_name` (default `odom`), `observation_input` (default `obs`),
+ * `input_terms` (default none).
  */
 class MjlabPreprocessor : public policy_framework::Preprocessor
 {
@@ -115,6 +123,7 @@ private:
     std::shared_ptr<policy_framework::ObservationTerm> term;  ///< Built-in or plugin.
     size_t dim = 0;
     std::vector<float> history;  ///< history_length * dim values, oldest first.
+    std::string input;  ///< Model input of an input term; empty: part of the observation.
   };
 
   /// @return true when every input of every term is available.

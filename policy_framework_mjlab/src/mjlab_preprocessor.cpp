@@ -265,34 +265,43 @@ void MjlabPreprocessor::configure(
       return nullptr;
     };
 
-  const auto names = split(require(md, "observation_names"));
   terms_.clear();
   stamps_.clear();
+  // Appends the term @p name: the plugin of `terms.<name>.type` (not generated parameters: the
+  // names come from the model metadata or input_terms), else the built-in one.
+  auto add_term = [&](const std::string & name, bool allow_builtin) {
+      Term t;
+      const auto plugin = get_parameter<std::string>(ctx, "terms." + name + ".type", "");
+      if (!plugin.empty()) {
+        if (!term_loader_) {
+          term_loader_ = std::make_unique<pluginlib::ClassLoader<ObservationTerm>>(
+            "policy_framework", "policy_framework::ObservationTerm");
+        }
+        t.term = term_loader_->createSharedInstance(plugin);
+      } else if (allow_builtin) {
+        t.term = builtin(name);
+      }
+      if (!t.term) {
+        throw std::runtime_error(
+                allow_builtin ? "Unsupported mjlab observation term '" + name + "'" :
+                "Input term '" + name + "' needs terms." + name + ".type (a term plugin)");
+      }
+      t.dim = t.term->configure(
+        {ctx.node, ctx.name + ".terms." + name, ctx.kinematics, ctx.safety_entry}, model, state);
+      if (t.dim == 0) {
+        throw std::runtime_error("Observation term '" + name + "' has size 0");
+      }
+      terms_.push_back(std::move(t));
+      const auto & term = *terms_.back().term;
+      stamps_.push_back(
+        {name, 0.0, false, term.user_command(), 0.0, term.max_age(), term.max_age_on_fault()});
+    };
+
+  const auto names = split(require(md, "observation_names"));
   size_t single_dim = 0;
   for (const auto & name : names) {
-    Term t;
-    // Not a generated parameter: the term names come from the model metadata.
-    const auto plugin = get_parameter<std::string>(ctx, "terms." + name + ".type", "");
-    if (!plugin.empty()) {
-      if (!term_loader_) {
-        term_loader_ = std::make_unique<pluginlib::ClassLoader<ObservationTerm>>(
-          "policy_framework", "policy_framework::ObservationTerm");
-      }
-      t.term = term_loader_->createSharedInstance(plugin);
-    } else {
-      t.term = builtin(name);
-    }
-    if (!t.term) {throw std::runtime_error("Unsupported mjlab observation term '" + name + "'");}
-    t.dim = t.term->configure(
-      {ctx.node, ctx.name + ".terms." + name, ctx.kinematics, ctx.safety_entry}, model, state);
-    if (t.dim == 0) {
-      throw std::runtime_error("Observation term '" + name + "' has size 0");
-    }
-    single_dim += t.dim;
-    terms_.push_back(std::move(t));
-    const auto & term = *terms_.back().term;
-    stamps_.push_back(
-      {name, 0.0, false, term.user_command(), 0.0, term.max_age(), term.max_age_on_fault()});
+    add_term(name, true);
+    single_dim += terms_.back().dim;
   }
 
   const auto in = model.inputs.find(obs_input_);
@@ -336,10 +345,39 @@ void MjlabPreprocessor::configure(
             "The observation terms add up to " + std::to_string(total) + " values, but the '" +
             obs_input_ + "' input has " + std::to_string(obs_dim));
   }
+  // Input terms (e.g. a camera image): each in a model input of its own, as many frames of
+  // history as fit in it. Kept out of the flat observation so that its layout (e.g. frames of
+  // [C, H, W]) is the model's, whatever the observation terms are.
+  for (const auto & name : params.input_terms) {
+    add_term(name, false);
+    auto & t = terms_.back();
+    t.input = get_parameter<std::string>(ctx, "terms." + name + ".input", name);
+    const auto it = model.inputs.find(t.input);
+    if (it == model.inputs.end() || t.input == obs_input_ || t.input == "time_step") {
+      throw std::runtime_error(
+              "Input term '" + name + "': '" + t.input + "' is not a free model input");
+    }
+    const auto size = it->second.data.size();
+    if (size % t.dim != 0) {
+      throw std::runtime_error(
+              "Input term '" + name + "' has size " + std::to_string(t.dim) + ", the '" +
+              t.input + "' input " + std::to_string(size) + ": not a whole number of frames");
+    }
+    t.history.assign(size, 0.0F);
+    history_length_ = std::max(history_length_, size / t.dim);
+  }
+  for (size_t a = names.size(); a < terms_.size(); ++a) {
+    for (size_t b = a + 1; b < terms_.size(); ++b) {
+      if (terms_[a].input == terms_[b].input) {
+        throw std::runtime_error("Two input terms fill the '" + terms_[a].input + "' input");
+      }
+    }
+  }
   has_time_step_ = model.inputs.count("time_step") > 0;
   RCLCPP_INFO(
-    ctx.node->get_logger(), "[%s] mjlab observation: %zu terms, single size %zu, history %zu%s",
-    ctx.name.c_str(), terms_.size(), single_dim, history_length_,
+    ctx.node->get_logger(),
+    "[%s] mjlab observation: %zu terms, single size %zu, history %zu, %zu input terms%s",
+    ctx.name.c_str(), names.size(), single_dim, history_length_, params.input_terms.size(),
     motion ? ", motion command" : "");
 }
 
@@ -408,6 +446,10 @@ bool MjlabPreprocessor::compute(
   auto & obs = inputs.at(obs_input_).data;
   size_t offset = 0;
   for (const auto & t : terms_) {
+    if (!t.input.empty()) {
+      std::copy(t.history.begin(), t.history.end(), inputs.at(t.input).data.begin());
+      continue;
+    }
     std::copy(
       t.history.begin(), t.history.end(), obs.begin() + static_cast<std::ptrdiff_t>(offset));
     offset += t.history.size();

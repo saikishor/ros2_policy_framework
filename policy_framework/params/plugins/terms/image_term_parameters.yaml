@@ -1,0 +1,26 @@
+image_term:
+  encoding:
+    type: string
+    description: "Encoding the model expects: rgb8, bgr8, mono8, 16UC1 or 32FC1 (rgb8 and bgr8 images are converted into each other)."
+    read_only: true
+    validation:
+      one_of<>: [["rgb8", "bgr8", "mono8", "16UC1", "32FC1"]]
+  width:
+    type: int
+    description: "Image width in pixels, the model's."
+    read_only: true
+    validation:
+      gt<>: [0]
+  height:
+    type: int
+    description: "Image height in pixels, the model's."
+    read_only: true
+    validation:
+      gt<>: [0]
+  scale:
+    type: double
+    default_value: 0.0
+    description: "Factor applied to every pixel value; 0: 1/255 for 8-bit encodings, 1 otherwise."
+    read_only: true
+    validation:
+      gt_eq<>: [0.0]

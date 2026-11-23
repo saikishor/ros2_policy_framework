@@ -32,3 +32,10 @@ mjlab_preprocessor:
     read_only: true
     validation:
       not_empty<>: null
+  input_terms:
+    type: string_array
+    default_value: []
+    description: "Observation term plugins outside observation_names that fill a model input of their own (terms.<name>.input), e.g. a camera image. History: the input size divided by the term size, in frames, oldest first."
+    read_only: true
+    validation:
+      unique<>: null
