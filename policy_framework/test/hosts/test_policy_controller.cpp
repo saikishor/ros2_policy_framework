@@ -33,6 +33,7 @@
 #include "lifecycle_msgs/msg/state.hpp"
 #include "policy_framework/core/kinematics.hpp"
 #include "policy_framework/hosts/policy_controller.hpp"
+#include "policy_framework/msg/policy_step.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using controller_interface::interface_configuration_type;
@@ -409,6 +410,36 @@ TEST_F(PolicyControllerTest, AsyncInferenceKeepsThePdLawInTheUpdateLoop)
 
   ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
   EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+}
+
+TEST_F(PolicyControllerTest, PublishesThePolicyStepsOfTheInferenceThread)
+{
+  using policy_framework::msg::PolicyStep;
+  init({{"policy_rate", 50.0}, {"async_inference", true}, {"publish_steps", true}}, 100);
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  auto helper = std::make_shared<rclcpp::Node>("step_listener");
+  std::vector<PolicyStep> steps;
+  auto sub = helper->create_subscription<PolicyStep>(
+    "/policy_controller/policy_step", 10,
+    [&](const PolicyStep & msg) {if (msg.status == PolicyStep::STATUS_OK) {steps.push_back(msg);}});
+  for (int i = 0; i < 100 && sub->get_publisher_count() == 0; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+
+  for (int i = 0; i < 200 && steps.empty(); ++i) {
+    ASSERT_EQ(update(), controller_interface::return_type::OK);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    rclcpp::spin_some(helper);
+  }
+  ASSERT_FALSE(steps.empty());
+  EXPECT_EQ(steps[0].policy, "walk");
+  EXPECT_EQ(steps[0].commands, (std::vector<double>{4.5, 6.5}));
+  ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
 }
 
 TEST_F(PolicyControllerTest, AsyncInferenceAndIsAsyncAreExclusive)

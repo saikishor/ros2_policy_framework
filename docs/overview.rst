@@ -128,11 +128,12 @@ parameters are always found under the same path.
        API a plugin package depends on.
      - ``policy_framework/interfaces/preprocessor.hpp``
    * - ``core/``
-     - The pieces the hosts are built on: the stores, the pipeline, the kinematics model and
-       the safety monitor.
+     - The pieces the hosts are built on: the stores, the pipeline, the kinematics model, the
+       safety monitor, and the publishing and replaying of policy steps.
      - ``policy_framework/core/data_store.hpp``
    * - ``hosts/``
-     - The runner and the two hosts: standalone node and ros2_control controller.
+     - The runner and the two hosts (standalone node and ros2_control controller), and
+       ``policy_replay``, which runs recorded policy steps through a model offline.
      - ``policy_framework/hosts/policy_controller.hpp``
    * - ``plugins/<kind>/``
      - The generic plugins shipped with the framework, one folder per kind of plugin.

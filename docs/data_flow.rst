@@ -145,4 +145,5 @@ This makes two questions answerable at any time: *how old was the data the polic
 acted on?* and *how long did it take from sensor to command?* The controller publishes the
 first as ``observation_age_ms``, the age of each input of the active policy as
 ``input_age_ms.<policy>.<input>``, and the duration of each step as ``policy_step_time_us``
-through ros2_control's introspection.
+through ros2_control's introspection. With ``publish_steps`` every step is also published with
+all its input stamps, see :doc:`observability`.
