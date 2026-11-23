@@ -146,7 +146,8 @@ acted on?* and *how long did it take from sensor to command?* The controller pub
 first as ``observation_age_ms``, the age of each input of the active policy as
 ``input_age_ms.<policy>.<input>``, and the duration of each step as ``step_time_us`` (with
 its stages as ``preprocessor_time_us``, ``inference_time_us`` and ``postprocessor_time_us``)
-on its own topic, ``/<controller>/introspection_data``.
+and of each item of the update (e.g. ``update_time_us``, ``executors_time_us``) on its own
+topic, ``/<controller>/introspection_data``.
 
 Introspection
 -------------
@@ -173,6 +174,15 @@ but on its own topic instead of the controller manager's shared
      - Age of the observation of that step when its commands were applied
    * - ``input_age_ms.<policy>.<input>``
      - Age of each input of the active policy; 0 for the inputs of inactive policies
+   * - ``update_time_us``
+     - Duration of the whole last update, the policy step included when synchronous (with
+       ``async_inference`` only its hand-over to the inference thread)
+   * - ``state_read_time_us``, ``read_sources_time_us``, ``kinematics_time_us``,
+       ``safety_time_us``, ``executors_time_us``
+     - Duration of each item of that update: reading the state interfaces, reading the input
+       sources (policy ticks only), updating the kinematics, the safety checks, and the
+       executors writing the command interfaces (including a fault reaction); 0 for an item
+       that did not run (e.g. after a fault)
 
 The registry also adds its own ``topic_stats.*`` entries, e.g. how many asynchronous
 publications were attempted and failed.
