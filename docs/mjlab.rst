@@ -106,6 +106,34 @@ does this to read the velocity command straight from its topic:
          topic: /cmd_vel
          timeout: 1.0
 
+Camera images: input terms
+--------------------------
+
+An image is not part of the flat observation: it has a model input of its own (e.g.
+``image [1, 3, H, W]``). Such a term is an *input term*: listed in ``input_terms`` rather than in
+``observation_names``, with ``terms.<name>.input`` naming its model input (default: the term
+name). The input holds as many frames of the term as fit, oldest first, with the same
+back-filling as the observation history. ``policy_framework/ImageTerm`` writes a color or
+depth image channels first:
+
+.. code-block:: yaml
+
+   nav:
+     input_terms: [front_camera]
+     terms:
+       front_camera:
+         type: policy_framework/ImageTerm
+         input: image
+         topic: /head_front_camera/color/image_resized
+         encoding: rgb8
+         width: 64
+         height: 64
+         max_age: 0.2
+
+The image must already have the model's resolution (resize it with ``image_proc``), and its
+conversion runs in the policy step: use ``policy_node`` or ``async_inference``. See the README
+for every parameter.
+
 pal_mjlab exports
 -----------------
 

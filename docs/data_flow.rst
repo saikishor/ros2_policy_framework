@@ -49,7 +49,8 @@ The tensors
 Between the three stages of a policy the data is no longer named numbers but *tensors*: the
 blocks of ``float32`` values the model takes and returns, keyed by the model's input and
 output names (``TensorMap``). A typical policy has one input tensor ``obs`` and one output
-tensor ``actions``.
+tensor ``actions``; a vision policy also has an image input (e.g. ``image [1, 3, H, W]``), filled
+by an input term straight from the camera topic, not through the state store.
 
 One step
 --------
