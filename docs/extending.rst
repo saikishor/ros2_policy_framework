@@ -69,7 +69,7 @@ Which plugin to write
 Both hosts run the ``SafetyCheck`` plugins (:doc:`safety`).
 
 The base classes are in ``policy_framework/plugin_interfaces.hpp`` and
-``policy_framework/observation_term.hpp``, each method documented there.
+``policy_framework/interfaces/observation_term.hpp``, each method documented there.
 
 The life of a plugin
 --------------------
@@ -122,7 +122,7 @@ makes the host fault when the topic stops (:doc:`safety`):
 
 .. code-block:: cpp
 
-   #include "policy_framework/observation_term.hpp"
+   #include "policy_framework/interfaces/observation_term.hpp"
 
    using namespace policy_framework;
 
@@ -183,7 +183,7 @@ does what keeps a command safe, so that no command term can forget it:
 
 .. code-block:: cpp
 
-   #include "policy_framework/observation_term.hpp"
+   #include "policy_framework/interfaces/observation_term.hpp"
    #include "std_msgs/msg/float64.hpp"
 
    using namespace policy_framework;

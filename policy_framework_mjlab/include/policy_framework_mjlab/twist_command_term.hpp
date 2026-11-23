@@ -16,7 +16,7 @@
 #define POLICY_FRAMEWORK_MJLAB__TWIST_COMMAND_TERM_HPP_
 
 #include "geometry_msgs/msg/twist.hpp"
-#include "policy_framework/observation_term.hpp"
+#include "policy_framework/interfaces/observation_term.hpp"
 
 namespace policy_framework_mjlab
 {
