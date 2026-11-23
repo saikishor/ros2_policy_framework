@@ -156,9 +156,10 @@ def launch_setup(context):
     models_dir = arg('models_dir')
     if not models_dir:
         raise ValueError('models_dir is empty and pal_policy_deployer is not installed')
-    config = os.path.join(get_package_share_directory('policy_framework_mjlab'), 'config')
-    impedance = os.path.join(config, f'kangaroo_{robot_type}_impedance.yaml')
-    with open(os.path.join(config, 'kangaroo_policies.yaml')) as f:
+    config = os.path.join(
+        get_package_share_directory('policy_framework_mjlab'), 'config', 'kangaroo')
+    impedance = os.path.join(config, f'{robot_type}_impedance.yaml')
+    with open(os.path.join(config, 'policies.yaml')) as f:
         template = yaml.safe_load(f)
     policies = write_parameters(policy_parameters(
         template, models_dir, robot_type,
@@ -179,7 +180,7 @@ def launch_setup(context):
             Node(
                 package='policy_framework', executable='policy_node', name='policy_node',
                 output='screen',
-                parameters=[policies, os.path.join(config, 'kangaroo_policy_node.yaml'),
+                parameters=[policies, os.path.join(config, 'policy_node.yaml'),
                             {'use_sim_time': LaunchConfiguration('use_sim_time')}],
                 # Without its policy the robot must not keep a stale reference: stop the
                 # launch, which unloads the impedance controller (as pal_policy_deployer).
@@ -187,7 +188,7 @@ def launch_setup(context):
             ),
         ]
 
-    controller = render(os.path.join(config, 'kangaroo_policy_controller.yaml'), {
+    controller = render(os.path.join(config, 'policy_controller.yaml'), {
         'ASYNC_INFERENCE': 'true' if mode == 'controller_async' else 'false'})
     return [
         Node(

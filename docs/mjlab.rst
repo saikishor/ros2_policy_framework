@@ -201,6 +201,6 @@ It runs in three modes:
      - ``policy_node`` publishing references to a ``pid_controller`` that receives the gains
        as parameters
 
-The settings of each kind of policy are written once, in ``kangaroo_policies.yaml``, and
+The settings of each kind of policy are written once, in ``config/kangaroo/policies.yaml``, and
 shared by the three modes; the launch copies them into one policy per version. Only the
 host-specific file differs. The README has the commands.

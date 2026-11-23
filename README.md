@@ -381,10 +381,10 @@ ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPo
 
 The controller manager must be started with this workspace sourced to find the controller
 plugin. In node mode the launch shuts down (unloading `rl_impedance_controller`) when the
-policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_policies.yaml`
+policy node exits. Configuration in `policy_framework_mjlab/config/kangaroo`: `policies.yaml`
 (settings per policy kind, shared by both hosts; the launch makes one policy per version),
-`kangaroo_policy_controller.yaml`, `kangaroo_policy_node.yaml`,
-`kangaroo_<robot_type>_impedance.yaml` (pid_controller, node mode).
+`policy_controller.yaml`, `policy_node.yaml`,
+`<robot_type>_impedance.yaml` (pid_controller, node mode).
 
 ## Writing plugins
 
