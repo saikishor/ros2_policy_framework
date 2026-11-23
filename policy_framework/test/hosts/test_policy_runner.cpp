@@ -63,6 +63,29 @@ std::vector<rclcpp::Parameter> runner_params(const std::string & topic)
   };
 }
 
+// Two groups of two policies on the affine test model, fed straight from the state store:
+// legs (walk, jump) write j1, j2 from j1..j3; arms (reach, wave) write j4, j5 from j4..j6.
+std::vector<rclcpp::Parameter> group_params()
+{
+  std::vector<rclcpp::Parameter> params{{"policies", StringArray{"walk", "reach", "jump", "wave"}}};
+  auto policy = [&](
+    const std::string & name, const std::string & group, const StringArray & inputs,
+    const StringArray & outputs) {
+      params.push_back({name + ".group", group});
+      params.push_back({name + ".preprocessor", "policy_framework/ConcatPreprocessor"});
+      params.push_back({name + ".input_entries", inputs});
+      params.push_back({name + ".model_path", kModel});
+      params.push_back({name + ".postprocessor", "policy_framework/SplitPostprocessor"});
+      params.push_back({name + ".output_entries", outputs});
+    };
+  policy("walk", "legs", {"j1/position", "j2/position", "j3/position"}, {"j1/position", "j2/position"});
+  policy("jump", "legs", {"j3/position", "j2/position", "j1/position"}, {"j1/position", "j2/position"});
+  policy("reach", "arms", {"j4/position", "j5/position", "j6/position"}, {"j4/position", "j5/position"});
+  policy("wave", "arms", {"j6/position", "j5/position", "j4/position"}, {"j4/position", "j5/position"});
+  params.push_back({"jump.max_steps", 1});
+  return params;
+}
+
 class PolicyRunnerTest : public ::testing::Test
 {
 protected:
@@ -90,6 +113,21 @@ protected:
   }
 
   double command(const std::string & n) {return runner.commands().get(runner.commands().index(n));}
+
+  /// Set the state entries j<first>/position .. j<last>/position to first .. last.
+  void set_joints(int first, int last)
+  {
+    auto & state = runner.state();
+    for (int j = first; j <= last; ++j) {
+      state.set(state.index("j" + std::to_string(j) + "/position"), j, 1.0);
+    }
+  }
+
+  bool switch_to(const std::string & policy)
+  {
+    std::string message;
+    return runner.request_switch(policy, message);
+  }
 
   rclcpp_lifecycle::LifecycleNode::SharedPtr node;
   rclcpp::Node::SharedPtr helper;
@@ -131,10 +169,78 @@ TEST_F(PolicyRunnerTest, RunsPolicyFedByTopicSourceAndSwitchesViaService)
   EXPECT_TRUE(future.get()->success) << future.get()->message;
 
   ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
-  EXPECT_EQ(runner.pipeline().active_policy(), "jump");
+  EXPECT_EQ(runner.active_policies(), StringArray{"jump"});
   EXPECT_DOUBLE_EQ(command("j1/position"), 3.0 + 1.0 + 0.5);
   runner.step();  // max_steps reached on the previous step: back to the default
-  EXPECT_EQ(runner.pipeline().active_policy(), "walk");
+  EXPECT_EQ(runner.active_policies(), StringArray{"walk"});
+}
+
+TEST_F(PolicyRunnerTest, EveryGroupOfPoliciesStepsItsActivePolicy)
+{
+  configure(group_params());
+  EXPECT_EQ(runner.active_policies(), (StringArray{"walk", "reach"}));
+  set_joints(1, 6);
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
+  EXPECT_DOUBLE_EQ(command("j1/position"), 1.0 + 3.0 + 0.5);
+  EXPECT_DOUBLE_EQ(command("j2/position"), 2 * 2.0 + 3.0 - 0.5);
+  EXPECT_DOUBLE_EQ(command("j4/position"), 4.0 + 6.0 + 0.5);
+  EXPECT_DOUBLE_EQ(command("j5/position"), 2 * 5.0 + 6.0 - 0.5);
+  EXPECT_DOUBLE_EQ(runner.observation_stamp(), 1.0);
+}
+
+TEST_F(PolicyRunnerTest, SwitchingInOneGroupLeavesTheOtherGroupRunning)
+{
+  configure(group_params());
+  set_joints(1, 6);
+  ASSERT_TRUE(switch_to("wave"));
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
+  EXPECT_EQ(runner.active_policies(), (StringArray{"walk", "wave"}));
+  EXPECT_DOUBLE_EQ(command("j5/position"), 2 * 5.0 + 4.0 - 0.5);  // wave: inputs reversed
+  EXPECT_DOUBLE_EQ(command("j2/position"), 2 * 2.0 + 3.0 - 0.5);  // walk still
+
+  std::string message;
+  EXPECT_FALSE(runner.request_switch("run", message));
+  EXPECT_NE(message.find("walk"), std::string::npos) << message;  // lists the policies
+}
+
+TEST_F(PolicyRunnerTest, MaxStepsReturnsToTheDefaultPolicyOfItsGroup)
+{
+  configure(group_params());
+  set_joints(1, 6);
+  ASSERT_TRUE(switch_to("wave"));
+  ASSERT_TRUE(switch_to("jump"));
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
+  EXPECT_EQ(runner.active_policies(), (StringArray{"jump", "wave"}));
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
+  EXPECT_EQ(runner.active_policies(), (StringArray{"walk", "wave"}));
+}
+
+TEST_F(PolicyRunnerTest, AWaitingGroupDoesNotBlockTheCommandsOfTheOthers)
+{
+  configure(group_params());
+  set_joints(1, 3);  // the arms' inputs never arrive
+  EXPECT_EQ(runner.step(), PolicyPipeline::Status::WAITING_FOR_DATA);
+  EXPECT_DOUBLE_EQ(command("j1/position"), 1.0 + 3.0 + 0.5);
+  EXPECT_FALSE(runner.commands().received(runner.commands().index("j4/position")));
+}
+
+TEST(PolicyRunner, PoliciesOfDifferentGroupsCannotWriteTheSameCommand)
+{
+  auto params = group_params();
+  params.push_back({"wave.output_entries", StringArray{"j4/position", "j1/position"}});
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides(params);
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("runner_overlap", opts);
+  PolicyRunner runner;
+  try {
+    runner.configure(node);
+    FAIL() << "configured";
+  } catch (const std::runtime_error & e) {
+    const std::string what = e.what();
+    for (const auto * word : {"j1/position", "walk", "wave"}) {
+      EXPECT_NE(what.find(word), std::string::npos) << what;
+    }
+  }
 }
 
 TEST_F(PolicyRunnerTest, ReportsStateEntriesNoSourceProvides)
@@ -363,9 +469,9 @@ protected:
   void step_into(const std::string & policy)
   {
     std::string msg;
-    ASSERT_TRUE(runner.pipeline().request_switch(policy, msg)) << msg;
+    ASSERT_TRUE(runner.request_switch(policy, msg)) << msg;
     ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);
-    ASSERT_EQ(runner.pipeline().active_policy(), policy);
+    ASSERT_EQ(runner.active_policies().at(0), policy);
   }
 };
 
@@ -380,8 +486,33 @@ TEST_F(PerPolicySafetyTest, ACheckDisabledByTheActivePolicyIsSkipped)
   step_into("jump");
   EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
   ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);  // back to walk
-  ASSERT_EQ(runner.pipeline().active_policy(), "walk");
+  ASSERT_EQ(runner.active_policies().at(0), "walk");
   EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);
+}
+
+TEST_F(RunnerSafetyTest, WithGroupsACheckIsSkippedOnlyWhileEveryActivePolicyDisablesIt)
+{
+  auto params = group_params();
+  for (const auto & p : std::vector<rclcpp::Parameter>{
+      {"safety_checks", StringArray{"hot"}}, {"hot.type", "policy_framework/StateBoundsCheck"},
+      {"hot.prefixes", StringArray{"j1"}}, {"hot.interfaces", StringArray{"temperature"}},
+      {"hot.temperature.max", 80.0}, {"hot.on_fault", "neutral_commands"},
+      {"walk.disabled_safety_checks", StringArray{"hot"}},
+      {"wave.disabled_safety_checks", StringArray{"hot"}}})
+  {
+    params.push_back(p);
+  }
+  configure(params);
+  for (int j = 1; j <= 6; ++j) {set("j" + std::to_string(j) + "/position", 0.0);}
+  set("j1/temperature", 85.0);
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);  // walk and reach
+  // reach keeps the check, so it runs although walk disables it.
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);
+
+  std::string msg;
+  ASSERT_TRUE(runner.request_switch("wave", msg)) << msg;
+  ASSERT_EQ(runner.step(), PolicyPipeline::Status::OK);  // walk and wave: both disable it
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
 }
 
 TEST_F(PerPolicySafetyTest, AReenabledCheckStartsAfresh)

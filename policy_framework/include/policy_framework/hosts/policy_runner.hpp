@@ -18,6 +18,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -45,14 +46,23 @@ namespace policy_framework
  * - `sources` (string array): input source names; each needs `<source>.type` (plugin class),
  *   and may have `<source>.max_age` (seconds, default 0: off): a fault, with the reaction
  *   `<source>.max_age_on_fault` (default `error`), when its latest message arrived longer ago.
- * - `policies` (string array, required): policy names; the first one is active at start.
- *   Per policy:
+ * - `policies` (string array, required): policy names; the first one of each group is active
+ *   at start. Per policy:
  *   - `<policy>.preprocessor` (plugin class, required)
  *   - `<policy>.inference` (plugin class, default `policy_framework/OnnxInference`)
  *   - `<policy>.postprocessor` (plugin class, required)
- *   - `<policy>.max_steps` (int, default 0): > 0 returns to the first policy after N steps.
+ *   - `<policy>.max_steps` (int, default 0): > 0 returns to the first policy of its group after
+ *     N steps.
  *   - `<policy>.interruptible` (bool, default true)
+ *   - `<policy>.group` (string, default empty): see below.
  *   plus the parameters of each of its plugins, also under `<policy>.`.
+ *
+ * Groups: each group of policies is a PolicyPipeline with exactly one active policy, and every
+ * group steps on every step(), in the order the groups first appear in `policies`, all on the
+ * same stores (e.g. a `legs` and an `arms` group on disjoint joints). Switching, `max_steps`
+ * and `interruptible` apply within a group. Policies of different groups must write different
+ * command entries (checked while configuring). Without `group` there is a single group, the
+ * behaviour of a single pipeline.
  * - `safety_entry` (string, default empty): state entry that is 0 while user commands must be
  *   ignored (see CommandGate), registered here and handed to the plugins.
  * - `safety.*`: the checks of a SafetyMonitor, all off by default (`max_tilt` with `imu`,
@@ -96,18 +106,43 @@ public:
   std::vector<std::string> unprovided_state() const;
 
   /**
-   * @brief Start over from the default policy with every policy cleared (at the next step()),
-   *        and write its initial commands. Hosts call it when they are activated.
+   * @brief Start over from the default policy of every group with every policy cleared (at the
+   *        next step()), and write their initial commands. Hosts call it when they are
+   *        activated.
    */
   void restart();
+
+  /**
+   * @brief Ask to activate @p name in its group at the next step(). Thread-safe.
+   * @param[out] message Human readable outcome.
+   * @return false when @p name is unknown or the active policy of its group is not
+   *         interruptible.
+   */
+  bool request_switch(const std::string & name, std::string & message);
+
+  /// @return The active policy of each group, in group order. Allocates: not for the cycle.
+  std::vector<std::string> active_policies() const;
+
+  /**
+   * @return Stamp of the observation of the last step: the oldest of the groups' observation
+   *         stamps (PolicyPipeline::observation_stamp(); 0 when unknown). Read it from the
+   *         thread calling step().
+   */
+  double observation_stamp() const;
+
+  /// @return The number of groups of policies (1 without `<policy>.group`).
+  size_t groups() const {return pipelines_.size();}
+  /// @return The pipeline of group @p g (in the order the groups appear in `policies`).
+  const PolicyPipeline & pipeline(size_t g) const {return *pipelines_.at(g);}
 
   /**
    * @brief Run the `safety.*` checks and every `safety_checks` plugin on state(), and apply the
    *        reaction of the most severe failing one. Hosts call it on every cycle, after
    *        refreshing state() and the kinematics and before step().
    *
-   * Checks the active policy lists in `disabled_safety_checks` are skipped (not run), and reset
-   * when they apply again, so that they start afresh; a latched reaction stays latched.
+   * Checks the active policy of every group lists in `disabled_safety_checks` are skipped (not
+   * run), and reset when they apply again, so that they start afresh; a latched reaction stays
+   * latched.
    * NEUTRAL_COMMANDS lasts while a failing check asks for it (set_neutral_commands()); every
    * other reaction is latched until restart(), and only ever escalates. Changes are logged.
    * Real-time safe while every check passes; a failing check builds its reason.
@@ -126,7 +161,8 @@ public:
 
   /**
    * @brief Check the inputs of the step that just finished against their `max_age` (see
-   *        TopicTerm), and latch the reaction of the most severe stale one. Hosts call it right
+   *        TopicTerm), and latch the reaction of the most severe stale one. With groups: the
+   *        inputs of every group whose policy produced commands in that step. Hosts call it right
    *        after a successful step, in their own thread (with an inference thread: when they
    *        collect the step's result, before the next step starts).
    * @param now Current time in seconds, on the clock of the receive times.
@@ -185,7 +221,13 @@ public:
    */
   void update_kinematics();
 
-  /// Run one step of the active policy. Never throws; exceptions are reported as ERROR.
+  /**
+   * @brief Run one step of the active policy of every group. Never throws; exceptions are
+   *        reported as ERROR.
+   * @return ERROR when a group failed (the following groups do not step); else
+   *         WAITING_FOR_DATA when a group waits for data (the others wrote their commands);
+   *         else OK.
+   */
   PolicyPipeline::Status step() {return step(state_, commands_);}
   /**
    * @brief The same on other stores with the layout of state() and commands() (copies of
@@ -209,7 +251,6 @@ public:
 
   DataStore & state() {return state_;}
   DataStore & commands() {return commands_;}
-  PolicyPipeline & pipeline() {return *pipeline_;}
 
 private:
   /// A kinematics model with the buffers to feed it from a store, one per feeding thread.
@@ -244,8 +285,13 @@ private:
   std::vector<std::shared_ptr<InputSource>> sources_;
   std::vector<std::shared_ptr<Executor>> executors_;
   std::vector<std::pair<std::string, std::string>> executor_types_;
-  // unique_ptr: the pipeline holds atomics, so it is replaced rather than reassigned.
-  std::unique_ptr<PolicyPipeline> pipeline_ = std::make_unique<PolicyPipeline>();
+  // One per group, in group order. unique_ptr: a pipeline holds atomics, so it is replaced
+  // rather than reassigned.
+  std::vector<std::unique_ptr<PolicyPipeline>> pipelines_;
+  /// Pipeline (index in pipelines_) of each policy, to route switch requests.
+  std::unordered_map<std::string, size_t> policy_pipeline_;
+  /// Per group, the index in `policies` of each of its policies, in its pipeline's order.
+  std::vector<std::vector<size_t>> group_policies_;
   DataStore state_;
   DataStore commands_;
   rclcpp::Service<srv::SwitchPolicy>::SharedPtr switch_service_;
@@ -282,7 +328,8 @@ private:
   FaultReaction input_age_on_fault_ = FaultReaction::ERROR;
   std::vector<FaultReaction> monitor_reactions_;  ///< Of the enabled monitor checks.
   std::vector<Check> checks_;
-  std::vector<PolicySafety> policy_safety_;  ///< Per policy, in the pipeline order.
+  std::vector<PolicySafety> policy_safety_;  ///< Per policy, in the order of `policies`.
+  PolicySafety disabled_;  ///< The checks every group's active policy disables, this cycle.
   /// A source with a `max_age`.
   struct SourceAge
   {
@@ -303,8 +350,10 @@ private:
   CommandGate command_gate_;
   size_t neutral_idx_ = 0;  ///< kNeutralCommandsEntry in state_.
   bool commands_accepted_ = true;
-  PolicyPipeline::Status last_status_ = PolicyPipeline::Status::OK;
-  std::string last_policy_;
+  // One per group, written by step(); last_status_ is also read by check_input_ages(), which
+  // hosts call after the step, never during one.
+  std::vector<PolicyPipeline::Status> last_status_;
+  std::vector<std::string> last_policy_;
 };
 
 }  // namespace policy_framework

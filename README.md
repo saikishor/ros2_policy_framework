@@ -9,7 +9,8 @@ The same policy configuration runs
   in the control loop, with inference in its own thread (`async_inference`) or fully
   asynchronous (`is_async`),
 
-and several policies can be loaded at once and **switched at runtime**.
+and several policies can be loaded at once and **switched at runtime**, or run **together**
+on different joints (policy groups, e.g. legs and arms).
 
 This README is the reference (parameters, plugins, behaviour). The concepts, with diagrams of
 how the data flows and how the pieces fit, are explained in [`docs/`](docs/index.rst); the
@@ -35,7 +36,8 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 | `plugins/<kind>/` | The generic plugins: `sources/`, `inference/`, `stages/`, `executors/`, `safety/` | `policy_framework/plugins/sources/topic_sources.hpp` |
 
 `policy_framework/plugin_interfaces.hpp` includes every interface except the observation terms.
-Test models and URDF are in `policy_framework/test/fixtures/`.
+Test models and URDF are in `policy_framework/test/fixtures/`, test-only plugins in
+`policy_framework/test/plugins/`.
 
 `policy_framework_mjlab` is small and stays flat. It has its test-only term plugins in
 `test/plugins/` and one configuration folder per robot (`config/kangaroo/`).
@@ -143,8 +145,9 @@ or, chaining into a pid_controller that closes the loop:
 - **is_async**: the standard ros2_control option moves the whole `update()` to its own thread.
   Suits a reference executor, not a PD law. Exclusive with `async_inference`.
 - **Safety**:
-  - *Hold*: from activation until the active policy produced its first commands (it may wait
-    for an input, or for its first inference) the executors hold the robot where it is:
+  - *Hold*: from activation until the active policy (of every group) produced its first
+    commands (it may wait for an input, or for its first inference) the executors hold the
+    robot where it is:
     `PdEffortExecutor` runs its PD law around the joint positions at activation, with the gains
     the policy provides before its first step (`gains_as_commands`) or its `stiffness`/`damping`
     parameters; `ReferenceInterfaceExecutor` writes nothing (the chained controller holds).
@@ -188,11 +191,12 @@ name. Write floating point values with a decimal point (`50.0`).
 | Parameter | Description |
 |-----------|-------------|
 | `sources` | Input source names; each needs `<source>.type`, may have `<source>.max_age` (s, default 0: off; a fault when its latest message arrived longer ago, on the receive time) with the reaction `<source>.max_age_on_fault` (default `error`); not for a command source, whose timeout handles a stopped operator. Covers input sources only: state interfaces are fresh by construction, and an observation term with its own subscription has its own `max_age` (see [Writing plugins](#writing-plugins)) |
-| `policies` | Policy names (required); the first one is the default |
+| `policies` | Policy names (required); the first one (of each group) is the default |
 | `<policy>.preprocessor` / `.postprocessor` | Plugin classes (required) |
 | `<policy>.inference` | Plugin class, default `policy_framework/OnnxInference` |
 | `<policy>.max_steps`, `.interruptible` | Switching, see below |
-| `<policy>.disabled_safety_checks` | Safety checks skipped while this policy is active (default none), e.g. a joint velocity bound for a jump: names from `safety_checks`, or the monitor checks `tilt`, `joint_position_limits`, `max_input_age`; an unknown name is refused. A disabled check is reset when it applies again; a latched fault stays latched across switches; a source's or term's `max_age` always applies. See [Checks per policy](docs/safety.rst) |
+| `<policy>.group` | Group of policies running together (default empty: one group), see below |
+| `<policy>.disabled_safety_checks` | Safety checks skipped while this policy is active (default none), e.g. a joint velocity bound for a jump: names from `safety_checks`, or the monitor checks `tilt`, `joint_position_limits`, `max_input_age`; an unknown name is refused. A disabled check is reset when it applies again; a latched fault stays latched across switches; a source's or term's `max_age` always applies. See [Checks per policy](docs/safety.rst); with groups, a check is skipped only while the active policy of every group disables it |
 | `<policy>.<plugin param>` | Parameters of the policy's plugins |
 | `<policy>.terms.<term>.max_age`, `.max_age_on_fault` | A `TopicTerm`: fault when its latest message arrived longer ago than this, in s, on the receive time (default 0: off), checked after each step of its policy; reaction `hold`, `damp`, `safe` or `error` (default `error`). Refused by a `CommandTerm` (it has its `timeout`). See [Writing plugins](#writing-plugins) |
 | `executors` | Executor names; each needs `<executor>.type` (`Executor` in the node, `InterfaceExecutor` in the controller) |
@@ -226,6 +230,30 @@ activation and on every (re)activation of the node/controller, which also restar
 policy. Per policy, `max_steps` (default 0 = unlimited) returns to the first policy
 after N steps (e.g. a jump motion), and `interruptible: false` rejects switches while it runs.
 All models are loaded at configuration: switching never loads or allocates.
+
+### Policy groups
+
+```yaml
+policies: [loco, reach, jump, wave]   # defaults: loco (legs), reach (arms)
+loco:  {group: legs,  ...}
+jump:  {group: legs,  max_steps: 147, ...}
+reach: {group: arms,  ...}
+wave:  {group: arms,  ...}
+```
+
+Policies with a `group` run together with the other groups, e.g. a lower-body and an
+upper-body policy on disjoint joints: one policy per group is active, and every step runs the
+active policy of each group, in the order the groups first appear in `policies`, on the same
+stores. Switching (`switch_policy(wave)` changes the arms only), `max_steps` (back to the
+first policy of the group) and `interruptible` apply within a group. Policies of different
+groups must write different command entries (configuration fails naming the entry and both
+policies). A step is OK once every group produced commands; a group waiting for data does
+not stop the others from writing theirs. At start the controller holds the robot until every
+group produced commands; after that a group that waits again keeps its last commands while
+the others' new ones apply, also with `async_inference`. Limits: one thread and one `policy_rate` for all groups (the step
+time adds up), no blending or arbitration between groups, and each policy only observes what
+its own preprocessor reads. Without `group`, all policies form one group. See
+[docs/policies.rst](docs/policies.rst).
 
 ### Kinematics
 

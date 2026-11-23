@@ -112,6 +112,7 @@ parameters are always found under the same path.
        plugin_interfaces.hpp
      src/  test/  params/   same folders as above
      test/fixtures/         test models and URDF
+     test/plugins/          test-only plugins
      msg/  srv/             MockFault, SwitchPolicy
 
 .. list-table::
@@ -191,8 +192,11 @@ These words are used with one meaning throughout the code and the documentation.
        stores and the pipeline.
    * - Pipeline
      - Holds all the policies, runs the active one and switches between them.
+   * - Group
+     - A set of policies with one active policy, running together with the other groups
+       (e.g. legs and arms); each group is a pipeline. By default there is one group.
    * - Step
-     - One run of the active policy: preprocessor, inference, postprocessor.
+     - One run of the active policy of every group: preprocessor, inference, postprocessor.
    * - Update
      - One run of the host's loop. In the controller there can be several updates per step.
    * - Plugin

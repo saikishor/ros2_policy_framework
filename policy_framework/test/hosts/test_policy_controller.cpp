@@ -411,6 +411,129 @@ TEST_F(PolicyControllerTest, AsyncInferenceKeepsThePdLawInTheUpdateLoop)
   EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
 }
 
+// walk (group legs) writes j1, j2; arm (group arms) writes j3, j4: both drive the PD law.
+std::vector<rclcpp::Parameter> two_group_params()
+{
+  return {
+    {"policies", StringArray{"walk", "arm"}},
+    {"walk.group", "legs"},
+    {"arm.group", "arms"},
+    {"arm.preprocessor", "policy_framework/ConcatPreprocessor"},
+    {"arm.input_entries", StringArray{"j3/position", "j2/position", "j1/position"}},
+    {"arm.model_path", std::string(TEST_MODELS_DIR) + "/affine.onnx"},
+    {"arm.postprocessor", "policy_framework/SplitPostprocessor"},
+    {"arm.output_entries", StringArray{"j3/position", "j4/position"}},
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0, 10.0, 10.0}},
+    {"pd.damping", std::vector<double>{0.0, 0.0, 0.0, 0.0}}};
+}
+
+TEST_F(PolicyControllerTest, GroupsOfPoliciesDriveTheirOwnJoints)
+{
+  with_reference_executor = false;
+  init(two_group_params());
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  EXPECT_EQ(
+    controller.command_interface_configuration().names,
+    (StringArray{"j1/effort", "j2/effort", "j3/effort", "j4/effort"}));
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  // walk: references 4.5, 6.5; arm, on (j3, j2, j1): 3 + 1 + 0.5 and 2 * 2 + 1 - 0.5.
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+  EXPECT_DOUBLE_EQ(command("j2/effort"), 10.0 * (6.5 - 2.0));
+  EXPECT_DOUBLE_EQ(command("j3/effort"), 10.0 * (4.5 - 3.0));
+  EXPECT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));
+}
+
+TEST_F(PolicyControllerTest, AsyncInferenceStepsEveryGroup)
+{
+  with_reference_executor = false;
+  auto params = two_group_params();
+  params.push_back({"policy_rate", 50.0});
+  params.push_back({"async_inference", true});
+  init(params, 100);
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  for (int i = 0; i < 200 && command("j4/effort") <= 0.0; ++i) {  // 0 until applied
+    ASSERT_EQ(update(), controller_interface::return_type::OK);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+  EXPECT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));
+}
+
+// The same, with the arm policy waiting for data while the state interface gate/value is 0.
+std::vector<rclcpp::Parameter> gated_group_params()
+{
+  auto params = two_group_params();
+  params.push_back({"arm.preprocessor", "policy_framework_test/GatedPreprocessor"});
+  return params;
+}
+
+TEST_F(PolicyControllerTest, AGroupWaitingAgainDoesNotHoldBackTheOtherGroup)
+{
+  with_reference_executor = false;
+  init(gated_group_params());
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  set_state("gate/value", 1.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  ASSERT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));
+
+  set_state("gate/value", 0.0);  // the arm waits again
+  set_state("j2/position", 3.0);  // walk: j2 reference 2 * 3 + 3 - 0.5 = 8.5 (was 6.5)
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j2/effort"), 10.0 * (8.5 - 3.0));
+  // The arm keeps its last references (4.5 for j4; 2 * 3 + 1 - 0.5 = 6.5 had it run).
+  EXPECT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));
+}
+
+TEST_F(PolicyControllerTest, AsyncInferenceAppliesTheOtherGroupsWhileOneWaitsAgain)
+{
+  with_reference_executor = false;
+  auto params = gated_group_params();
+  params.push_back({"policy_rate", 50.0});
+  params.push_back({"async_inference", true});
+  init(params, 100);
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  set_state("gate/value", 1.0);
+  for (int i = 0; i < 200 && command("j4/effort") <= 0.0; ++i) {  // both groups ran
+    ASSERT_EQ(update(), controller_interface::return_type::OK);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));
+
+  set_state("gate/value", 0.0);  // the arm waits again
+  set_state("j2/position", 3.0);
+  // walk's new j2 reference is 8.5; with the previous one (6.5) the effort would stay 35.
+  const double moved = 10.0 * (8.5 - 3.0);
+  for (int i = 0; i < 200 && command("j2/effort") != moved; ++i) {
+    ASSERT_EQ(update(), controller_interface::return_type::OK);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_DOUBLE_EQ(command("j2/effort"), moved);
+  EXPECT_DOUBLE_EQ(command("j4/effort"), 10.0 * (4.5 - 0.0));  // the arm's last references
+}
+
 TEST_F(PolicyControllerTest, AsyncInferenceAndIsAsyncAreExclusive)
 {
   init({{"async_inference", true}, {"is_async", true}});
