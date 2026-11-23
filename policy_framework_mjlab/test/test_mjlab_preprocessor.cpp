@@ -477,8 +477,9 @@ TEST(MjlabPreprocessor, RejectsInputTermsThatDoNotFitTheirInput)
     {"p.terms.cam.input", "vec"}};
   DataStore state;
   EXPECT_ANY_THROW(MjlabPreprocessor().configure(make_context(params), model, state));
-  params[2] = {"p.terms.cam.input", "obs"};  // the observation is not a term input
+  params[2] = {"p.terms.cam.input", "time_step"};  // filled by the preprocessor itself
   model.inputs["vec"] = zeros(3);
+  model.inputs["time_step"] = zeros(3);
   EXPECT_ANY_THROW(MjlabPreprocessor().configure(make_context(params), model, state));
   params[2] = {"p.terms.cam.input", "missing"};
   EXPECT_ANY_THROW(MjlabPreprocessor().configure(make_context(params), model, state));
