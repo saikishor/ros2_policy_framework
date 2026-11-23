@@ -15,7 +15,7 @@
 #include <memory>
 
 #include "lifecycle_msgs/msg/state.hpp"
-#include "policy_framework/policy_node.hpp"
+#include "policy_framework/hosts/policy_node.hpp"
 #include "policy_framework/policy_node_parameters.hpp"
 #include "rclcpp/rclcpp.hpp"
 

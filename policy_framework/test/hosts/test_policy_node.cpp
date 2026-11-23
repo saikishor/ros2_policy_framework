@@ -25,7 +25,7 @@
 
 #include "control_msgs/msg/multi_dof_command.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
-#include "policy_framework/policy_node.hpp"
+#include "policy_framework/hosts/policy_node.hpp"
 #include "policy_framework/srv/switch_policy.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"

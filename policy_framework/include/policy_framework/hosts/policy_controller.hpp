@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef POLICY_FRAMEWORK__POLICY_CONTROLLER_HPP_
-#define POLICY_FRAMEWORK__POLICY_CONTROLLER_HPP_
+#ifndef POLICY_FRAMEWORK__HOSTS__POLICY_CONTROLLER_HPP_
+#define POLICY_FRAMEWORK__HOSTS__POLICY_CONTROLLER_HPP_
 
 #include <memory>
 #include <optional>
@@ -23,7 +23,7 @@
 #include "controller_interface/controller_interface.hpp"
 #include "pluginlib/class_loader.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
-#include "policy_framework/policy_runner.hpp"
+#include "policy_framework/hosts/policy_runner.hpp"
 #include "realtime_tools/async_function_handler.hpp"
 
 namespace policy_framework
@@ -168,4 +168,4 @@ private:
 
 }  // namespace policy_framework
 
-#endif  // POLICY_FRAMEWORK__POLICY_CONTROLLER_HPP_
+#endif  // POLICY_FRAMEWORK__HOSTS__POLICY_CONTROLLER_HPP_

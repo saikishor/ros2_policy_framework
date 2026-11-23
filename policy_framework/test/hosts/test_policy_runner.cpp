@@ -24,7 +24,7 @@
 #include <thread>
 #include <vector>
 
-#include "policy_framework/policy_runner.hpp"
+#include "policy_framework/hosts/policy_runner.hpp"
 #include "policy_framework/msg/mock_fault.hpp"
 #include "policy_framework/srv/switch_policy.hpp"
 #include "rclcpp/rclcpp.hpp"
