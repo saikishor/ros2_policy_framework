@@ -25,11 +25,11 @@ if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   # Test-only term plugins (installed and registered only with BUILD_TESTING).
   foreach(term IN ITEMS frame_position_term vector_term)
-    add_library(${term} SHARED test/${term}.cpp)
+    add_library(${term} SHARED test/plugins/${term}.cpp)
     target_link_libraries(${term} ${PROJECT_NAME})
     install(TARGETS ${term} DESTINATION lib)
   endforeach()
-  pluginlib_export_plugin_description_file(policy_framework test/test_plugins.xml)
+  pluginlib_export_plugin_description_file(policy_framework test/plugins/test_plugins.xml)
   ament_add_gtest(test_mjlab_preprocessor test/test_mjlab_preprocessor.cpp)
   target_link_libraries(test_mjlab_preprocessor ${PROJECT_NAME})
   target_compile_definitions(test_mjlab_preprocessor PRIVATE
