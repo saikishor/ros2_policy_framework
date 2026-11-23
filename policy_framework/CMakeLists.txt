@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(policy_framework)
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "(GNU|Clang)")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
+# Same warnings-as-errors set as ros2_control and ros2_controllers.
+find_package(ros2_control_cmake REQUIRED)
+set_compiler_options()
 
 set(THIS_PACKAGE_DEPENDS
   control_msgs
