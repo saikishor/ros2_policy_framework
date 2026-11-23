@@ -12,7 +12,8 @@ The same policy configuration runs
 and several policies can be loaded at once and **switched at runtime**.
 
 This README is the reference (parameters, plugins, behaviour). The concepts, with diagrams of
-how the data flows and how the pieces fit, are explained in [`docs/`](docs/index.rst).
+how the data flows and how the pieces fit, are explained in [`docs/`](docs/index.rst); the
+features are summarised in [`docs/features.rst`](docs/features.rst).
 
 ## Packages
 
