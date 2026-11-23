@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef POLICY_FRAMEWORK__GENERIC_STAGES_HPP_
-#define POLICY_FRAMEWORK__GENERIC_STAGES_HPP_
+#ifndef POLICY_FRAMEWORK__PLUGINS__STAGES__GENERIC_STAGES_HPP_
+#define POLICY_FRAMEWORK__PLUGINS__STAGES__GENERIC_STAGES_HPP_
 
 #include <string>
 #include <vector>
@@ -71,4 +71,4 @@ private:
 
 }  // namespace policy_framework
 
-#endif  // POLICY_FRAMEWORK__GENERIC_STAGES_HPP_
+#endif  // POLICY_FRAMEWORK__PLUGINS__STAGES__GENERIC_STAGES_HPP_

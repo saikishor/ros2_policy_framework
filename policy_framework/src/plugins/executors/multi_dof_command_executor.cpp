@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "policy_framework/multi_dof_command_executor.hpp"
+#include "policy_framework/plugins/executors/multi_dof_command_executor.hpp"
 
 #include "core/entry_name.hpp"
 

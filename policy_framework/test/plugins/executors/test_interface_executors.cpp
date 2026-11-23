@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include "policy_framework/interface_executors.hpp"
+#include "policy_framework/plugins/executors/interface_executors.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using policy_framework::DataStore;

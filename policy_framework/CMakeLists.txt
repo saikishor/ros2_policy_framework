@@ -54,13 +54,13 @@ endforeach()
 add_library(${PROJECT_NAME} SHARED
   src/core/policy_pipeline.cpp
   src/core/kinematics.cpp
-  src/safety_checks.cpp
+  src/plugins/safety/safety_checks.cpp
   src/core/safety_monitor.cpp
-  src/onnx_inference.cpp
-  src/topic_sources.cpp
-  src/multi_dof_command_executor.cpp
-  src/generic_stages.cpp
-  src/interface_executors.cpp
+  src/plugins/inference/onnx_inference.cpp
+  src/plugins/sources/topic_sources.cpp
+  src/plugins/executors/multi_dof_command_executor.cpp
+  src/plugins/stages/generic_stages.cpp
+  src/plugins/executors/interface_executors.cpp
   src/hosts/policy_runner.cpp
   src/hosts/policy_node.cpp
   src/hosts/policy_controller.cpp
@@ -101,26 +101,26 @@ if(BUILD_TESTING)
   target_link_libraries(test_safety_monitor ${PROJECT_NAME})
   target_compile_definitions(test_safety_monitor PRIVATE
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
-  ament_add_gtest(test_safety_checks test/test_safety_checks.cpp)
+  ament_add_gtest(test_safety_checks test/plugins/safety/test_safety_checks.cpp)
   target_link_libraries(test_safety_checks ${PROJECT_NAME})
   ament_add_gtest(test_policy_pipeline test/core/test_policy_pipeline.cpp)
   target_link_libraries(test_policy_pipeline ${PROJECT_NAME})
-  ament_add_gtest(test_topic_sources test/test_topic_sources.cpp)
+  ament_add_gtest(test_topic_sources test/plugins/sources/test_topic_sources.cpp)
   target_link_libraries(test_topic_sources ${PROJECT_NAME})
-  ament_add_gtest(test_multi_dof_command_executor test/test_multi_dof_command_executor.cpp)
+  ament_add_gtest(test_multi_dof_command_executor test/plugins/executors/test_multi_dof_command_executor.cpp)
   target_link_libraries(test_multi_dof_command_executor ${PROJECT_NAME})
   ament_add_gtest(test_observation_term test/test_observation_term.cpp)
   target_link_libraries(test_observation_term ${PROJECT_NAME})
-  ament_add_gtest(test_interface_executors test/test_interface_executors.cpp)
+  ament_add_gtest(test_interface_executors test/plugins/executors/test_interface_executors.cpp)
   target_link_libraries(test_interface_executors ${PROJECT_NAME})
   ament_add_gtest(test_kinematics test/core/test_kinematics.cpp)
   target_link_libraries(test_kinematics ${PROJECT_NAME})
   target_compile_definitions(test_kinematics PRIVATE
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
-  ament_add_gtest(test_generic_stages test/test_generic_stages.cpp)
+  ament_add_gtest(test_generic_stages test/plugins/stages/test_generic_stages.cpp)
   target_link_libraries(test_generic_stages ${PROJECT_NAME})
   foreach(path IN ITEMS
-      test/test_onnx_inference.cpp
+      test/plugins/inference/test_onnx_inference.cpp
       test/hosts/test_policy_runner.cpp
       test/hosts/test_policy_controller.cpp
       test/hosts/test_policy_node.cpp)

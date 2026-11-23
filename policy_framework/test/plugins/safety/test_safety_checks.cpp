@@ -21,7 +21,7 @@
 #include <vector>
 
 #include "policy_framework/msg/mock_fault.hpp"
-#include "policy_framework/safety_checks.hpp"
+#include "policy_framework/plugins/safety/safety_checks.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 

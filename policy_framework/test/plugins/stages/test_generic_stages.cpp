@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-#include "policy_framework/generic_stages.hpp"
+#include "policy_framework/plugins/stages/generic_stages.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using policy_framework::DataStore;

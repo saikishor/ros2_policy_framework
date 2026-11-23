@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-#include "policy_framework/onnx_inference.hpp"
+#include "policy_framework/plugins/inference/onnx_inference.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using policy_framework::OnnxInference;

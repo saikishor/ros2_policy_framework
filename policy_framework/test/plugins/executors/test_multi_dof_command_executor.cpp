@@ -20,7 +20,7 @@
 #include <thread>
 #include <vector>
 
-#include "policy_framework/multi_dof_command_executor.hpp"
+#include "policy_framework/plugins/executors/multi_dof_command_executor.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using control_msgs::msg::MultiDOFCommand;

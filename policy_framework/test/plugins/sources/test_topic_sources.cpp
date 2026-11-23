@@ -20,7 +20,7 @@
 #include <thread>
 #include <vector>
 
-#include "policy_framework/topic_sources.hpp"
+#include "policy_framework/plugins/sources/topic_sources.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using policy_framework::DataStore;

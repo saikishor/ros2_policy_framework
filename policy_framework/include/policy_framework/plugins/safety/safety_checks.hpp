@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef POLICY_FRAMEWORK__SAFETY_CHECKS_HPP_
-#define POLICY_FRAMEWORK__SAFETY_CHECKS_HPP_
+#ifndef POLICY_FRAMEWORK__PLUGINS__SAFETY__SAFETY_CHECKS_HPP_
+#define POLICY_FRAMEWORK__PLUGINS__SAFETY__SAFETY_CHECKS_HPP_
 
 #include <string>
 #include <vector>
@@ -135,4 +135,4 @@ private:
 
 }  // namespace policy_framework
 
-#endif  // POLICY_FRAMEWORK__SAFETY_CHECKS_HPP_
+#endif  // POLICY_FRAMEWORK__PLUGINS__SAFETY__SAFETY_CHECKS_HPP_
