@@ -31,6 +31,7 @@
 #include "hardware_interface/loaned_command_interface.hpp"
 #include "hardware_interface/loaned_state_interface.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
+#include "pal_statistics/pal_statistics_macros.hpp"
 #include "pal_statistics_msgs/msg/statistics_names.hpp"
 #include "policy_framework/core/kinematics.hpp"
 #include "policy_framework/hosts/policy_controller.hpp"
@@ -258,6 +259,22 @@ TEST_F(PolicyControllerTest, PublishesItsIntrospectionOnItsOwnTopic)
   {
     EXPECT_NE(std::find(names.begin(), names.end(), expected), names.end()) << expected;
   }
+}
+
+TEST(PolicyControllerIntrospection, RegistryIsKeyedByTopicAndDeletedWithTheController)
+{
+  const std::string key = "/introspected_controller/introspection_data";
+  {
+    policy_framework::PolicyController controller;
+    controller_interface::ControllerInterfaceParams p;
+    p.controller_name = "introspected_controller";
+    p.update_rate = 50;
+    p.controller_manager_update_rate = 50;
+    ASSERT_EQ(controller.init(p), controller_interface::return_type::OK);
+    EXPECT_NE(pal_statistics::getRegistry(key), nullptr);
+  }
+  // Left in pal_statistics' global map, its publisher thread would read the freed controller.
+  EXPECT_EQ(pal_statistics::getRegistry(key), nullptr);
 }
 
 TEST_F(PolicyControllerTest, WithoutExecutorsNoCommandInterfaceIsClaimed)
