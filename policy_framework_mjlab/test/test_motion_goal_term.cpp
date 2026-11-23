@@ -174,7 +174,7 @@ TEST_F(MotionGoalTermTest, HoldsAgainWhenTheReferenceIsOldOrMalformed)
   expect_out(kHold);
 }
 
-TEST_F(MotionGoalTermTest, IsAUserCommandStampedWithItsHeaderElseNow)
+TEST_F(MotionGoalTermTest, IsAUserCommandStampedWithItsHeaderElseItsReceiveTime)
 {
   configure();
   EXPECT_TRUE(term.user_command());
@@ -183,11 +183,10 @@ TEST_F(MotionGoalTermTest, IsAUserCommandStampedWithItsHeaderElseNow)
   stream(msg);
   EXPECT_DOUBLE_EQ(term.compute(state, TensorMap{}, out.data()), 1234.5);
 
-  msg.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);  // no stamp: the reference applies now
+  msg.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);  // no stamp: when it arrived
   out.assign(out.size(), 9.0F);
   stream(msg);
-  const double before = node->now().seconds();
-  EXPECT_GE(term.compute(state, TensorMap{}, out.data()), before);
+  EXPECT_DOUBLE_EQ(term.compute(state, TensorMap{}, out.data()), term.receive_time());
 }
 
 TEST(MotionGoalTerm, RejectsADisabledTimeout)
