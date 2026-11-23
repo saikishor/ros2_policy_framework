@@ -55,9 +55,8 @@ TEST(TwistCommandTerm, IsLinearXYAngularZOfTheTopicAndZeroWhenAbsentOrStale)
   }
   EXPECT_GT(stamp, before);
   EXPECT_FLOAT_EQ(out[0], 0.6F);
-  // A Twist has no header: the command in effect is stamped now, not with its receive time.
-  const double later = node->now().seconds();
-  EXPECT_GE(term.compute(state, TensorMap{}, out), later);
+  // A Twist has no header: the command in effect is stamped with its receive time.
+  EXPECT_DOUBLE_EQ(term.compute(state, TensorMap{}, out), term.receive_time());
   EXPECT_FLOAT_EQ(out[0], 0.6F);
   EXPECT_FLOAT_EQ(out[1], -0.1F);
   EXPECT_FLOAT_EQ(out[2], 0.3F);
