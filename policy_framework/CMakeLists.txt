@@ -73,6 +73,7 @@ foreach(path IN ITEMS
     params/plugins/sources/twist_source_parameters.yaml
     params/plugins/stages/concat_preprocessor_parameters.yaml
     params/plugins/stages/split_postprocessor_parameters.yaml
+    params/plugins/terms/image_term_parameters.yaml
   )
   get_filename_component(params ${path} NAME_WE)
   generate_parameter_library(${params} ${path})
@@ -88,6 +89,7 @@ add_library(${PROJECT_NAME} SHARED
   src/plugins/sources/topic_sources.cpp
   src/plugins/executors/multi_dof_command_executor.cpp
   src/plugins/stages/generic_stages.cpp
+  src/plugins/terms/image_term.cpp
   src/plugins/executors/interface_executors.cpp
   src/hosts/policy_runner.cpp
   src/hosts/policy_node.cpp
@@ -141,6 +143,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_observation_term ${PROJECT_NAME})
   ament_add_gtest(test_interface_executors test/plugins/executors/test_interface_executors.cpp)
   target_link_libraries(test_interface_executors ${PROJECT_NAME})
+  ament_add_gtest(test_image_term test/plugins/terms/test_image_term.cpp)
+  target_link_libraries(test_image_term ${PROJECT_NAME})
   ament_add_gtest(test_kinematics test/core/test_kinematics.cpp)
   target_link_libraries(test_kinematics ${PROJECT_NAME})
   target_compile_definitions(test_kinematics PRIVATE
