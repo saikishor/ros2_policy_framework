@@ -36,7 +36,8 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 | `plugins/<kind>/` | The generic plugins: `sources/`, `inference/`, `stages/`, `executors/`, `safety/` | `policy_framework/plugins/sources/topic_sources.hpp` |
 
 `policy_framework/plugin_interfaces.hpp` includes every interface except the observation terms.
-Test models and URDF are in `policy_framework/test/fixtures/`.
+Test models and URDF are in `policy_framework/test/fixtures/`, test-only plugins in
+`policy_framework/test/plugins/`.
 
 `policy_framework_mjlab` is small and stays flat. It has its test-only term plugins in
 `test/plugins/` and one configuration folder per robot (`config/kangaroo/`).

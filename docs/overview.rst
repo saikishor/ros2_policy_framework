@@ -112,6 +112,7 @@ parameters are always found under the same path.
        plugin_interfaces.hpp
      src/  test/  params/   same folders as above
      test/fixtures/         test models and URDF
+     test/plugins/          test-only plugins
      msg/  srv/             MockFault, SwitchPolicy
 
 .. list-table::
