@@ -68,8 +68,10 @@ Which plugin to write
 
 Both hosts run the ``SafetyCheck`` plugins (:doc:`safety`).
 
-The base classes are in ``policy_framework/plugin_interfaces.hpp`` and
-``policy_framework/interfaces/observation_term.hpp``, each method documented there.
+The base classes are in ``policy_framework/interfaces/``, one header per kind of plugin (for
+example ``interfaces/preprocessor.hpp`` or ``interfaces/observation_term.hpp``), each method
+documented there. ``policy_framework/plugin_interfaces.hpp`` includes them all except the
+observation terms.
 
 The life of a plugin
 --------------------

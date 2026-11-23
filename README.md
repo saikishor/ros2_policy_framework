@@ -388,8 +388,9 @@ policy node exits. Configuration in `policy_framework_mjlab/config`: `kangaroo_p
 
 ## Writing plugins
 
-- Derive from a base class of `policy_framework/plugin_interfaces.hpp` (or `ObservationTerm` /
-  `TopicTerm` of `policy_framework/interfaces/observation_term.hpp`) and export it with
+- Derive from a base class in `policy_framework/interfaces/` (one header per kind, e.g.
+  `interfaces/preprocessor.hpp`, `interfaces/observation_term.hpp`; `policy_framework/plugin_interfaces.hpp`
+  includes them all except the observation terms) and export it with
   `PLUGINLIB_EXPORT_CLASS` and a description registered against `policy_framework`:
   `pluginlib_export_plugin_description_file(policy_framework plugins.xml)`.
 - Parameters: generate_parameter_library with the plugin's prefix,
