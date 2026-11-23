@@ -93,9 +93,9 @@ Timing you can see
 
 - **Time stamps everywhere**: every value carries the time its data was produced, from the
   sensor to the command.
-- **Introspection**: the controller registers the duration of each policy step, the age of the
-  observation it acted on, and the age of each input of the active policy with ros2_control's
-  introspection.
+- **Introspection**: the controller publishes the duration of each policy step and of its
+  preprocessor, inference and postprocessor, the age of the observation it acted on, and the
+  age of each input of the active policy on its own topic, ``/<controller>/introspection_data``.
 
 See :doc:`data_flow`.
 
