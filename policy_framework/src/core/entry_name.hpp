@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ENTRY_NAME_HPP_
-#define ENTRY_NAME_HPP_
+#ifndef POLICY_FRAMEWORK__SRC__CORE__ENTRY_NAME_HPP_
+#define POLICY_FRAMEWORK__SRC__CORE__ENTRY_NAME_HPP_
 
 #include <optional>
 #include <string>
@@ -34,4 +34,4 @@ inline std::optional<std::string> strip_suffix(const std::string & name, const s
 
 }  // namespace policy_framework
 
-#endif  // ENTRY_NAME_HPP_
+#endif  // POLICY_FRAMEWORK__SRC__CORE__ENTRY_NAME_HPP_

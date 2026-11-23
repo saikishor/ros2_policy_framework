@@ -14,7 +14,7 @@
 
 #include "policy_framework/multi_dof_command_executor.hpp"
 
-#include "entry_name.hpp"
+#include "core/entry_name.hpp"
 
 #include <stdexcept>
 #include <string>

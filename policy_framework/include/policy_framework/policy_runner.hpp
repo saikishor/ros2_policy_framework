@@ -22,11 +22,11 @@
 #include <vector>
 
 #include "pluginlib/class_loader.hpp"
-#include "policy_framework/data_store.hpp"
-#include "policy_framework/kinematics.hpp"
+#include "policy_framework/core/data_store.hpp"
+#include "policy_framework/core/kinematics.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
-#include "policy_framework/policy_pipeline.hpp"
-#include "policy_framework/safety_monitor.hpp"
+#include "policy_framework/core/policy_pipeline.hpp"
+#include "policy_framework/core/safety_monitor.hpp"
 #include "policy_framework/srv/switch_policy.hpp"
 
 namespace policy_runner

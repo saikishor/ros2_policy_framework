@@ -23,7 +23,7 @@
 #include <string>
 #include <vector>
 
-#include "policy_framework/data_store.hpp"
+#include "policy_framework/core/data_store.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
 /**

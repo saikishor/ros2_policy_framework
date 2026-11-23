@@ -24,7 +24,7 @@
 #include <thread>
 #include <vector>
 
-#include "policy_framework/kinematics.hpp"
+#include "policy_framework/core/kinematics.hpp"
 
 using policy_framework::Kinematics;
 using StringArray = std::vector<std::string>;

@@ -14,7 +14,7 @@
 
 #include <gtest/gtest.h>
 
-#include "policy_framework/data_store.hpp"
+#include "policy_framework/core/data_store.hpp"
 
 using policy_framework::DataStore;
 

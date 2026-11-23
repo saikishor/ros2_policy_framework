@@ -19,7 +19,7 @@
 #include <sstream>
 #include <string>
 
-#include "policy_framework/safety_monitor.hpp"
+#include "policy_framework/core/safety_monitor.hpp"
 
 using policy_framework::DataStore;
 using policy_framework::SafetyMonitor;

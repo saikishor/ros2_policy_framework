@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef POLICY_FRAMEWORK__SAFETY_MONITOR_HPP_
-#define POLICY_FRAMEWORK__SAFETY_MONITOR_HPP_
+#ifndef POLICY_FRAMEWORK__CORE__SAFETY_MONITOR_HPP_
+#define POLICY_FRAMEWORK__CORE__SAFETY_MONITOR_HPP_
 
 #include <bitset>
 #include <map>
@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-#include "policy_framework/data_store.hpp"
+#include "policy_framework/core/data_store.hpp"
 
 namespace policy_framework
 {
@@ -112,4 +112,4 @@ private:
 
 }  // namespace policy_framework
 
-#endif  // POLICY_FRAMEWORK__SAFETY_MONITOR_HPP_
+#endif  // POLICY_FRAMEWORK__CORE__SAFETY_MONITOR_HPP_

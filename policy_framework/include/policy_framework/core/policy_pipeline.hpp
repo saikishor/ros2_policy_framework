@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef POLICY_FRAMEWORK__POLICY_PIPELINE_HPP_
-#define POLICY_FRAMEWORK__POLICY_PIPELINE_HPP_
+#ifndef POLICY_FRAMEWORK__CORE__POLICY_PIPELINE_HPP_
+#define POLICY_FRAMEWORK__CORE__POLICY_PIPELINE_HPP_
 
 #include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "policy_framework/data_store.hpp"
+#include "policy_framework/core/data_store.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 
 namespace policy_framework
@@ -145,4 +145,4 @@ private:
 
 }  // namespace policy_framework
 
-#endif  // POLICY_FRAMEWORK__POLICY_PIPELINE_HPP_
+#endif  // POLICY_FRAMEWORK__CORE__POLICY_PIPELINE_HPP_

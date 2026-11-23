@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-#include "policy_framework/kinematics.hpp"
+#include "policy_framework/core/kinematics.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 
 namespace policy_framework_mjlab

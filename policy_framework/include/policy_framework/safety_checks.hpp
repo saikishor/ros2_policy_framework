@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-#include "policy_framework/latest_message.hpp"
+#include "policy_framework/core/latest_message.hpp"
 #include "policy_framework/msg/mock_fault.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 

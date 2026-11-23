@@ -52,10 +52,10 @@ foreach(params IN ITEMS
 endforeach()
 
 add_library(${PROJECT_NAME} SHARED
-  src/policy_pipeline.cpp
-  src/kinematics.cpp
+  src/core/policy_pipeline.cpp
+  src/core/kinematics.cpp
   src/safety_checks.cpp
-  src/safety_monitor.cpp
+  src/core/safety_monitor.cpp
   src/onnx_inference.cpp
   src/topic_sources.cpp
   src/multi_dof_command_executor.cpp
@@ -70,6 +70,8 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
+# Internal headers shared by the sources (not installed).
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 ament_target_dependencies(${PROJECT_NAME} PUBLIC ${THIS_PACKAGE_DEPENDS})
 # ONNX Runtime and Pinocchio are implementation details: they do not appear in the public
 # headers.
@@ -93,15 +95,15 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   set(TEST_MODELS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test/models")
 
-  ament_add_gtest(test_data_store test/test_data_store.cpp)
+  ament_add_gtest(test_data_store test/core/test_data_store.cpp)
   target_link_libraries(test_data_store ${PROJECT_NAME})
-  ament_add_gtest(test_safety_monitor test/test_safety_monitor.cpp)
+  ament_add_gtest(test_safety_monitor test/core/test_safety_monitor.cpp)
   target_link_libraries(test_safety_monitor ${PROJECT_NAME})
   target_compile_definitions(test_safety_monitor PRIVATE
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
   ament_add_gtest(test_safety_checks test/test_safety_checks.cpp)
   target_link_libraries(test_safety_checks ${PROJECT_NAME})
-  ament_add_gtest(test_policy_pipeline test/test_policy_pipeline.cpp)
+  ament_add_gtest(test_policy_pipeline test/core/test_policy_pipeline.cpp)
   target_link_libraries(test_policy_pipeline ${PROJECT_NAME})
   ament_add_gtest(test_topic_sources test/test_topic_sources.cpp)
   target_link_libraries(test_topic_sources ${PROJECT_NAME})
@@ -111,7 +113,7 @@ if(BUILD_TESTING)
   target_link_libraries(test_observation_term ${PROJECT_NAME})
   ament_add_gtest(test_interface_executors test/test_interface_executors.cpp)
   target_link_libraries(test_interface_executors ${PROJECT_NAME})
-  ament_add_gtest(test_kinematics test/test_kinematics.cpp)
+  ament_add_gtest(test_kinematics test/core/test_kinematics.cpp)
   target_link_libraries(test_kinematics ${PROJECT_NAME})
   target_compile_definitions(test_kinematics PRIVATE
     TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
