@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "policy_framework_mjlab/mjlab_preprocessor.hpp"
-#include "policy_framework/kinematics.hpp"
+#include "policy_framework/core/kinematics.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using policy_framework::DataStore;

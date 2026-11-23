@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "policy_framework/policy_pipeline.hpp"
+#include "policy_framework/core/policy_pipeline.hpp"
 
 #include <algorithm>
 #include <cmath>

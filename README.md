@@ -473,7 +473,7 @@ store derives from `ObservationTerm`, registers its entries in `configure()` and
 
 ### Using the kinematics
 
-`ctx.kinematics` (null unless enabled; `policy_framework/kinematics.hpp`, also usable on its
+`ctx.kinematics` (null unless enabled; `policy_framework/core/kinematics.hpp`, also usable on its
 own, and from other code through `PolicyController::kinematics()`):
 
 | Method | |

@@ -14,7 +14,7 @@
 
 #include "policy_framework/interface_executors.hpp"
 
-#include "entry_name.hpp"
+#include "core/entry_name.hpp"
 
 #include <algorithm>
 #include <cmath>

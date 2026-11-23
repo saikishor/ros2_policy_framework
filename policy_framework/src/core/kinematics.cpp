@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "policy_framework/kinematics.hpp"
+#include "policy_framework/core/kinematics.hpp"
 
 #include <algorithm>
 #include <cmath>

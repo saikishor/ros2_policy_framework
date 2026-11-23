@@ -22,7 +22,7 @@
 
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/odometry.hpp"
-#include "policy_framework/latest_message.hpp"
+#include "policy_framework/core/latest_message.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"

@@ -18,7 +18,7 @@
 #include <memory>
 #include <string>
 
-#include "policy_framework/policy_pipeline.hpp"
+#include "policy_framework/core/policy_pipeline.hpp"
 
 using policy_framework::DataStore;
 using policy_framework::ModelInfo;

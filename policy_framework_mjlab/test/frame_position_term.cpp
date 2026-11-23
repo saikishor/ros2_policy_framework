@@ -17,7 +17,7 @@
 #include <stdexcept>
 
 #include "pluginlib/class_list_macros.hpp"
-#include "policy_framework/kinematics.hpp"
+#include "policy_framework/core/kinematics.hpp"
 #include "policy_framework/observation_term.hpp"
 
 namespace policy_framework_mjlab_test

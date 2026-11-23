@@ -20,7 +20,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "policy_framework/latest_message.hpp"
+#include "policy_framework/core/latest_message.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 
 namespace policy_framework
