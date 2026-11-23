@@ -92,11 +92,17 @@ public:
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
   /// Measurements of the last finished policy step, also published by ros2_control's
-  /// introspection as `<controller>.policy_step_time_us` and `.observation_age_ms`.
+  /// introspection as `<controller>.<field>` (`policy_step_time_us` for step_time_us).
   struct Timing
   {
-    /// Duration of the step (preprocessor, inference, postprocessor), microseconds.
+    /// Total duration of the step, microseconds: its stages plus the work around them
+    /// (policy switch, inactive policies observing), so at least the sum of the three below.
     double step_time_us = 0.0;
+    /// Durations of the step's stages, microseconds (see PolicyPipeline::stage_times()); 0
+    /// for a stage that did not run (e.g. inference while the preprocessor waits for data).
+    double preprocessor_time_us = 0.0;
+    double inference_time_us = 0.0;
+    double postprocessor_time_us = 0.0;
     /// Age of the oldest input of the step when its commands were applied, milliseconds: how
     /// stale the observation behind the current commands was. 0 when unknown.
     double observation_age_ms = 0.0;

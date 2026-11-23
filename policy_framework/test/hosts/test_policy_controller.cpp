@@ -222,7 +222,13 @@ TEST_F(PolicyControllerTest, MeasuresThePolicyStepAndTheAgeOfItsObservation)
   ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
   EXPECT_DOUBLE_EQ(controller.timing().step_time_us, 0.0);
   ASSERT_EQ(update(), controller_interface::return_type::OK);
-  EXPECT_GT(controller.timing().step_time_us, 0.0);
+  const auto & t = controller.timing();
+  EXPECT_GT(t.step_time_us, 0.0);
+  EXPECT_GT(t.preprocessor_time_us, 0.0);
+  EXPECT_GT(t.inference_time_us, 0.0);
+  EXPECT_GT(t.postprocessor_time_us, 0.0);
+  // The total also covers the work between the stages (switching, inactive policies).
+  EXPECT_LE(t.preprocessor_time_us + t.inference_time_us + t.postprocessor_time_us, t.step_time_us);
   // State interfaces are stamped with the update that read them: no age when synchronous.
   EXPECT_DOUBLE_EQ(controller.timing().observation_age_ms, 0.0);
 }

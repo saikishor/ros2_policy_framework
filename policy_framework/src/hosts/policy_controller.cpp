@@ -35,6 +35,9 @@ namespace policy_framework
 PolicyController::CallbackReturn PolicyController::on_init()
 {
   REGISTER_ROS2_CONTROL_INTROSPECTION("policy_step_time_us", &timing_.step_time_us);
+  REGISTER_ROS2_CONTROL_INTROSPECTION("preprocessor_time_us", &timing_.preprocessor_time_us);
+  REGISTER_ROS2_CONTROL_INTROSPECTION("inference_time_us", &timing_.inference_time_us);
+  REGISTER_ROS2_CONTROL_INTROSPECTION("postprocessor_time_us", &timing_.postprocessor_time_us);
   REGISTER_ROS2_CONTROL_INTROSPECTION("observation_age_ms", &timing_.observation_age_ms);
   return CallbackReturn::SUCCESS;
 }
@@ -342,7 +345,11 @@ controller_interface::return_type PolicyController::update(
   }
   std::optional<PolicyPipeline::Status> status;  // of a step whose result arrived now
   // Called right after a step finished, before the next one may start in the inference thread.
-  auto record_observation_age = [&]() {
+  auto record_step = [&]() {
+      const auto & stages = runner_->pipeline().stage_times();
+      timing_.preprocessor_time_us = stages.preprocessor_us;
+      timing_.inference_time_us = stages.inference_us;
+      timing_.postprocessor_time_us = stages.postprocessor_us;
       const double stamp = runner_->pipeline().observation_stamp();
       timing_.observation_age_ms =
         status == PolicyPipeline::Status::OK && stamp > 0.0 ? (now - stamp) * 1e3 : 0.0;
@@ -357,7 +364,7 @@ controller_interface::return_type PolicyController::update(
       status = runner_->step();
       timing_.step_time_us =
         std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
-      record_observation_age();
+      record_step();
       if (status == PolicyPipeline::Status::OK) {
         if (const auto r = runner_->check_input_ages(now)) {return react(*r);}
       }
@@ -369,7 +376,7 @@ controller_interface::return_type PolicyController::update(
       status = inference_->get_last_return_value();
       timing_.step_time_us =
         std::chrono::duration<double, std::micro>(inference_->get_last_execution_time()).count();
-      record_observation_age();
+      record_step();
       if (status == PolicyPipeline::Status::OK) {
         // Before taking its commands: a stale input must not be acted on.
         if (const auto r = runner_->check_input_ages(now)) {return react(*r);}
