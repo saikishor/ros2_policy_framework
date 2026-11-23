@@ -14,13 +14,14 @@ touching the others:
 The same policy configuration runs as a standalone ROS 2 node or inside a ros2_control
 controller, and several policies can be loaded at once and switched while the robot moves.
 
-These pages explain the concepts. The ``README.md`` at the root of the repository is the
+These pages explain the concepts; :doc:`features` lists what the framework offers. The ``README.md`` at the root of the repository is the
 reference: every parameter, every plugin and the commands to run the Kangaroo example.
 
 .. toctree::
    :maxdepth: 2
    :caption: Concepts
 
+   features
    overview
    data_flow
    hosts
