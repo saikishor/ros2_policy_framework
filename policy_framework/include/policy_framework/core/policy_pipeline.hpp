@@ -110,6 +110,17 @@ public:
    *         thread calling step().
    */
   double observation_stamp() const {return observation_stamp_;}
+  /// Durations of the stages of the last step, in microseconds. A stage that did not run in
+  /// that step (e.g. inference and postprocessor while waiting for data) measures 0.
+  struct StageTimes
+  {
+    double preprocessor_us = 0.0;
+    double inference_us = 0.0;
+    double postprocessor_us = 0.0;
+  };
+  /// @return Stage durations of the last step. Read from the thread calling step().
+  const StageTimes & stage_times() const {return stage_times_;}
+
   /// @return Input stamps of the active policy's last step. Read from the thread calling step().
   const InputStamps & input_stamps() const
   {
@@ -141,6 +152,7 @@ private:
   bool needs_reset_ = true;
   int steps_ = 0;
   double observation_stamp_ = 0.0;
+  StageTimes stage_times_;
 };
 
 }  // namespace policy_framework
