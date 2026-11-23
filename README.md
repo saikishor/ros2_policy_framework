@@ -406,7 +406,8 @@ nav:
   a `TopicTerm` writing its values, listed in `input_terms`. Scalar sensors (joints, IMU,
   force/torque) stay in the state store.
 - Model inputs are float32: a model with a `uint8` image input must be exported with a float
-  input. Inference is on CPU (`OnnxInference`); a large vision network may need a GPU
+  input. A dynamic dimension of an ONNX input counts as 1, so export the image size static.
+  Input terms are a `MjlabPreprocessor` feature; `ConcatPreprocessor` fills one tensor only. Inference is on CPU (`OnnxInference`); a large vision network may need a GPU
   `Inference` plugin to keep up with the policy rate.
 
 ### Kangaroo
