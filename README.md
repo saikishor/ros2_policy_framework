@@ -30,7 +30,7 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 | Folder | Content | Example include |
 |--------|---------|-----------------|
 | `interfaces/` | Plugin base classes, one header per kind (`Inference`, `Preprocessor`, `Postprocessor`, `InputSource`, `Executor`, `InterfaceExecutor`, `SafetyCheck`, observation terms) and their shared types (`types.hpp`, `plugin_context.hpp`) | `policy_framework/interfaces/preprocessor.hpp` |
-| `core/` | What the hosts are built on: `DataStore`, `PolicyPipeline`, `Kinematics`, `SafetyMonitor`, `LatestMessage` | `policy_framework/core/data_store.hpp` |
+| `core/` | What the hosts are built on: `DataStore`, `PolicyPipeline`, `Kinematics`, `SafetyMonitor`, `LatestMessage`, `CommandBlender` | `policy_framework/core/data_store.hpp` |
 | `hosts/` | `PolicyRunner`, `PolicyNode` (standalone), `PolicyController` (ros2_control) | `policy_framework/hosts/policy_controller.hpp` |
 | `plugins/<kind>/` | The generic plugins: `sources/`, `inference/`, `stages/`, `executors/`, `safety/` | `policy_framework/plugins/sources/topic_sources.hpp` |
 
