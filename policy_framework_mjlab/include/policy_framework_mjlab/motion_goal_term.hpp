@@ -37,7 +37,7 @@ namespace policy_framework_mjlab
  *
  * A policy_framework::CommandTerm: parameters (under `<policy>.terms.motion_goal.`) `topic`
  * (default `~/motion_reference`) and `timeout` (seconds, default 0.5, above zero); stamped
- * with the header stamp of the reference, else now.
+ * with the header stamp of the reference, else its receive time.
  *
  * Stamp: the receive time of the reference; the current time for a hold.
  */
