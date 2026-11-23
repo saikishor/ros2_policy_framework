@@ -161,7 +161,8 @@ struct has_header<MsgT, std::void_t<decltype(std::declval<MsgT>().header.stamp)>
  *   while the CommandGate is closed (the host's `safety_entry` is 0, or the NEUTRAL_COMMANDS
  *   fault reaction is active);
  * - the stamp: the header stamp of the message when its type has a header and it is set, else
- *   the current time (also for the neutral command);
+ *   its receive time (so that its age is how long ago it arrived); the current time for the
+ *   neutral command;
  * - the user command flag: its stamp does not count for the observation stamp.
  *
  * Always ready by default: a policy does not wait for a command (a term may override ready()
@@ -198,8 +199,8 @@ public:
   /**
    * @brief Write the command, or the neutral command, and return its stamp. The command is
    *        used when a message was received at most `timeout` seconds ago (on the receive
-   *        time), the CommandGate is open and usable() accepts it; otherwise the neutral
-   *        command, stamped now.
+   *        time), the CommandGate is open and usable() accepts it, stamped with its header
+   *        stamp, else its receive time; otherwise the neutral command, stamped now.
    */
   double compute(const DataStore & state, const TensorMap &, float * out) final
   {
@@ -208,7 +209,7 @@ public:
     // Measured on the receive time: whatever clock the publisher stamps with.
     if (in.msg && t - in.receive_time <= timeout_ && gate_.open(state) && usable(*in.msg)) {
       write_command(*in.msg, state, out);
-      return stamp_of(*in.msg, t);
+      return stamp_of(*in.msg, in.receive_time);
     }
     write_neutral(state, out);
     return t;
@@ -243,13 +244,13 @@ protected:
   }
 
 private:
-  static double stamp_of(const MsgT & msg, double now)
+  static double stamp_of(const MsgT & msg, double receive_time)
   {
     if constexpr (detail::has_header<MsgT>::value) {
       const auto & s = msg.header.stamp;
       if (s.sec != 0 || s.nanosec != 0) {return s.sec + s.nanosec * 1e-9;}
     }
-    return now;
+    return receive_time;
   }
 
   double default_timeout_;

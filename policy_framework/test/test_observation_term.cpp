@@ -168,7 +168,7 @@ TEST(CommandTerm, IsReadyAndNeutralWithoutACommandStampedNow)
   EXPECT_FLOAT_EQ(out, 0.0F);
 }
 
-TEST(CommandTerm, FollowsTheCommandStampedNowUntilItsTimeout)
+TEST(CommandTerm, FollowsTheCommandStampedWithItsReceiveTimeUntilItsTimeout)
 {
   auto node = command_node("test_command_timeout", "/test_command_timeout");
   DataStore state;
@@ -181,9 +181,12 @@ TEST(CommandTerm, FollowsTheCommandStampedNowUntilItsTimeout)
       term.compute(state, TensorMap{}, &out);
       return out > 0.4F;
     });
-  // A Twist has no header: the command in effect is stamped now, not with its receive time.
-  const double before = node->now().seconds();
-  EXPECT_GE(term.compute(state, TensorMap{}, &out), before);
+  // A Twist has no header: the command in effect is stamped with its receive time, so that its
+  // age is how long ago it arrived, not the time it was read.
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  const double stamp = term.compute(state, TensorMap{}, &out);
+  EXPECT_DOUBLE_EQ(stamp, term.receive_time());
+  EXPECT_LE(stamp, node->now().seconds() - 0.09);
   EXPECT_FLOAT_EQ(out, 0.5F);
   std::this_thread::sleep_for(std::chrono::milliseconds(400));  // older than the 0.3 s timeout
   term.compute(state, TensorMap{}, &out);
