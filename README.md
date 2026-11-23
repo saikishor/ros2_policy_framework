@@ -246,7 +246,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
 | `policy_framework_mjlab/MjlabPreprocessor` | Preprocessor | `imu_name` (`imu`), `imu_frame` (URDF link of the IMU, for the base terms of pal_mjlab exports), `velocity_command_name` (`cmd_vel`), `odometry_name` (`odom`), `observation_input` (`obs`), `terms.<term>.type`, `terms.motion_goal.topic` (`~/motion_reference`), `terms.motion_goal.timeout` (0.5 s) |
 | `policy_framework_mjlab/MjlabPostprocessor` | Postprocessor | `excluded_joints`, `position_interface` (`position`), `velocity_interface` (`velocity`, empty: none), `gains_controller` (empty: none), `gains_as_commands` (false) |
-| `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm (a `CommandTerm`) | `topic` (`cmd_vel`), `timeout` (1.0 s, above zero; on the receive time) → linear.x, linear.y, angular.z, stamped now; zero when absent, stale or gated; a user command |
+| `policy_framework_mjlab/TwistCommandTerm` | ObservationTerm (a `CommandTerm`) | `topic` (`cmd_vel`), `timeout` (1.0 s, above zero; on the receive time) → linear.x, linear.y, angular.z, stamped with its receive time; zero (stamped now) when absent, stale or gated; a user command |
 
 Source and executor `topic` parameters default to `~/<name>` (also when empty).
 
@@ -305,7 +305,7 @@ Without a usable reference (none yet, received longer ago than `terms.motion_goa
 0.5 s by default and above zero, malformed, or `safety_entry` at 0) the goal is a still stand
 at the robot's heading: `goal_hold_joint_pos`, else the default positions of the goal joints.
 The policy therefore never waits for a reference. It is a `CommandTerm` (see
-[Writing plugins](#writing-plugins)): stamped with the reference's header stamp, else now, and
+[Writing plugins](#writing-plugins)): stamped with the reference's header stamp, else its receive time, and
 a user command (see [Timestamps](#timestamps)).
 
 ### MjlabPostprocessor
@@ -517,7 +517,7 @@ ages and the latency down to the commands:
 |------|-------|
 | State entry from a topic source | message header stamp; the time it is read when there is none (e.g. Twist) |
 | State entry from a state interface | time it was read (interfaces carry no stamp) |
-| Observation term | `ObservationTerm::compute()` return value: the header stamp, else now; built-in terms: oldest of their entries. A user command term (`CommandTerm`) is flagged `user_command` |
+| Observation term | `ObservationTerm::compute()` return value: the header stamp, else now; built-in terms: oldest of their entries. A user command term (`CommandTerm`) is flagged `user_command` and stamped with the header stamp, else its receive time (its age is how long ago it arrived); the neutral command is stamped now |
 | Term fed back from previous outputs (`actions`, motion command; a term returns `ObservationTerm::kFromPreviousOutputs`) | previous observation stamp, flagged `from_previous_outputs` |
 | Observation (`PolicyPipeline::observation_stamp()`) | oldest input stamp, feedback terms and user commands excluded |
 | Command entry | observation stamp of the step that computed it |
