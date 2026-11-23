@@ -93,14 +93,14 @@ install(TARGETS policy_node DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  set(TEST_MODELS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test/models")
+  set(TEST_MODELS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/models")
 
   ament_add_gtest(test_data_store test/core/test_data_store.cpp)
   target_link_libraries(test_data_store ${PROJECT_NAME})
   ament_add_gtest(test_safety_monitor test/core/test_safety_monitor.cpp)
   target_link_libraries(test_safety_monitor ${PROJECT_NAME})
   target_compile_definitions(test_safety_monitor PRIVATE
-    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
+    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/urdf/test_robot.urdf")
   ament_add_gtest(test_safety_checks test/plugins/safety/test_safety_checks.cpp)
   target_link_libraries(test_safety_checks ${PROJECT_NAME})
   ament_add_gtest(test_policy_pipeline test/core/test_policy_pipeline.cpp)
@@ -116,7 +116,7 @@ if(BUILD_TESTING)
   ament_add_gtest(test_kinematics test/core/test_kinematics.cpp)
   target_link_libraries(test_kinematics ${PROJECT_NAME})
   target_compile_definitions(test_kinematics PRIVATE
-    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
+    TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/urdf/test_robot.urdf")
   ament_add_gtest(test_generic_stages test/plugins/stages/test_generic_stages.cpp)
   target_link_libraries(test_generic_stages ${PROJECT_NAME})
   foreach(path IN ITEMS
@@ -128,7 +128,7 @@ if(BUILD_TESTING)
     ament_add_gtest(${test} ${path})
     target_link_libraries(${test} ${PROJECT_NAME})
     target_compile_definitions(${test} PRIVATE TEST_MODELS_DIR="${TEST_MODELS_DIR}"
-      TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/urdf/test_robot.urdf")
+      TEST_URDF="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/urdf/test_robot.urdf")
   endforeach()
 endif()
 
