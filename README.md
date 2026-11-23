@@ -22,6 +22,24 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 | `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`, `CommandTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck`, `JumpCheck` and `MockSafetyCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks), `SwitchPolicy` service, `MockFault` message |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` observation term and the Kangaroo deployment config/launch |
 
+### Repository layout
+
+`policy_framework` groups its files by role, with the same folders under `include/policy_framework/`,
+`src/`, `test/` and `params/` (parameter definitions):
+
+| Folder | Content | Example include |
+|--------|---------|-----------------|
+| `interfaces/` | Plugin base classes, one header per kind (`Inference`, `Preprocessor`, `Postprocessor`, `InputSource`, `Executor`, `InterfaceExecutor`, `SafetyCheck`, observation terms) and their shared types (`types.hpp`, `plugin_context.hpp`) | `policy_framework/interfaces/preprocessor.hpp` |
+| `core/` | What the hosts are built on: `DataStore`, `PolicyPipeline`, `Kinematics`, `SafetyMonitor`, `LatestMessage` | `policy_framework/core/data_store.hpp` |
+| `hosts/` | `PolicyRunner`, `PolicyNode` (standalone), `PolicyController` (ros2_control) | `policy_framework/hosts/policy_controller.hpp` |
+| `plugins/<kind>/` | The generic plugins: `sources/`, `inference/`, `stages/`, `executors/`, `safety/` | `policy_framework/plugins/sources/topic_sources.hpp` |
+
+`policy_framework/plugin_interfaces.hpp` includes every interface except the observation terms.
+Test models and URDF are in `policy_framework/test/fixtures/`.
+
+`policy_framework_mjlab` is small and stays flat. It has its test-only term plugins in
+`test/plugins/` and one configuration folder per robot (`config/kangaroo/`).
+
 ## Architecture
 
 ```
