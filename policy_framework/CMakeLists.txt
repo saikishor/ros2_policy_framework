@@ -23,6 +23,7 @@ set(THIS_PACKAGE_DEPENDS
   hardware_interface
   lifecycle_msgs
   nav_msgs
+  pal_statistics
   pluginlib
   rclcpp
   rclcpp_lifecycle

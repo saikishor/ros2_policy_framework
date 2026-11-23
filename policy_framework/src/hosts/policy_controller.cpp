@@ -25,7 +25,6 @@
 #include <string>
 #include <vector>
 
-#include "hardware_interface/introspection.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework/policy_controller_parameters.hpp"
 
@@ -34,11 +33,16 @@ namespace policy_framework
 
 PolicyController::CallbackReturn PolicyController::on_init()
 {
-  REGISTER_ROS2_CONTROL_INTROSPECTION("policy_step_time_us", &timing_.step_time_us);
-  REGISTER_ROS2_CONTROL_INTROSPECTION("preprocessor_time_us", &timing_.preprocessor_time_us);
-  REGISTER_ROS2_CONTROL_INTROSPECTION("inference_time_us", &timing_.inference_time_us);
-  REGISTER_ROS2_CONTROL_INTROSPECTION("postprocessor_time_us", &timing_.postprocessor_time_us);
-  REGISTER_ROS2_CONTROL_INTROSPECTION("observation_age_ms", &timing_.observation_age_ms);
+  // Own registry rather than ros2_control's (global, shared by every controller): the values
+  // land on this controller's topic, without the `<controller>.` prefix.
+  introspection_ =
+    std::make_shared<pal_statistics::StatisticsRegistry>(get_node(), "~/introspection_data");
+  introspection_->registerVariable("step_time_us", &timing_.step_time_us);
+  introspection_->registerVariable("preprocessor_time_us", &timing_.preprocessor_time_us);
+  introspection_->registerVariable("inference_time_us", &timing_.inference_time_us);
+  introspection_->registerVariable("postprocessor_time_us", &timing_.postprocessor_time_us);
+  introspection_->registerVariable("observation_age_ms", &timing_.observation_age_ms);
+  introspection_->startPublishThread();
   return CallbackReturn::SUCCESS;
 }
 
@@ -236,10 +240,9 @@ void PolicyController::apply_values()
 
 void PolicyController::register_input_ages()
 {
-  // The unregister macro names the registry key without its namespace.
-  using hardware_interface::DEFAULT_REGISTRY_KEY;
-  for (const auto & name : registered_ages_) {UNREGISTER_ROS2_CONTROL_INTROSPECTION(name);}
-  registered_ages_.clear();
+  for (const auto & name : input_age_names_) {
+    introspection_->unregisterVariable("input_age_ms." + name);
+  }
   input_age_names_.clear();
   input_age_offsets_.clear();
   for (const auto & p : runner_->policy_inputs()) {
@@ -247,11 +250,10 @@ void PolicyController::register_input_ages()
     for (const auto & input : p.inputs) {input_age_names_.push_back(p.policy + "." + input);}
   }
   input_age_offsets_.push_back(input_age_names_.size());
-  // Sized once, before registering: the introspection keeps the addresses.
+  // Sized once, before registering: the registry keeps the addresses.
   input_ages_ms_.assign(input_age_names_.size(), 0.0);
   for (size_t i = 0; i < input_age_names_.size(); ++i) {
-    registered_ages_.push_back("input_age_ms." + input_age_names_[i]);
-    REGISTER_ROS2_CONTROL_INTROSPECTION(registered_ages_.back(), &input_ages_ms_[i]);
+    introspection_->registerVariable("input_age_ms." + input_age_names_[i], &input_ages_ms_[i]);
   }
 }
 
@@ -308,6 +310,9 @@ controller_interface::return_type PolicyController::update(
 {
   // Node clock (not the update time) so that it compares with the topic receive times.
   const double now = get_node()->now().seconds();
+  // The previous update's values, here so that every return path below is covered.
+  // Real-time safe: copies the values for the publisher thread (skipped if it holds the lock).
+  introspection_->publishAsync();
   auto & state = runner_->state();
   bool read_failed = false;
   for (size_t i = 0; i < state_interfaces_.size(); ++i) {

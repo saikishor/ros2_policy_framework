@@ -31,6 +31,7 @@
 #include "hardware_interface/loaned_command_interface.hpp"
 #include "hardware_interface/loaned_state_interface.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
+#include "pal_statistics_msgs/msg/statistics_names.hpp"
 #include "policy_framework/core/kinematics.hpp"
 #include "policy_framework/hosts/policy_controller.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -231,6 +232,32 @@ TEST_F(PolicyControllerTest, MeasuresThePolicyStepAndTheAgeOfItsObservation)
   EXPECT_LE(t.preprocessor_time_us + t.inference_time_us + t.postprocessor_time_us, t.step_time_us);
   // State interfaces are stamped with the update that read them: no age when synchronous.
   EXPECT_DOUBLE_EQ(controller.timing().observation_age_ms, 0.0);
+}
+
+TEST_F(PolicyControllerTest, PublishesItsIntrospectionOnItsOwnTopic)
+{
+  init();
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  auto listener = std::make_shared<rclcpp::Node>("introspection_listener");
+  std::vector<std::string> names;
+  auto sub = listener->create_subscription<pal_statistics_msgs::msg::StatisticsNames>(
+    "/policy_controller/introspection_data/names", rclcpp::QoS(1).reliable().transient_local(),
+    [&](const pal_statistics_msgs::msg::StatisticsNames & msg) {names = msg.names;});
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (names.empty() && std::chrono::steady_clock::now() < deadline) {
+    ASSERT_EQ(update(), controller_interface::return_type::OK);
+    rclcpp::spin_some(listener);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  // Local to the controller: no `<controller>.` prefix as in ros2_control's shared topic.
+  for (const auto & expected : StringArray{
+      "step_time_us", "preprocessor_time_us", "inference_time_us", "postprocessor_time_us",
+      "observation_age_ms", "input_age_ms.walk.j1/position"})
+  {
+    EXPECT_NE(std::find(names.begin(), names.end(), expected), names.end()) << expected;
+  }
 }
 
 TEST_F(PolicyControllerTest, WithoutExecutorsNoCommandInterfaceIsClaimed)
