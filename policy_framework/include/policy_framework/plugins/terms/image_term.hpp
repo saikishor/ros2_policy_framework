@@ -75,7 +75,10 @@ private:
   std::string encoding_;
   size_t width_ = 0, height_ = 0, channels_ = 0, pixel_bytes_ = 0;
   double scale_ = 1.0;
-  Received checked_;  ///< The message ready() checked, which compute() reads.
+  /// The message ready() checked, which compute() reads.
+  // ponytail: holds the previous image until the next ready(), which then frees it in the step
+  // thread (once per frame); hand it back to a non-RT thread if that ever shows in the timings.
+  Received checked_;
 };
 
 }  // namespace policy_framework
