@@ -21,7 +21,7 @@
 #include <vector>
 
 #include "pluginlib/class_loader.hpp"
-#include "policy_framework/observation_term.hpp"
+#include "policy_framework/interfaces/observation_term.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 
 namespace policy_framework_mjlab

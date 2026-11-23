@@ -22,7 +22,7 @@
 
 #include "geometry_msgs/msg/twist.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
-#include "policy_framework/observation_term.hpp"
+#include "policy_framework/interfaces/observation_term.hpp"
 #include "rclcpp/rclcpp.hpp"
 
 using policy_framework::DataStore;
