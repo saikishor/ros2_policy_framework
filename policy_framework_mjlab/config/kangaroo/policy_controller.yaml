@@ -8,6 +8,13 @@ policy_controller:
     policy_rate: 50.0
     # true: inference in its own real-time thread, the PD law stays in the control loop.
     async_inference: @ASYNC_INFERENCE@
+    sources: [cmd_vel]
+    # Velocity command of every policy, from one subscription shared by all of them (the
+    # built-in `command` term reads cmd_vel/*); zero when older than timeout.
+    cmd_vel:
+      type: policy_framework/TwistSource
+      topic: /cmd_vel
+      timeout: 1.0
     executors: [pd]
     pd:
       type: policy_framework/PdEffortExecutor

@@ -6,12 +6,7 @@ loco:
   inference: policy_framework/OnnxInference
   postprocessor: policy_framework_mjlab/MjlabPostprocessor
   imu_name: torso_imu_sensor
-  # Velocity command read directly from its topic, zero when older than timeout.
-  terms:
-    command:
-      type: policy_framework_mjlab/TwistCommandTerm
-      topic: /cmd_vel
-      timeout: 1.0
+  # Velocity command: the built-in `command` term, from the host's shared cmd_vel source.
   # Passive joints of the leg closed chains: observed, but not actuated by the policy.
   excluded_joints: [leg_left_femur_joint, leg_left_knee_joint,
                     leg_right_femur_joint, leg_right_knee_joint]
