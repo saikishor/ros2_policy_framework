@@ -26,7 +26,7 @@
 #include "control_msgs/msg/multi_dof_command.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
 #include "policy_framework/hosts/policy_node.hpp"
-#include "policy_framework/srv/switch_policy.hpp"
+#include "policy_framework_msgs/srv/switch_policy.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 
@@ -261,10 +261,10 @@ TEST(PolicyNode, ReactivationRestartsTheDefaultPolicy)
     };
   ASSERT_DOUBLE_EQ(wait_for_j2(6.5), 6.5);
 
-  auto client = helper->create_client<policy_framework::srv::SwitchPolicy>(
+  auto client = helper->create_client<policy_framework_msgs::srv::SwitchPolicy>(
     "/policy_node/switch_policy");
   ASSERT_TRUE(client->wait_for_service(std::chrono::seconds(2)));
-  auto req = std::make_shared<policy_framework::srv::SwitchPolicy::Request>();
+  auto req = std::make_shared<policy_framework_msgs::srv::SwitchPolicy::Request>();
   req->policy_name = "jump";
   auto future = client->async_send_request(req);
   ASSERT_EQ(

@@ -25,8 +25,8 @@
 #include <vector>
 
 #include "policy_framework/hosts/policy_runner.hpp"
-#include "policy_framework/msg/mock_fault.hpp"
-#include "policy_framework/srv/switch_policy.hpp"
+#include "policy_framework_msgs/msg/mock_fault.hpp"
+#include "policy_framework_msgs/srv/switch_policy.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 
@@ -121,9 +121,10 @@ TEST_F(PolicyRunnerTest, RunsPolicyFedByTopicSourceAndSwitchesViaService)
   EXPECT_DOUBLE_EQ(command("j1/position"), 1.0 + 3.0 + 0.5);
   EXPECT_DOUBLE_EQ(command("j2/position"), 2 * 2.0 + 3.0 - 0.5);
 
-  auto client = helper->create_client<policy_framework::srv::SwitchPolicy>("/runner/switch_policy");
+  auto client = helper->create_client<policy_framework_msgs::srv::SwitchPolicy>(
+    "/runner/switch_policy");
   ASSERT_TRUE(client->wait_for_service(std::chrono::seconds(2)));
-  auto req = std::make_shared<policy_framework::srv::SwitchPolicy::Request>();
+  auto req = std::make_shared<policy_framework_msgs::srv::SwitchPolicy::Request>();
   req->policy_name = "jump";
   auto future = client->async_send_request(req);
   ASSERT_EQ(exec.spin_until_future_complete(future, std::chrono::seconds(2)),
@@ -445,11 +446,12 @@ TEST_F(RunnerSafetyTest, AMockSafetyCheckInjectsAFaultOnRequest)
   EXPECT_NE(std::find(reactions.begin(), reactions.end(), FaultReaction::DAMP), reactions.end());
   EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
 
-  auto pub = helper->create_publisher<policy_framework::msg::MockFault>("/runner_mock_fault", 10);
+  auto pub = helper->create_publisher<policy_framework_msgs::msg::MockFault>(
+    "/runner_mock_fault", 10);
   for (int i = 0; i < 100 && pub->get_subscription_count() == 0; ++i) {
     spin_for(std::chrono::milliseconds(10));
   }
-  policy_framework::msg::MockFault msg;
+  policy_framework_msgs::msg::MockFault msg;
   msg.fault = true;
   pub->publish(msg);
   spin_for(std::chrono::milliseconds(100));

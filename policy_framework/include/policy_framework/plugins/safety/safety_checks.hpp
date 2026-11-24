@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "policy_framework/core/latest_message.hpp"
-#include "policy_framework/msg/mock_fault.hpp"
+#include "policy_framework_msgs/msg/mock_fault.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 
 namespace policy_framework
@@ -105,8 +105,8 @@ private:
 /**
  * @brief Fails on request, to see how the robot really reacts to a fault in a given situation.
  *
- * Subscribes to `topic` (default `~/<name>`, policy_framework/msg/MockFault) and fails on every
- * cycle while the latest message has `fault: true`, with the message's `reaction` (empty: the
+ * Subscribes to `topic` (default `~/<name>`, policy_framework_msgs/msg/MockFault) and fails on
+ * every cycle while the latest message has `fault: true`, with the message's `reaction` (empty: the
  * check's on_fault), for its `duration` (seconds, 0: until the next message; the time is the
  * `now` the host passes, on the receive time clock). A message may ask only for the reactions listed in `reactions` (declared
  * through possible_reactions(), so that the host checks its executors at configure); an unknown
@@ -114,7 +114,7 @@ private:
  * fault, all but neutral_commands stay latched until the controller is reactivated; reset()
  * (on reactivation) forgets the latest message, so that it does not fault again at once.
  *
- * E.g. `ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault
+ * E.g. `ros2 topic pub --once /policy_controller/mock policy_framework_msgs/msg/MockFault
  * "{fault: true, reaction: damp}"`.
  */
 class MockSafetyCheck : public SafetyCheck
@@ -127,9 +127,9 @@ public:
   void reset() override;
 
 private:
-  LatestMessage<msg::MockFault> topic_;
+  LatestMessage<policy_framework_msgs::msg::MockFault> topic_;
   /// The message that was the latest at reset(): ignored. Compared by address only.
-  std::shared_ptr<const msg::MockFault> forgotten_;
+  std::shared_ptr<const policy_framework_msgs::msg::MockFault> forgotten_;
   std::vector<FaultReaction> reactions_;
 };
 

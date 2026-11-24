@@ -25,6 +25,7 @@ set(THIS_PACKAGE_DEPENDS
   nav_msgs
   pal_statistics
   pluginlib
+  policy_framework_msgs
   rclcpp
   rclcpp_lifecycle
   realtime_tools
@@ -34,7 +35,6 @@ set(THIS_PACKAGE_DEPENDS
 find_package(ament_cmake REQUIRED)
 # Prints a stack trace on crashes of every executable built here (policy_node, tests).
 find_package(backward_ros REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
 find_package(onnxruntime_vendor REQUIRED)
 find_package(generate_parameter_library REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -42,14 +42,6 @@ foreach(dep IN ITEMS ${THIS_PACKAGE_DEPENDS})
   find_package(${dep} REQUIRED)
 endforeach()
 
-rosidl_generate_interfaces(${PROJECT_NAME}_interfaces
-  msg/MockFault.msg
-  srv/SwitchPolicy.srv
-  LIBRARY_NAME ${PROJECT_NAME}
-)
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces rosidl_typesupport_cpp)
-# After rosidl_generate_interfaces: Pinocchio's config (through eigenpy) sets up Python in a way
-# that makes rosidl's PythonInterp lookup fail on a fresh configure.
 find_package(pinocchio REQUIRED)
 
 # Parameter declaration and validation, generated from params/**/*.yaml (header-only targets,
@@ -104,7 +96,7 @@ ament_target_dependencies(${PROJECT_NAME} PUBLIC ${THIS_PACKAGE_DEPENDS})
 # ONNX Runtime and Pinocchio are implementation details: they do not appear in the public
 # headers.
 target_link_libraries(${PROJECT_NAME}
-  PUBLIC "${cpp_typesupport_target}" Eigen3::Eigen
+  PUBLIC Eigen3::Eigen
   PRIVATE onnxruntime::onnxruntime pinocchio::pinocchio ${PARAMETER_LIBRARIES})
 
 add_executable(policy_node src/hosts/policy_node_main.cpp)
@@ -161,5 +153,5 @@ if(BUILD_TESTING)
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(rosidl_default_runtime Eigen3 ${THIS_PACKAGE_DEPENDS})
+ament_export_dependencies(Eigen3 ${THIS_PACKAGE_DEPENDS})
 ament_package()
