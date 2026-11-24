@@ -79,7 +79,8 @@ namespace policy_framework
  * on every update. Not on the controller manager's shared introspection topic.
  *
  * On activation the first policy restarts from scratch. Policies are switched with the
- * `~/switch_policy` service.
+ * `~/switch_policy` service, listed by `~/list_policies`, and the running one is published on
+ * `~/active_policies`.
  */
 class PolicyController : public controller_interface::ControllerInterface
 {

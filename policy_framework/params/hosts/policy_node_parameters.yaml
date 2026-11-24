@@ -14,5 +14,5 @@ policy_node:
   robot_description:
     type: string
     default_value: ""
-    description: "URDF of the robot, needed only by the kinematics (kinematics.enabled)."
+    description: "URDF of the robot, needed by the kinematics (kinematics.enabled) and by safety.joint_position_limits."
     read_only: true

@@ -30,7 +30,7 @@ pd_effort_executor:
   fault_damping:
     type: double_array
     default_value: []
-    description: "Damping per joint of the DAMP fault reaction (effort = -fault_damping * velocity, within effort_limits); empty: zero effort."
+    description: "Damping per joint of the DAMP fault reaction (effort = -fault_damping * velocity, within effort_limits); DAMP is supported only when every value is above zero (empty: not supported)."
     read_only: true
     validation:
       lower_element_bounds<>: [0.0]
