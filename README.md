@@ -380,6 +380,11 @@ loco:
       topic: /cmd_vel
 ```
 
+A topic term subscribes once per policy: when many policies take the same command, configure
+one `TwistSource` on the host (`sources: [cmd_vel]`) and keep the built-in `command` term
+instead, so every policy reads the shared `cmd_vel/*` entries from one subscription (the
+Kangaroo configuration does this).
+
 Topic terms need no input source and claim no state interface; keep data that exists as state
 interfaces (joints, IMU) in the state store so the controller reads it in real time. A term can
 also combine state entries with the kinematics, e.g. an IMU reading expressed in another link.

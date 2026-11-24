@@ -94,8 +94,8 @@ The terms
      - The joint reference the policy itself predicted at the previous step
 
 Any term can be replaced, and new ones added, without touching the preprocessor: set
-``<policy>.terms.<name>.type`` to an ``ObservationTerm`` plugin. The Kangaroo configuration
-does this to read the velocity command straight from its topic:
+``<policy>.terms.<name>.type`` to an ``ObservationTerm`` plugin, e.g. to read the velocity
+command straight from its topic:
 
 .. code-block:: yaml
 
@@ -105,6 +105,11 @@ does this to read the velocity command straight from its topic:
          type: policy_framework_mjlab/TwistCommandTerm
          topic: /cmd_vel
          timeout: 1.0
+
+A topic term subscribes once per policy. When many policies take the same command, use one
+``TwistSource`` on the host instead (``sources: [cmd_vel]``) and leave the built-in ``command``
+term: every policy reads the shared ``cmd_vel/*`` entries from a single subscription. The
+Kangaroo configuration does this.
 
 pal_mjlab exports
 -----------------
