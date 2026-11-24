@@ -26,6 +26,7 @@
 
 #include "policy_framework/hosts/policy_runner.hpp"
 #include "policy_framework_msgs/msg/mock_fault.hpp"
+#include "policy_framework_msgs/srv/list_policies.hpp"
 #include "policy_framework_msgs/srv/switch_policy.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -136,6 +137,29 @@ TEST_F(PolicyRunnerTest, RunsPolicyFedByTopicSourceAndSwitchesViaService)
   EXPECT_DOUBLE_EQ(command("j1/position"), 3.0 + 1.0 + 0.5);
   runner.step();  // max_steps reached on the previous step: back to the default
   EXPECT_EQ(runner.pipeline().active_policy(), "walk");
+}
+
+TEST_F(PolicyRunnerTest, ListsTheLoadedPolicies)
+{
+  configure(runner_params("/runner_js_list"));
+  auto client = helper->create_client<policy_framework_msgs::srv::ListPolicies>(
+    "/runner/list_policies");
+  ASSERT_TRUE(client->wait_for_service(std::chrono::seconds(2)));
+  auto future = client->async_send_request(
+    std::make_shared<policy_framework_msgs::srv::ListPolicies::Request>());
+  ASSERT_EQ(exec.spin_until_future_complete(future, std::chrono::seconds(2)),
+    rclcpp::FutureReturnCode::SUCCESS);
+  const auto policies = future.get()->policies;
+  ASSERT_EQ(policies.size(), 2u);
+  EXPECT_EQ(policies[0].name, "walk");
+  EXPECT_EQ(policies[0].preprocessor, "policy_framework/ConcatPreprocessor");
+  EXPECT_EQ(policies[0].inference, "policy_framework/OnnxInference");
+  EXPECT_EQ(policies[0].postprocessor, "policy_framework/SplitPostprocessor");
+  EXPECT_EQ(policies[0].max_steps, 0);
+  EXPECT_TRUE(policies[0].interruptible);
+  EXPECT_EQ(policies[1].name, "jump");
+  EXPECT_EQ(policies[1].max_steps, 1);
+  EXPECT_FALSE(policies[1].interruptible);
 }
 
 TEST_F(PolicyRunnerTest, ReportsStateEntriesNoSourceProvides)

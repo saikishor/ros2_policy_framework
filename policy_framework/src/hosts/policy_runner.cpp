@@ -47,6 +47,7 @@ void PolicyRunner::configure(
   source_ages_.clear();
   input_age_reactions_.clear();
   policy_inputs_.clear();
+  policy_infos_.clear();
   sources_.clear();
   executors_.clear();
   checks_.clear();
@@ -106,6 +107,14 @@ void PolicyRunner::configure(
     p.postprocessor->configure(ctx, p.inference->model(), commands_);
     p.max_steps = static_cast<int>(stages.max_steps);
     p.interruptible = stages.interruptible;
+    policy_framework_msgs::msg::PolicyInfo info;
+    info.name = name;
+    info.preprocessor = stages.preprocessor;
+    info.inference = stages.inference;
+    info.postprocessor = stages.postprocessor;
+    info.max_steps = p.max_steps;
+    info.interruptible = p.interruptible;
+    policy_infos_.push_back(std::move(info));
     RCLCPP_INFO(
       logger, "Policy '%s': max_steps=%d interruptible=%s", name.c_str(), p.max_steps,
       p.interruptible ? "true" : "false");
@@ -130,6 +139,13 @@ void PolicyRunner::configure(
       std::shared_ptr<policy_framework_msgs::srv::SwitchPolicy::Response> res) {
       res->success = pipeline_->request_switch(req->policy_name, res->message);
       RCLCPP_INFO(logger_, "switch_policy: %s", res->message.c_str());
+    });
+  list_service_ = node->create_service<policy_framework_msgs::srv::ListPolicies>(
+    "~/list_policies",
+    [this](
+      const std::shared_ptr<policy_framework_msgs::srv::ListPolicies::Request>,
+      std::shared_ptr<policy_framework_msgs::srv::ListPolicies::Response> res) {
+      res->policies = policy_infos_;
     });
 
   latched_.reset();
