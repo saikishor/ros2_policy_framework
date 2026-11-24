@@ -3,7 +3,9 @@ The two hosts
 
 A *host* is the program that runs the cycle. There are two, and they share everything except
 how data enters and leaves. Both are built on the same ``PolicyRunner``, which loads the
-plugins and owns the stores, so a policy is configured the same way for either.
+input sources, the policies and the safety checks (and the node's executors; the controller
+loads its interface executors itself) and owns the stores, so a policy is configured the same
+way for either.
 
 Standalone node
 ---------------
@@ -26,7 +28,9 @@ Standalone node
        ages [label="Term input ages", fillcolor="#fff6d9"];
        execs [label="Topic executors"];
        stop [label="No commands\nuntil reactivated", fillcolor="#fde8e8"];
+       wait [label="Nothing sent\nthis tick", fillcolor="#f2f2f2"];
        sources -> kin -> safety -> policy -> ages -> execs;
+       policy -> wait [label="waiting for data", style=dashed];
        safety -> stop [label="latched fault"];
        policy -> stop [label="step fails"];
        ages -> stop [label="stale input"];
@@ -73,7 +77,8 @@ in the control loop.
        policy [label="Active policy\n(every N updates)"];
        ages [label="Term input ages\n(after each step)", fillcolor="#fff6d9"];
        execs [label="Interface executors\n(every update)"];
-       fault [label="Fault reaction\nexecutors hold, damp or zero;\nor an error", fillcolor="#fde8e8"];
+       fault [label="Fault reaction\nexecutors hold, damp or\ntheir safe values; or an error", fillcolor="#fde8e8"];
+       hold [label="Until the first step's\ncommands: executors hold", fillcolor="#f2f2f2"];
        read -> kin;
        sources -> kin;
        kin -> safety;
@@ -83,6 +88,9 @@ in the control loop.
        policy -> fault [label="step fails"];
        ages -> fault [label="stale input"];
        read -> execs [label="joint feedback", style=dashed];
+       read -> fault [label="unreadable for more\nthan max_failed_reads:\nsafe values + error"];
+       policy -> hold [label="after activation", style=dashed];
+       hold -> execs [style=dashed];
      }
      hw_out [label="Command interfaces\n(joint efforts)", shape=plaintext, fillcolor=none];
      hw_in -> read;
@@ -100,11 +108,20 @@ in the control loop.
 - **Two rates in one loop.** The state interfaces, the kinematics, the safety checks and the
   executors run on every update; the policy and the topic sources only every
   ``update_rate / policy_rate`` updates.
+- **Hold until ready.** From activation until the first step returns commands, the
+  executors ``hold()`` the robot instead of following the command store, which may still hold
+  the previous activation's references.
 - **Safety.** The safety checks run on every update, before the policy. While a reaction is
   latched the policy is neither stepped nor followed: the executors write their fault
-  reaction (hold, damp, zero) on every update, or the controller returns an error so that the
+  reaction on every update (``hold`` and ``damp`` only where the executor supports them; the
+  safe values are zero effort for ``PdEffortExecutor``, unchanged interfaces for
+  ``ReferenceInterfaceExecutor``), or the controller returns an error so that the
   controller manager deactivates it and activates its fallback controllers
-  (:doc:`safety`).
+  (:doc:`safety`). State interfaces that cannot be read for more than ``max_failed_reads``
+  updates in a row also write the safe values and return an error.
+- **Configuration errors.** A topic executor (e.g. ``MultiDofCommandExecutor``) is refused,
+  ``policy_rate`` must divide ``update_rate``, and ``async_inference`` with ``is_async`` is
+  refused.
 
 Two rates
 ---------
@@ -142,7 +159,7 @@ Running a neural network takes time, and that time varies. Three arrangements ar
      - A PD law at a high rate with a policy at a low rate. Recommended in that case.
    * - ``is_async: true``
      - The standard ros2_control option: the whole ``update()`` runs in another thread,
-       executors included.
+       executors included. Cannot be combined with ``async_inference``.
      - A reference executor feeding a chained controller. Not for a PD law.
 
 With ``async_inference`` a policy step is spread over several updates:
@@ -157,10 +174,11 @@ With ``async_inference`` a policy step is spread over several updates:
        label="Control loop (every update)"; style="rounded,dashed"; fontname="Helvetica";
        tick [label="Policy tick:\ncopy the state,\ntrigger a step"];
        between [label="Following updates:\nexecutors keep using\nthe previous commands"];
-       collect [label="First update after\nthe step finished:\ncheck term input ages,\ntake its commands"];
+       collect [label="First update after\nthe step finished\n(before that update's tick):\ncheck term input ages,\ntake its commands"];
        fault [label="Latched fault:\nno tick, no collect;\nexecutors write\ntheir fault reaction", fillcolor="#fde8e8"];
        tick -> between -> collect;
        between -> fault [style=dashed];
+       collect -> fault [label="step failed or\nstale input", style=dashed];
      }
      subgraph cluster_thread {
        label="Inference thread"; style="rounded,dashed"; fontname="Helvetica";
@@ -171,7 +189,10 @@ With ``async_inference`` a policy step is spread over several updates:
    }
 
 A fault does not wait for the inference thread either: from the update in which it is
-latched, the executors write its reaction, and a step still running is ignored.
+latched, the executors write its reaction, and a step still running is ignored. A step that
+failed, or whose term inputs are stale, is a fault in the update that collects it, and its
+commands are not taken. With ``policy_rate`` 0 there is a tick on every update, so a step's
+result is collected at the earliest in the next update.
 
 The step works on a *snapshot* of the state store taken at the policy tick, so it sees one
 consistent instant even though the control loop keeps updating the live store. If a policy
