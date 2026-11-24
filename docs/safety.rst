@@ -230,7 +230,8 @@ received is not checked. The name in the first column is the one
        ``safety.position_margin``)
      - the position of a commanded joint leaves the limits of the robot description, narrowed
        by the margin; continuous joints have none. ``joint_position_limits: true`` enables it
-       and needs the robot description (the node's ``robot_description`` parameter).
+       and needs the robot description (the node's ``robot_description`` parameter; the
+       controller gets it from the controller manager).
    * - ``max_input_age`` (``safety.max_input_age``)
      - the observation of the last policy step (its oldest input, user commands excluded) is
        older than this many seconds: a topic stopped, so the policy acts on the past.

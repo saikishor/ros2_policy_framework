@@ -194,7 +194,8 @@ but on its own topic instead of the controller manager's shared
        sources (policy ticks only), updating the kinematics, the safety checks, and the
        executors writing the command interfaces (including a fault reaction); 0 for an item
        that did not run: the input sources between policy ticks, and the sources, kinematics
-       and safety checks after the state interfaces could not be read
+       and safety checks after the state interfaces could not be read for more than
+       ``max_failed_reads`` updates
 
 The registry also adds its own ``topic_stats.*`` entries, e.g. how many asynchronous
 publications were attempted and failed.

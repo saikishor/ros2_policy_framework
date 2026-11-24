@@ -89,8 +89,7 @@ in the control loop.
        ages -> fault [label="stale input"];
        read -> execs [label="joint feedback", style=dashed];
        read -> fault [label="unreadable for more\nthan max_failed_reads:\nsafe values + error"];
-       policy -> hold [label="after activation", style=dashed];
-       hold -> execs [style=dashed];
+       hold -> execs [label="after activation", style=dashed];
      }
      hw_out [label="Command interfaces\n(joint efforts)", shape=plaintext, fillcolor=none];
      hw_in -> read;
