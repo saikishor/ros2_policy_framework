@@ -3,7 +3,8 @@ Policies and switching
 
 Several policies can be loaded at once, for example one that walks and one that plays a jump
 motion. Exactly one is *active* at any time. The others stay loaded and ready, so switching
-never loads a model or allocates memory.
+never loads a model; the only work on a switch is a log line and the ``~/active_policies``
+message.
 
 .. code-block:: yaml
 
@@ -39,6 +40,7 @@ is applied at the beginning of the next step, so one step never mixes two polici
      imitation -> loco [label="after 147 steps"];
      imitation -> imitation [label="switch_policy(...)\nrejected"];
      loco -> loco [label="switch_policy(loco)\nrestarts it"];
+     imitation -> loco [label="host reactivated\n(bypasses interruptible)", style=dashed];
    }
 
 Two per-policy parameters shape this:
@@ -88,15 +90,18 @@ past it never saw in training.
    * - Event
      - Effect on the policy's memory
    * - The host is activated
-     - Every policy is **cleared**: previous outputs set to zero, history forgotten. The first
-       step after a clear fills the whole history with the current values, as training does
-       after an environment reset.
+     - Every policy is marked to be **cleared**, and the default policy becomes active. Each
+       policy is cleared when it next becomes active: previous outputs set to zero, history
+       forgotten. The first step after a clear fills the whole history with the current
+       values, as training does after an environment reset.
    * - The policy becomes active
      - It is **reset**: per-activation state starts over (the step counter, the alignment of
        a motion). Its history is kept.
    * - Another policy is active
-     - It **observes** every step: its history keeps following the robot, without running the
-       model.
+     - It **observes** every step, before the active policy's step, with its own previous
+       outputs: its history keeps following the robot, without running the model. An mjlab
+       policy starts observing only once it has run since it was last cleared: before that
+       it has no history to keep current.
 
 The third row is the important one. While the jump plays, the walking policy keeps recording
 what the robot does. When the jump ends, the walking policy resumes with a history of the
@@ -119,12 +124,15 @@ before the jump.
      }
      subgraph cluster_inactive {
        label="Every other policy"; style="rounded,dashed"; fontname="Helvetica";
-       i_pre [label="observe()\nhistory only", fillcolor="#f3e9fb"];
+       i_pre [label="observe()\nhistory only\n(before the active step)", fillcolor="#f3e9fb"];
+       i_out [label="its previous\noutputs", shape=note, fillcolor="#f2f2f2"];
+       i_out -> i_pre;
      }
      commands [label="Command store", shape=cylinder, fillcolor="#fff6d9"];
      state -> a_pre;
      state -> i_pre;
      a_post -> commands;
+     a_inf -> a_pre [label="previous outputs\n(next step)", style=dashed, constraint=false];
    }
 
 Gains follow the policy
