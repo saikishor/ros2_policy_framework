@@ -147,6 +147,13 @@ void PolicyRunner::configure(
       std::shared_ptr<policy_framework_msgs::srv::ListPolicies::Response> res) {
       res->policies = policy_infos_;
     });
+  // Latched, so that a late subscriber gets the current policy (published only on changes).
+  active_pub_ = std::make_unique<
+    realtime_tools::RealtimePublisher<policy_framework_msgs::msg::ActivePolicies>>(
+    node->create_publisher<policy_framework_msgs::msg::ActivePolicies>(
+      "~/active_policies", rclcpp::QoS(1).transient_local()));
+  active_msg_.policies.assign(1, "");
+  active_pending_ = false;
 
   latched_.reset();
   reported_.reset();
@@ -495,7 +502,13 @@ PolicyPipeline::Status PolicyRunner::step(const DataStore & state, DataStore & c
   if (active != last_policy_) {
     RCLCPP_INFO(logger_, "Active policy: '%s'", active.c_str());
     last_policy_ = active;
+    // ponytail: the name copy may allocate, on transitions only like the log above.
+    active_msg_.policies[0] = active;
+    active_pending_ = true;
   }
+  // Retried on the next steps while the previous message is still being published: the topic
+  // is latched, a lost change would stay wrong until the next switch.
+  if (active_pending_ && active_pub_->try_publish(active_msg_)) {active_pending_ = false;}
   if (status != last_status_) {
     if (status == PolicyPipeline::Status::WAITING_FOR_DATA) {
       RCLCPP_WARN(logger_, "Waiting for input data of policy '%s'", active.c_str());

@@ -22,11 +22,13 @@
 #include <vector>
 
 #include "pluginlib/class_loader.hpp"
+#include "realtime_tools/realtime_publisher.hpp"
 #include "policy_framework/core/data_store.hpp"
 #include "policy_framework/core/kinematics.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 #include "policy_framework/core/policy_pipeline.hpp"
 #include "policy_framework/core/safety_monitor.hpp"
+#include "policy_framework_msgs/msg/active_policies.hpp"
 #include "policy_framework_msgs/srv/list_policies.hpp"
 #include "policy_framework_msgs/srv/switch_policy.hpp"
 
@@ -41,8 +43,13 @@ namespace policy_framework
 /**
  * @brief Everything a policy host (standalone node or ros2_control controller) needs: loads the
  *        plugins from parameters, owns the stores, serves `~/switch_policy` and
- *        `~/list_policies` (the loaded policies, policy_framework_msgs/srv/ListPolicies) and
- *        runs the cycle.
+ *        `~/list_policies` (the loaded policies, policy_framework_msgs/srv/ListPolicies),
+ *        publishes `~/active_policies` and runs the cycle.
+ *
+ * `~/active_policies` (policy_framework_msgs/msg/ActivePolicies, latched: transient local,
+ * depth 1) holds the policy step() runs. It is published by step() when the active policy
+ * changes, so first by the first step() after configure; it keeps its last value while no
+ * step() runs (inactive host, latched fault).
  *
  * Parameters:
  * - `sources` (string array): input source names; each needs `<source>.type` (plugin class),
@@ -83,8 +90,8 @@ class PolicyRunner
 {
 public:
   /**
-   * @brief Load and configure every plugin, and create the `~/switch_policy` and
-   *        `~/list_policies` services.
+   * @brief Load and configure every plugin, create the `~/switch_policy` and
+   *        `~/list_policies` services and the `~/active_policies` publisher.
    * @param load_executors Load the `executors` as topic Executor plugins. The controller
    *        passes false and loads them itself as InterfaceExecutor plugins.
    * @param robot_description URDF of the robot; required only by the kinematics.
@@ -189,7 +196,10 @@ public:
    */
   void update_kinematics();
 
-  /// Run one step of the active policy. Never throws; exceptions are reported as ERROR.
+  /**
+   * @brief Run one step of the active policy, and publish `~/active_policies` when it changed.
+   *        Never throws; exceptions are reported as ERROR.
+   */
   PolicyPipeline::Status step() {return step(state_, commands_);}
   /**
    * @brief The same on other stores with the layout of state() and commands() (copies of
@@ -256,6 +266,11 @@ private:
   rclcpp::Service<policy_framework_msgs::srv::ListPolicies>::SharedPtr list_service_;
   /// Response of `~/list_policies`, built at configure.
   std::vector<policy_framework_msgs::msg::PolicyInfo> policy_infos_;
+  std::unique_ptr<realtime_tools::RealtimePublisher<policy_framework_msgs::msg::ActivePolicies>>
+  active_pub_;
+  policy_framework_msgs::msg::ActivePolicies active_msg_;
+  /// active_msg_ is not published yet: try_publish() fails while the previous one is pending.
+  bool active_pending_ = false;
 
   /// A loaded `safety_checks` plugin.
   struct Check
