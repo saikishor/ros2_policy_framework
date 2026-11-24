@@ -14,8 +14,10 @@ it on a robot takes much more than calling that function:
 - and it must stay safe when something is missing, late or wrong.
 
 The framework splits this work into small pieces with one job each. The policy-specific
-pieces are in the middle and never see where the data comes from or goes to. The transport
-pieces are at both ends and never see the model.
+pieces are in the middle and mostly do not see where the data comes from or goes to. The
+transport pieces are at both ends and never see the model. Two exceptions: an observation term
+may subscribe to its own topic (:doc:`extending`), and a postprocessor may send gains to
+another controller (:doc:`mjlab`).
 
 .. graphviz::
 
@@ -31,6 +33,7 @@ pieces are at both ends and never see the model.
      }
      state [label="State store\n(named values)", shape=cylinder, fillcolor="#fff6d9"];
      kin [label="Kinematics\n(optional robot model)"];
+     term_topics [label="Topics\n(observation terms,\nper policy)"];
 
      subgraph cluster_policy {
        label="One policy (there can be several)"; labelloc=b; style="rounded,dashed"; fontname="Helvetica";
@@ -54,20 +57,25 @@ pieces are at both ends and never see the model.
      state -> pre;
      state -> kin;
      kin -> pre [label="link poses", style=dashed];
+     term_topics -> pre;
      post -> commands;
      commands -> topics_out;
      commands -> ifaces_out;
+     state -> ifaces_out [label="joint state\n(PD laws)", style=dashed];
      state -> safety;
-     safety -> pre [label="neutral user commands,\nor not stepped", style=dashed];
+     kin -> safety [label="link poses", style=dashed];
+     safety -> state [label="neutral_commands\nentry", style=dashed];
+     safety -> pre [label="not stepped", style=dashed];
      safety -> topics_out [label="node: stop sending", style=dashed];
      safety -> ifaces_out [label="controller: hold, damp,\nsafe or error", style=dashed];
    }
 
 Read it top to bottom: sensors fill the *state store*; the active policy reads it, runs its
 three stages and fills the *command store*; executors send the commands to the robot. The
-optional kinematics model gives the policies the poses of the robot's links
-(:doc:`kinematics`). The safety checks watch the state store on every cycle. On a fault,
-either the policy keeps running with neutral user commands, or it is no longer stepped: the
+optional kinematics model gives the policies and the safety checks the poses of the robot's
+links (:doc:`kinematics`). The safety checks watch the state store on every cycle. On a fault,
+either the policy keeps running with neutral user commands (the runner sets a state entry that
+closes every ``CommandGate``, see :doc:`safety`), or it is no longer stepped: the
 node stops sending, and the controller's executors hold, damp or zero the joints, or hand
 over to the fallback controllers (:doc:`safety`).
 
@@ -87,7 +95,8 @@ The packages
 
 ``policy_framework_msgs``
    The interfaces: the ``SwitchPolicy`` and ``ListPolicies`` services and the
-   ``ActivePolicies`` topic of the hosts, and the ``MockFault`` message of the
+   ``ActivePolicies`` topic of the hosts (with the ``PolicyInfo`` message they share), and
+   the ``MockFault`` message of the
    ``MockSafetyCheck``.
 
 To support another training framework you would write a package like
@@ -98,8 +107,9 @@ Where the files are
 
 ``policy_framework`` groups its files by the role they play. The same folders appear under
 ``include/policy_framework/`` (headers), ``src/`` (sources), ``test/`` (tests) and
-``params/`` (parameter definitions), so a class, its implementation, its test and its
-parameters are always found under the same path.
+``params/`` (parameter definitions) where they apply, so a class, its implementation, its test
+and its parameters are found under the same path. ``interfaces/`` is header-only, and the
+shared ``topic`` parameter is in ``params/plugins/sources/topic_parameters.yaml``.
 
 .. code-block:: text
 
@@ -191,8 +201,9 @@ These words are used with one meaning throughout the code and the documentation.
    * - Host
      - The program that runs the cycle: the standalone node or the ros2_control controller.
    * - Runner
-     - The part shared by both hosts. It loads the plugins from the parameters and owns the
-       stores and the pipeline.
+     - The part shared by both hosts. It loads the plugins from the parameters (except the
+       controller's ``InterfaceExecutor``\ s, which the controller loads) and owns the stores
+       and the pipeline.
    * - Pipeline
      - Holds all the policies, runs the active one and switches between them.
    * - Step
@@ -204,12 +215,12 @@ These words are used with one meaning throughout the code and the documentation.
        safety check is one, so new ones can be added from other packages.
    * - User command
      - An input a person or a planner sends, such as a velocity command or a motion
-       reference. It is replaced by a *neutral command* (zero velocity, a still stand) when
+       reference. It is replaced by a *neutral command* (for example zero velocity) when
        it times out or must be ignored.
    * - Safety check
      - A test of the state on every cycle: built into the ``SafetyMonitor`` (tilt, joint
-       limits, input age) or a ``SafetyCheck`` plugin. It returns a ``Verdict``: safe or
-       not, and why.
+       limits, input age) or a ``SafetyCheck`` plugin. A plugin returns a ``Verdict``: safe
+       or not, why, and optionally which reaction.
    * - Fault reaction
      - What a failing check makes the host do: ``neutral_commands``, ``hold``, ``damp``,
        ``safe`` or ``error``. Every reaction but ``neutral_commands`` is *latched*: it stays
