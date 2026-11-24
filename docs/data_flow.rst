@@ -41,7 +41,9 @@ policy reads ``leg_left_1_joint/position`` in both cases.
 Entries are created once, while the plugins configure themselves: every plugin *registers*
 the entries it reads or writes and keeps their index. During the control cycle the plugins
 only use those indices. Nothing is looked up by name and nothing is allocated, which keeps
-the cycle fast and predictable.
+the cycle fast and predictable. The exceptions are rare events: a log line and the
+``~/active_policies`` message when the active policy changes, and the reason text of a failing
+check.
 
 The tensors
 -----------
@@ -62,12 +64,14 @@ One step
      edge [fontname="Helvetica", fontsize=10];
 
      sensors [label="Sensors and user commands", shape=plaintext, fillcolor=none];
-     read [label="1. Read inputs\ntopic sources and state interfaces"];
+     read [label="1. Read inputs\ntopic sources\n(+ state interfaces, controller)"];
      state [label="State store", shape=cylinder, fillcolor="#fff6d9"];
      kin [label="2. Kinematics\n(if enabled)"];
      safety [label="3. Safety checks\nmonitor + SafetyCheck plugins", fillcolor="#fff6d9"];
      fault [label="Fault reaction\n(see Safety)", fillcolor="#fde8e8"];
+     start [label="Start of the step\napply a pending switch, clear / reset\nthe active policy, other policies observe()", fillcolor="#f2f2f2"];
      pre [label="4. Preprocessor\nobservation terms + history"];
+     wait [label="Waiting for data:\nnothing sent this step", shape=plaintext, fillcolor=none];
      inf [label="5. Inference\nmodel(obs) = actions"];
      post [label="6. Postprocessor\nscale, offset, gains"];
      commands [label="Command store", shape=cylinder, fillcolor="#fff6d9"];
@@ -75,11 +79,13 @@ One step
      exec [label="8. Executors\npublish or write interfaces"];
      robot [label="Robot", shape=plaintext, fillcolor=none];
 
-     sensors -> read -> state -> kin -> safety -> pre;
+     sensors -> read -> state -> kin -> safety -> start -> pre;
      safety -> fault [label="a check fails"];
+     pre -> wait [label="an input never\nreceived", style=dashed];
      pre -> inf [label="input tensors"];
      inf -> post [label="output tensors"];
-     inf -> fault [label="step fails"];
+     inf -> fault [label="step fails\n(or non-finite output)"];
+     post -> fault [label="step fails"];
      post -> commands -> ages -> exec -> robot;
      ages -> fault [label="an input is stale:\ncommands not applied"];
      inf -> pre [label="previous outputs\n(next step)", style=dashed, constraint=false];
@@ -93,22 +99,26 @@ One step
    applies its reaction (:doc:`safety`). While a reaction other than neutral commands is
    latched, the policy is not stepped: the node sends nothing, the controller's executors
    apply the reaction.
-#. **Preprocessor.** Reads the state store and fills the model's input tensors. This is where
+#. **Preprocessor.** First, a pending policy switch is applied, the active policy is cleared
+   or reset if needed, and every other policy *observes* the state to keep its history
+   current (:doc:`policies`). Then the active preprocessor reads the state store and fills the
+   model's input tensors. This is where
    the observation is built: each observation term computes its current value, and the
    history of past values is kept. If an input has never been received, the preprocessor
    says so and the step is skipped: the policy *waits for data*.
 #. **Inference.** Runs the model. It is the only stage that depends on the model format;
    the framework ships ``OnnxInference`` (ONNX Runtime, on the CPU).
 #. **Postprocessor.** Reads the output tensors and writes named commands: typically a position
-   reference per joint, computed as ``scale * action + offset``. A stage that fails, or a
-   non-finite model output, is a fault (``on_policy_failure``).
+   reference per joint, computed as ``scale * action + offset``. A stage that fails (or throws),
+   or a non-finite model output, is a fault (``on_policy_failure``).
 #. **Input ages.** The terms with their own subscription and a ``max_age`` are checked: if
    one stopped receiving, the step's commands are not applied and its reaction is latched.
 #. **Executors.** Send the command store to the robot.
 
 In the controller only the topic sources and steps 4 to 7 wait for a policy tick; the state
 interfaces, the kinematics, the safety checks and the executors run on every update
-(:doc:`hosts`).
+(:doc:`hosts`). With ``async_inference``, steps 4 to 6 run in the inference thread, and
+step 7 runs in the update that collects their result.
 
 The dashed arrow is the feedback many policies need: the preprocessor also receives the
 outputs of the *previous* step of the same policy. That is how the "last action" observation
@@ -128,7 +138,8 @@ Every entry carries the time its data was produced. The stamps travel with the d
    * - Entry written by a topic source
      - The message header stamp, or the time it is read when the message has none (a Twist)
    * - Entry read from a state interface
-     - The time of the update that read it
+     - The node clock when the update read it (not the update's ``time``), so that it compares
+       with the receive times of the topics
    * - User command term (derived from ``CommandTerm``)
      - The message header stamp, or its receive time when the message has none (a Twist), so
        that its input age is how long ago it arrived; the neutral command is stamped when it
@@ -147,7 +158,7 @@ first as ``observation_age_ms``, the age of each input of the active policy as
 ``input_age_ms.<policy>.<input>``, and the duration of each step as ``step_time_us`` (with
 its stages as ``preprocessor_time_us``, ``inference_time_us`` and ``postprocessor_time_us``)
 and of each item of the update (e.g. ``update_time_us``, ``executors_time_us``) on its own
-topic, ``/<controller>/introspection_data``.
+topics, ``/<controller>/introspection_data/{names,values,full}``.
 
 Introspection
 -------------
@@ -182,7 +193,8 @@ but on its own topic instead of the controller manager's shared
      - Duration of each item of that update: reading the state interfaces, reading the input
        sources (policy ticks only), updating the kinematics, the safety checks, and the
        executors writing the command interfaces (including a fault reaction); 0 for an item
-       that did not run (e.g. after a fault)
+       that did not run: the input sources between policy ticks, and the sources, kinematics
+       and safety checks after the state interfaces could not be read
 
 The registry also adds its own ``topic_stats.*`` entries, e.g. how many asynchronous
 publications were attempted and failed.
@@ -220,9 +232,11 @@ a bag:
    Input ages of the active policy ``loco_v1734``. The state inputs (joint positions and
    velocities, IMU) are read from state interfaces in the same update, so they are 0. Here
    ``actions``, fed back from the previous step's outputs, are about 20 ms old.
-   ``command`` is a user command: its age grows until the next message arrives, then drops
-   back (a command is held until its own timeout). The inputs of the inactive
-   ``imitation_v30`` stay at 0.
+   ``command`` is a user command read by a term derived from ``CommandTerm`` (such as
+   ``TwistCommandTerm``): its age grows until the next message arrives, then drops back (a
+   command is held until its own timeout). Read from a ``TwistSource`` instead, as the
+   Kangaroo configuration now does, it is stamped when the source is read, so its age stays
+   near 0. The inputs of the inactive ``imitation_v30`` stay at 0.
 
 .. figure:: images/plotjuggler_stage_times.png
    :alt: PlotJuggler showing the durations of the preprocessor, inference, postprocessor and
