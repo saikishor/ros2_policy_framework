@@ -2,7 +2,7 @@
 policy_node:
   ros__parameters:
     update_rate: 50.0
-    sources: [joint_states, imu]
+    sources: [joint_states, imu, cmd_vel]
     joint_states:
       type: policy_framework/JointStateSource
       topic: /joint_states
@@ -10,6 +10,12 @@ policy_node:
       type: policy_framework/ImuSource
       topic: /torso_imu_sensor_broadcaster/imu
       sensor_name: torso_imu_sensor
+    # Velocity command of every policy, from one subscription shared by all of them (the
+    # built-in `command` term reads cmd_vel/*); zero when older than timeout.
+    cmd_vel:
+      type: policy_framework/TwistSource
+      topic: /cmd_vel
+      timeout: 1.0
     executors: [reference]
     reference:
       type: policy_framework/MultiDofCommandExecutor

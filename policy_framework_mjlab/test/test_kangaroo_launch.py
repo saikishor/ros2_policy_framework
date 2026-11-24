@@ -17,6 +17,7 @@ import importlib.util
 import os
 
 import pytest
+import yaml
 
 LAUNCH = os.path.join(os.path.dirname(__file__), '..', 'launch', 'kangaroo_mjlab.launch.py')
 spec = importlib.util.spec_from_file_location('kangaroo_mjlab_launch', LAUNCH)
@@ -81,3 +82,25 @@ def test_needs_a_loco_policy_and_existing_models(models):
         launch.policy_parameters(TEMPLATE, models, 'full_body_4dof', [], ['v30'], [300])
     with pytest.raises(FileNotFoundError):
         launch.policy_parameters(TEMPLATE, models, 'full_body_4dof', ['v9'], [], [])
+
+
+CONFIG = os.path.join(os.path.dirname(__file__), '..', 'config', 'kangaroo')
+
+
+def host_parameters(name):
+    with open(os.path.join(CONFIG, name)) as f:
+        # The controller template has @KEY@ placeholders that are not valid YAML values.
+        return yaml.safe_load(f.read().replace('@ASYNC_INFERENCE@', 'false'))
+
+
+@pytest.mark.parametrize('host, node', [('policy_node.yaml', 'policy_node'),
+                                        ('policy_controller.yaml', 'policy_controller')])
+def test_velocity_command_comes_from_one_shared_source(host, node):
+    # One /cmd_vel subscription for every policy, not one TwistCommandTerm per policy.
+    params = host_parameters(host)[node]['ros__parameters']
+    assert 'cmd_vel' in params['sources']
+    assert params['cmd_vel'] == {'type': 'policy_framework/TwistSource', 'topic': '/cmd_vel',
+                                 'timeout': 1.0}
+    with open(os.path.join(CONFIG, 'policies.yaml')) as f:
+        template = yaml.safe_load(f)
+    assert all('terms' not in policy for policy in template.values())
