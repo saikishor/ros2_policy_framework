@@ -123,11 +123,11 @@ void PolicyRunner::configure(
 
   configure_safety(node, params, robot_description);
 
-  switch_service_ = node->create_service<srv::SwitchPolicy>(
+  switch_service_ = node->create_service<policy_framework_msgs::srv::SwitchPolicy>(
     "~/switch_policy",
     [this](
-      const std::shared_ptr<srv::SwitchPolicy::Request> req,
-      std::shared_ptr<srv::SwitchPolicy::Response> res) {
+      const std::shared_ptr<policy_framework_msgs::srv::SwitchPolicy::Request> req,
+      std::shared_ptr<policy_framework_msgs::srv::SwitchPolicy::Response> res) {
       res->success = pipeline_->request_switch(req->policy_name, res->message);
       RCLCPP_INFO(logger_, "switch_policy: %s", res->message.c_str());
     });

@@ -27,7 +27,7 @@
 #include "policy_framework/plugin_interfaces.hpp"
 #include "policy_framework/core/policy_pipeline.hpp"
 #include "policy_framework/core/safety_monitor.hpp"
-#include "policy_framework/srv/switch_policy.hpp"
+#include "policy_framework_msgs/srv/switch_policy.hpp"
 
 namespace policy_runner
 {
@@ -248,7 +248,7 @@ private:
   std::unique_ptr<PolicyPipeline> pipeline_ = std::make_unique<PolicyPipeline>();
   DataStore state_;
   DataStore commands_;
-  rclcpp::Service<srv::SwitchPolicy>::SharedPtr switch_service_;
+  rclcpp::Service<policy_framework_msgs::srv::SwitchPolicy>::SharedPtr switch_service_;
 
   /// A loaded `safety_checks` plugin.
   struct Check

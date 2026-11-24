@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include "policy_framework/msg/mock_fault.hpp"
+#include "policy_framework_msgs/msg/mock_fault.hpp"
 #include "policy_framework/plugins/safety/safety_checks.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -303,7 +303,7 @@ protected:
     exec.add_node(node->get_node_base_interface());
     exec.add_node(helper);
     check.configure({node, "mock"}, commands, state);
-    pub = helper->create_publisher<policy_framework::msg::MockFault>(topic, 10);
+    pub = helper->create_publisher<policy_framework_msgs::msg::MockFault>(topic, 10);
   }
 
   // It arrived between `sent` and the returned time (node clock, seconds).
@@ -312,7 +312,7 @@ protected:
     double duration = 0.0)
   {
     for (int i = 0; i < 100 && pub->get_subscription_count() == 0; ++i) {spin_for(10);}
-    policy_framework::msg::MockFault msg;
+    policy_framework_msgs::msg::MockFault msg;
     msg.fault = fault;
     msg.reaction = reaction;
     msg.reason = fault_reason;
@@ -334,7 +334,7 @@ protected:
   rclcpp_lifecycle::LifecycleNode::SharedPtr node;
   rclcpp::Node::SharedPtr helper;
   rclcpp::executors::SingleThreadedExecutor exec;
-  rclcpp::Publisher<policy_framework::msg::MockFault>::SharedPtr pub;
+  rclcpp::Publisher<policy_framework_msgs::msg::MockFault>::SharedPtr pub;
   policy_framework::MockSafetyCheck check;
   DataStore commands;
   DataStore state;
