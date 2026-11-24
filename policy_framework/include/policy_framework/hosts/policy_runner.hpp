@@ -27,6 +27,7 @@
 #include "policy_framework/plugin_interfaces.hpp"
 #include "policy_framework/core/policy_pipeline.hpp"
 #include "policy_framework/core/safety_monitor.hpp"
+#include "policy_framework_msgs/srv/list_policies.hpp"
 #include "policy_framework_msgs/srv/switch_policy.hpp"
 
 namespace policy_runner
@@ -39,7 +40,9 @@ namespace policy_framework
 
 /**
  * @brief Everything a policy host (standalone node or ros2_control controller) needs: loads the
- *        plugins from parameters, owns the stores, serves `~/switch_policy` and runs the cycle.
+ *        plugins from parameters, owns the stores, serves `~/switch_policy` and
+ *        `~/list_policies` (the loaded policies, policy_framework_msgs/srv/ListPolicies) and
+ *        runs the cycle.
  *
  * Parameters:
  * - `sources` (string array): input source names; each needs `<source>.type` (plugin class),
@@ -80,7 +83,8 @@ class PolicyRunner
 {
 public:
   /**
-   * @brief Load and configure every plugin, and create the `~/switch_policy` service.
+   * @brief Load and configure every plugin, and create the `~/switch_policy` and
+   *        `~/list_policies` services.
    * @param load_executors Load the `executors` as topic Executor plugins. The controller
    *        passes false and loads them itself as InterfaceExecutor plugins.
    * @param robot_description URDF of the robot; required only by the kinematics.
@@ -249,6 +253,9 @@ private:
   DataStore state_;
   DataStore commands_;
   rclcpp::Service<policy_framework_msgs::srv::SwitchPolicy>::SharedPtr switch_service_;
+  rclcpp::Service<policy_framework_msgs::srv::ListPolicies>::SharedPtr list_service_;
+  /// Response of `~/list_policies`, built at configure.
+  std::vector<policy_framework_msgs::msg::PolicyInfo> policy_infos_;
 
   /// A loaded `safety_checks` plugin.
   struct Check
