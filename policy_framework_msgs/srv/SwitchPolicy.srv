@@ -1,0 +1,9 @@
+# Activate a policy of a policy_framework runner (node or controller).
+# The switch is applied at the start of the next control cycle.
+
+# Name of the policy to activate, as listed in the `policies` parameter.
+string policy_name
+---
+# false when the policy is unknown or the active policy is not interruptible.
+bool success
+string message
