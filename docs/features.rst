@@ -12,7 +12,8 @@ One configuration, two hosts
   ``use_sim_time``.
 - **ros2_control controller** (``PolicyController``): state interfaces and/or topics in,
   command interfaces out, inside the control loop.
-- The same policy configuration runs in both. Only the sources and executors change.
+- The same policy configuration runs in both. Mainly the sources and executors change, plus
+  how the gains reach the joints (for example ``gains_as_commands`` for ``PdEffortExecutor``).
 
 See :doc:`hosts`.
 
@@ -26,7 +27,7 @@ Real-time control loop
   ros2_control ``is_async`` option is supported too.
 - **No allocation in the cycle**: entries are registered while configuring, and the cycle
   only uses indices. All models are loaded at configuration, so switching policies never loads
-  or allocates.
+  a model; the only work on a switch is a log line and the ``~/active_policies`` message.
 - **Unreadable state interfaces** (for example locked by an asynchronous hardware component)
   are tolerated for up to ``max_failed_reads`` updates.
 
@@ -71,7 +72,7 @@ Safety built in
 - **Hold until ready**: from activation until the policy's first commands, the executors hold
   the robot where it is.
 - **Neutral commands**: while ``safety_entry`` is 0, user commands are ignored and the policy
-  keeps balancing with neutral commands (zero velocity, a still stand).
+  keeps balancing with neutral commands (for example zero velocity).
 - **Command timeouts**: a command that stops arriving falls back to the neutral command after
   its ``timeout``, which catches an operator who stopped sending.
 - **Built-in checks**: base tilt, joint position limits from the robot description, and the
@@ -95,9 +96,10 @@ Timing you can see
 
 - **Time stamps everywhere**: every value carries the time its data was produced, from the
   sensor to the command.
-- **Introspection**: the controller publishes the duration of each policy step and of its
-  preprocessor, inference and postprocessor, the age of the observation it acted on, and the
-  age of each input of the active policy on its own topic, ``/<controller>/introspection_data``.
+- **Introspection**: the controller publishes the duration of each update and of each of its
+  items, of each policy step and of its preprocessor, inference and postprocessor, the age of
+  the observation it acted on, and the age of each input of the active policy on its own
+  topics, ``/<controller>/introspection_data/{names,values,full}``.
 
 See :doc:`data_flow`.
 
@@ -135,8 +137,10 @@ Easy to extend
 - **Observation terms**: replace or add a single term of an mjlab observation without writing
   a preprocessor. ``TopicTerm`` owns the subscription, and ``CommandTerm`` handles the gate,
   the timeout and the stamps of a user command so that a term cannot forget them.
-- **Validated parameters**: every parameter is declared with generate_parameter_library, and
-  an invalid value fails configuration with the parameter name.
+- **Validated parameters**: the parameters are declared with generate_parameter_library, and
+  an invalid value fails configuration with the parameter name. The observation term
+  parameters (``terms.<term>.*``) are declared when the term is configured and checked by its
+  code.
 
 See :doc:`extending`.
 
