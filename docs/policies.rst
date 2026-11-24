@@ -54,6 +54,26 @@ Two per-policy parameters shape this:
 A third one, ``disabled_safety_checks``, skips some safety checks while the policy is active,
 for instance a joint velocity bound during a jump; see :ref:`checks-per-policy`.
 
+What is loaded and what runs
+----------------------------
+
+The ``~/list_policies`` service (``policy_framework_msgs/srv/ListPolicies``) returns the
+loaded policies in the order of ``policies``, the first being the default, with their stage
+plugins, ``max_steps`` and ``interruptible``.
+
+The ``~/active_policies`` topic (``policy_framework_msgs/msg/ActivePolicies``) holds the
+policies being run. It is an array so that it can list several policies running at once;
+today it holds exactly one. It is published from the step when the active policy changes
+(a switch, the end of a ``max_steps`` motion, a reactivation of the host), first at the
+first step after the host is configured. It is latched (transient local, depth 1): a
+subscriber with a transient local QoS gets the current value when it joins, and the value
+stays while no step runs (host inactive, latched fault).
+
+.. code-block:: bash
+
+   ros2 service call /policy_controller/list_policies policy_framework_msgs/srv/ListPolicies
+   ros2 topic echo --qos-durability transient_local /policy_controller/active_policies
+
 What a policy remembers
 -----------------------
 

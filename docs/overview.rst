@@ -86,8 +86,9 @@ The packages
    launch file for the Kangaroo robot.
 
 ``policy_framework_msgs``
-   The interfaces: the ``SwitchPolicy`` service of the hosts and the ``MockFault`` message of
-   the ``MockSafetyCheck``.
+   The interfaces: the ``SwitchPolicy`` and ``ListPolicies`` services and the
+   ``ActivePolicies`` topic of the hosts, and the ``MockFault`` message of the
+   ``MockSafetyCheck``.
 
 To support another training framework you would write a package like
 ``policy_framework_mjlab``, without changing ``policy_framework``.
