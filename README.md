@@ -26,7 +26,7 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 ### Repository layout
 
 `policy_framework` groups its files by role, with the same folders under `include/policy_framework/`,
-`src/`, `test/` and `params/` (parameter definitions):
+`src/`, `test/` and `params/` (parameter definitions), where they apply (`interfaces/` is header-only):
 
 | Folder | Content | Example include |
 |--------|---------|-----------------|
@@ -52,7 +52,7 @@ Test models and URDF are in `policy_framework/test/fixtures/`.
  │                │                 │   │                                        │   │  Executor plugins       │
  └────────────────┼─────────────────┘   └────────────────────────────────────────┘   └─────────────────────────┘
                   ▼
-   safety: SafetyMonitor + SafetyCheck plugins ──▶ fault reaction (neutral commands, hold, damp, safe, error)
+   safety: SafetyMonitor + SafetyCheck plugins ──▶ fault reaction (neutral commands via a state entry, hold, damp, safe, error)
 ```
 
 - **DataStore**: flat table of named scalars, named like ros2_control interfaces
@@ -203,8 +203,9 @@ or, chaining into a pid_controller that closes the loop:
 All parameters are declared and validated with
 [generate_parameter_library](https://github.com/PickNikRobotics/generate_parameter_library)
 (definitions in the `params/` YAML files of each package), read at configure time and read-only, except
-the on-demand `<policy>.terms.<term>.type`. Invalid values fail configuration with the parameter
-name. Write floating point values with a decimal point (`50.0`).
+the observation term parameters (`<policy>.terms.<term>.type`, `.max_age`, `.max_age_on_fault`,
+`.timeout`, ...), which are declared when the term is configured and checked by its code. Invalid
+values fail configuration with the parameter name. Write floating point values with a decimal point (`50.0`).
 
 | Parameter | Description |
 |-----------|-------------|
@@ -230,7 +231,7 @@ name. Write floating point values with a decimal point (`50.0`).
 | `async_inference`, `inference_thread_priority` | Controller: policy step in its own thread (default false), its priority (default 40) |
 | `update_rate` | Node: policy rate in Hz (default 50) |
 | `autostart` | Node: configure and activate on startup (default true) |
-| `robot_description` | Node: URDF for the kinematics (the controller uses the controller manager's) |
+| `robot_description` | Node: URDF for the kinematics and `safety.joint_position_limits` (the controller uses the controller manager's) |
 
 ### Policy switching
 
@@ -246,7 +247,8 @@ and it resumes from the real recent past. The memory is cleared only before its 
 activation and on every (re)activation of the node/controller, which also restarts the first
 policy. Per policy, `max_steps` (default 0 = unlimited) returns to the first policy
 after N steps (e.g. a jump motion), and `interruptible: false` rejects switches while it runs.
-All models are loaded at configuration: switching never loads or allocates.
+All models are loaded at configuration: switching never loads a model; the only work on a
+switch is a log line and the `~/active_policies` message.
 
 The loaded policies (name, stage plugins, `max_steps`, `interruptible`; the first one is the
 default) are listed by the `~/list_policies` service. The `~/active_policies` topic holds the
@@ -286,10 +288,10 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/OnnxInference` | Inference | `model_path` (file, or directory: its first `.onnx` by name), `num_threads` (1); float32 tensors, dynamic dimensions fixed to 1 |
 | `policy_framework/JointStateSource` | InputSource | `topic`, `joints` (empty = any) → `<joint>/position\|velocity\|effort` |
 | `policy_framework/ImuSource` | InputSource | `topic`, `sensor_name` (source name) → `<sensor>/orientation.*`, `angular_velocity.*`, `linear_acceleration.*` |
-| `policy_framework/TwistSource` | InputSource | `topic`, `timeout` (1.0 s, above zero; on the receive time) → `<name>/linear.*`, `angular.*`, stamped now; zero when absent or stale |
+| `policy_framework/TwistSource` | InputSource | `topic`, `timeout` (1.0 s, above zero; on the receive time) → `<name>/linear.*`, `angular.*`, stamped now; zero when absent, stale or gated (`safety_entry`, `neutral_commands`) |
 | `policy_framework/OdometrySource` | InputSource | `topic` → `<name>/position.*`, `orientation.*`, `linear.*`, `angular.*` |
 | `policy_framework/MultiDofCommandExecutor` | Executor (node) | `topic`, `values_interface` (`position`), `values_dot_interface` (`velocity`, empty: 0); drops a message while the previous one is being published |
-| `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions: `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; a joint with a missing or non-finite value is left unchanged |
+| `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions: `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; in `HOLD` and `DAMP` a joint with a missing value gets zero effort. Outside faults a joint with a missing or non-finite value is left unchanged |
 | `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `<interface>.hysteresis` (0: once failed, passes again only within the bounds narrowed by it), `trigger_cycles` (1), `escalation.count` (0: never) / `escalation.on_fault` (`error`): from that many entries failing at once, asks for that reaction instead of its `on_fault`; a non-finite value is out of bounds, an entry never received is not checked |
 | `policy_framework/JumpCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.max_delta` (required): fails on a change above it between two cycles (e.g. an encoder glitch) or a non-finite value; do not use on wrapping values |
 | `policy_framework/MockSafetyCheck` | SafetyCheck | `topic` (`~/<name>`, `policy_framework_msgs/msg/MockFault`), `reactions` (default empty): fails while the latest message has `fault: true`, with its `reaction` (empty: `on_fault`; must be listed in `reactions`, else `error`) and for its `duration` (s, 0: until the next message); reactivation forgets the latest message. For testing how the robot reacts to a fault only, see [safety](docs/safety.rst) |
@@ -436,9 +438,10 @@ ros2 service call /policy_controller/switch_policy policy_framework_msgs/srv/Swi
 | `use_sim_time` | `false` (node mode only) |
 
 The controller manager must be started with this workspace sourced to find the controller
-plugin. In node mode the launch shuts down (unloading `rl_impedance_controller`) when the
-policy node exits. Configuration in `policy_framework_mjlab/config/kangaroo`: `policies.yaml`
-(settings per policy kind, shared by both hosts; the launch makes one policy per version),
+plugin. In node mode the launch shuts down (unloading `rl_impedance_controller` when it was
+spawned active) when the policy node exits. Configuration in `policy_framework_mjlab/config/kangaroo`: `policies.yaml`
+(settings per policy kind, shared by both hosts; the launch makes one policy per version and,
+in the controller modes, sets `gains_controller` to empty and `gains_as_commands` to true),
 `policy_controller.yaml`, `policy_node.yaml`,
 `<robot_type>_impedance.yaml` (pid_controller, node mode).
 
