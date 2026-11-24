@@ -85,10 +85,10 @@ The life of a plugin
      configure [label="configure()\nread parameters,\nregister entries,\nallocate", fillcolor="#fff6d9"];
      cycle [label="Control cycle\ncompute() / read() / write() / check()\nindices only, no allocation", fillcolor="#e8f5e9"];
      reset [label="reset() / clear()\nforget per-run state"];
-     configure -> reset [label="host activated"];
+     configure -> reset [label="policy first activated"];
      reset -> cycle;
      cycle -> cycle [label="every step\nor update"];
-     cycle -> reset [label="policy activated,\nhost reactivated", style=dashed];
+     cycle -> reset [label="policy activated\n(clear() too after a\nhost reactivation)", style=dashed];
    }
 
 Two phases, with different rules:
@@ -105,9 +105,11 @@ look anything up by name, or log on every call.
 Parameters
 ~~~~~~~~~~
 
-A plugin receives a ``PluginContext``: the node, its own name, and the kinematics if
-enabled. Its parameters live under its name, so two policies can use the same plugin class
-with different settings:
+A plugin receives a ``PluginContext``: the node, its own name, the kinematics if enabled,
+and the name of the safety entry. The kinematics is given to the policy stages and their
+observation terms (the model of the state the step reads) and to the safety checks (the
+host's model), not to input sources or executors (:doc:`kinematics`). Its parameters live
+under its name, so two policies can use the same plugin class with different settings:
 
 .. code-block:: yaml
 
@@ -124,6 +126,8 @@ makes the host fault when the topic stops (:doc:`safety`):
 
 .. code-block:: cpp
 
+   #include "geometry_msgs/msg/point_stamped.hpp"
+   #include "pluginlib/class_list_macros.hpp"
    #include "policy_framework/interfaces/observation_term.hpp"
 
    using namespace policy_framework;
@@ -175,8 +179,8 @@ does what keeps a command safe, so that no command term can forget it:
 
 - the neutral command before the first message, once the last one was received longer ago
   than ``timeout`` (above zero), while ``usable()`` refuses the message, and while the
-  ``CommandGate`` is closed (the safety entry is 0, or the ``NEUTRAL_COMMANDS`` reaction is
-  active);
+  ``CommandGate`` is closed (the safety entry has not been received or is not above 0, or the
+  ``NEUTRAL_COMMANDS`` reaction is active);
 - the stamp: the header stamp when the message type has one and it is set, else the receive
   time, so that the input age of the command is how long ago it arrived (the neutral command
   is stamped now);
@@ -343,15 +347,27 @@ the situations described in the other pages:
        its ``max_age`` after each policy step. ``TopicTerm`` implements it (with the
        ``max_age`` and ``max_age_on_fault`` parameters); a term reading the state store has
        none.
+   * - ``InputSource::provides()``
+     - While configuring: whether the source writes an entry. The controller claims every
+       entry no source provides as a state interface; the node fails to configure instead.
+   * - ``Preprocessor::input_stamps()``
+     - After each step: one stamp per input. They make the observation stamp, the term
+       ``max_age`` checks and the ``input_age_ms.*`` introspection (:doc:`data_flow`).
    * - ``Preprocessor::clear()``
-     - Before the first activation and when the host restarts: forget everything.
+     - When the policy is activated for the first time, and for its first activation after
+       the host is reactivated: forget everything.
    * - ``Preprocessor::reset()``, ``Postprocessor::reset()``, ``ObservationTerm::reset()``
      - Whenever the policy becomes active: restart per-activation state.
    * - ``Preprocessor::observe()``
      - Every step while another policy is active: keep a history current
        (:doc:`policies`).
    * - ``Postprocessor::initial_commands()``
-     - When the host starts: write what is known before the first step, such as gains.
+     - When the host starts, for the default (first) policy only: write what is known before
+       the first step, such as gains.
+   * - ``InterfaceExecutor::state_entries()``
+     - While configuring: the state entries the executor reads (e.g. the feedback of a PD
+       law). They must come from state interfaces: configuration fails if an input source
+       provides one.
    * - ``InterfaceExecutor::hold()``
      - Every update until the policy's first commands: keep the robot where it is
        (:doc:`safety`).
@@ -364,12 +380,14 @@ the situations described in the other pages:
        with one an executor does not support.
    * - ``SafetyCheck::possible_reactions()``
      - Once configured: the reactions a ``Verdict`` may ask for besides ``on_fault``. The
-       host refuses to configure when an executor cannot apply one. Default: none.
+       ``PolicyController`` refuses to configure when an executor cannot apply one. Default:
+       none.
    * - ``SafetyCheck::reset()``
      - When the host is reactivated, and when a check disabled by the previous policy
        applies again (:ref:`checks-per-policy`): forget filters and counters.
    * - ``CommandGate::open()``
-     - False while the safety entry is 0 or the ``NEUTRAL_COMMANDS`` fault reaction is active
+     - False while the safety entry has not been received or is not above 0, or the
+       ``NEUTRAL_COMMANDS`` fault reaction is active
        (:doc:`safety`). Any plugin that feeds user commands checks it and writes a neutral
        command while it is false, and also after a timeout above zero, measured on the
        receive time. A ``CommandTerm`` does both for a term.
