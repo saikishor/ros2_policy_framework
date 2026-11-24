@@ -53,6 +53,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_term_max_age ${PROJECT_NAME})
   target_compile_definitions(test_term_max_age PRIVATE
     TEST_MODEL="${CMAKE_CURRENT_SOURCE_DIR}/../policy_framework/test/fixtures/models/sensor.onnx")
+  ament_add_gtest(test_shared_command_source test/test_shared_command_source.cpp)
+  target_link_libraries(test_shared_command_source ${PROJECT_NAME})
+  target_compile_definitions(test_shared_command_source PRIVATE
+    TEST_MODEL="${CMAKE_CURRENT_SOURCE_DIR}/../policy_framework/test/fixtures/models/command.onnx")
   ament_add_gtest(test_shipped_models test/test_shipped_models.cpp TIMEOUT 300)
   target_link_libraries(test_shipped_models ${PROJECT_NAME})
   ament_add_pytest_test(test_kangaroo_launch test/test_kangaroo_launch.py)
