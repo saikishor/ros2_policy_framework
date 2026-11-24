@@ -4,7 +4,8 @@ mjlab policies
 ``policy_framework_mjlab`` runs policies trained with mjlab and exported to ONNX. The export
 stores, next to the network, *metadata* describing how it must be used: the joints, the
 observation terms, the action scale, the gains. The two stages of this package read that
-metadata, so a policy needs almost no configuration: point ``model_path`` at the file.
+metadata, so a policy needs almost no configuration: point ``model_path`` at the file, or at
+a directory holding it (its first ``.onnx`` file is used).
 
 .. graphviz::
 
@@ -13,9 +14,9 @@ metadata, so a policy needs almost no configuration: point ``model_path`` at the
      node [shape=box, style="rounded,filled", fillcolor="#eef3fb", fontname="Helvetica", fontsize=11];
      edge [fontname="Helvetica", fontsize=10];
      onnx [label="ONNX file\nnetwork + metadata", shape=note, fillcolor="#fff6d9"];
-     pre [label="MjlabPreprocessor\nobservation_names,\njoint_names, defaults"];
+     pre [label="MjlabPreprocessor\nobservation_names, command_names,\njoint_names, defaults\n(+ pal_mjlab keys)"];
      inf [label="OnnxInference"];
-     post [label="MjlabPostprocessor\naction_scale, defaults,\nstiffness, damping"];
+     post [label="MjlabPostprocessor\naction_scale, defaults,\nstiffness, damping\n(+ action_joint_names, action_offset)"];
      onnx -> pre [style=dashed, label="metadata"];
      onnx -> inf [style=dashed, label="network"];
      onnx -> post [style=dashed, label="metadata"];
@@ -38,11 +39,12 @@ preprocessor keeps the history and lays everything out in the input tensor.
      edge [fontname="Helvetica", fontsize=10];
      state [label="State store", shape=cylinder, fillcolor="#fff6d9"];
      prev [label="Previous outputs", shape=cylinder, fillcolor="#fff6d9"];
-     topic [label="State store, or a topic\n(TwistCommandTerm)", shape=plaintext, fillcolor=none];
+     topic [label="Velocity policy: state store\n(TwistSource) or a topic\n(TwistCommandTerm)", shape=plaintext, fillcolor=none];
+     motion [label="Motion policy: previous\njoint_pos + joint_vel outputs", shape=plaintext, fillcolor=none];
      t1 [label="base_ang_vel\ncurrent value (3)"];
      t2 [label="joint_pos\ncurrent value (n)"];
      t3 [label="actions\ncurrent value (m)"];
-     t4 [label="command\ncurrent value (3)"];
+     t4 [label="command\ncurrent value\n(3, or 2n for a motion)"];
      h [label="History of each term\noldest ... newest", fillcolor="#f3e9fb"];
      obs [label="obs tensor\n[ base_ang_vel history | joint_pos history | actions history | command history ]",
           fillcolor="#e8f5e9"];
@@ -50,6 +52,7 @@ preprocessor keeps the history and lays everything out in the input tensor.
      state -> t2;
      prev -> t3;
      topic -> t4;
+     motion -> t4;
      t1 -> h; t2 -> h; t3 -> h; t4 -> h;
      h -> obs;
    }
@@ -90,8 +93,9 @@ The terms
      - The raw action of the previous step
    * - ``command``, ``velocity_command``
      - The velocity the user asks for: forward, sideways, turning
-   * - ``command`` of a motion policy
-     - The joint reference the policy itself predicted at the previous step
+   * - ``command`` of a motion policy (``command_names`` is ``motion``)
+     - The joint positions and velocities the policy itself predicted at the previous step;
+       the measured joint state on the first step after it becomes active
 
 Any term can be replaced, and new ones added, without touching the preprocessor: set
 ``<policy>.terms.<name>.type`` to an ``ObservationTerm`` plugin, e.g. to read the velocity
@@ -109,7 +113,8 @@ command straight from its topic:
 A topic term subscribes once per policy. When many policies take the same command, use one
 ``TwistSource`` on the host instead (``sources: [cmd_vel]``) and leave the built-in ``command``
 term: every policy reads the shared ``cmd_vel/*`` entries from a single subscription. The
-Kangaroo configuration does this.
+source name must match the preprocessor's ``velocity_command_name`` (default ``cmd_vel``).
+The Kangaroo configuration does this.
 
 pal_mjlab exports
 -----------------
@@ -137,14 +142,18 @@ The last one matters because the IMU is not always mounted on the base. With
 ``goal_root_body`` set, the terms ``base_ang_vel`` and ``base_projected_gravity`` describe
 that link: the IMU measurement is moved to it with the :doc:`kinematics`. This needs
 ``kinematics.enabled`` and the parameter ``imu_frame`` (the URDF link of the IMU).
+``base_projected_gravity`` cannot be used without ``goal_root_body``.
 
 From actions to commands
 ------------------------
 
-The postprocessor writes, for each joint the policy drives::
+The postprocessor writes, for each joint the policy drives (``action_joint_names``, or the
+metadata joints minus ``excluded_joints``)::
 
-   <joint>/position = action_scale * action + offset
-   <joint>/velocity = 0
+   <joint>/<position_interface> = action_scale * action + offset
+   <joint>/<velocity_interface> = 0      (not written when velocity_interface is empty)
+
+``position_interface`` and ``velocity_interface`` default to ``position`` and ``velocity``.
 
 These are *references* for a joint PD loop. The gains of that loop are part of the policy
 (``joint_stiffness``, ``joint_damping`` in the metadata) and reach it in one of two ways:
@@ -157,18 +166,18 @@ These are *references* for a joint PD loop. The gains of that loop are part of t
      edge [fontname="Helvetica", fontsize=10];
      post [label="MjlabPostprocessor\ngains of the policy"];
      subgraph cluster_a {
-       label="gains_as_commands (controller)"; style="rounded,dashed"; fontname="Helvetica";
+       label="gains_as_commands (e.g. Kangaroo controller modes)"; style="rounded,dashed"; fontname="Helvetica";
        cmd [label="Command entries\n<joint>/stiffness\n<joint>/damping", shape=cylinder, fillcolor="#fff6d9"];
        pd [label="PdEffortExecutor\nPD law, every update", fillcolor="#e8f5e9"];
        cmd -> pd;
      }
      subgraph cluster_b {
-       label="gains_controller (node)"; style="rounded,dashed"; fontname="Helvetica";
+       label="gains_controller (e.g. Kangaroo node mode)"; style="rounded,dashed"; fontname="Helvetica";
        params [label="Parameters\ngains.<joint>.p / .d"];
        pid [label="pid_controller\nin ros2_control", fillcolor="#e8f5e9"];
        params -> pid;
      }
-     post -> cmd [label="every step"];
+     post -> cmd [label="every step, and before the\nfirst one (initial_commands,\ndefault policy)"];
      post -> params [label="when the policy\nbecomes active"];
    }
 
@@ -179,7 +188,9 @@ These are *references* for a joint PD loop. The gains of that loop are part of t
 
 ``gains_controller``
    The gains are set as parameters of a separate ``pid_controller`` each time the policy
-   becomes active, retried until that controller answers.
+   becomes active. They are sent from a 0.5 s timer, which waits for that controller's
+   parameter services; only the latest request is sent, and a rejected parameter is logged,
+   not retried. Until they arrive, the new references run with the previous gains.
 
 The Kangaroo example
 --------------------
@@ -207,5 +218,7 @@ It runs in three modes:
        as parameters
 
 The settings of each kind of policy are written once, in ``config/kangaroo/policies.yaml``, and
-shared by the three modes; the launch copies them into one policy per version. Only the
-host-specific file differs. The README has the commands.
+shared by the three modes; the launch copies them into one policy per version. Apart from
+the host-specific file, only the gains differ: in the controller modes the launch sets
+``gains_controller`` to empty and ``gains_as_commands`` to true on every policy. The README
+has the commands.
