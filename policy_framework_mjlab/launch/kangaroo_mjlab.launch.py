@@ -27,7 +27,7 @@ loco_models and imitation_models take comma-separated versions, one policy each,
 loco_<version> and imitation_<version>. The first loco policy is active at start and every
 imitation returns to it after its imitation_frames. Switch with:
   ros2 service call /<policy_node|policy_controller>/switch_policy \
-    policy_framework/srv/SwitchPolicy "{policy_name: imitation_v30}"
+    policy_framework_msgs/srv/SwitchPolicy "{policy_name: imitation_v30}"
 """
 
 import copy
