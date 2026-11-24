@@ -20,7 +20,7 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 | Package | Content |
 |---------|---------|
 | `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`, `CommandTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck`, `JumpCheck` and `MockSafetyCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks)|
-| `policy_framework_msgs` | Interfaces: the `SwitchPolicy` service and the `MockFault` message |
+| `policy_framework_msgs` | Interfaces: the `SwitchPolicy` and `ListPolicies` services, the `ActivePolicies` and `PolicyInfo` messages and the `MockFault` message |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` observation term and the Kangaroo deployment config/launch |
 
 ### Repository layout
@@ -247,6 +247,18 @@ activation and on every (re)activation of the node/controller, which also restar
 policy. Per policy, `max_steps` (default 0 = unlimited) returns to the first policy
 after N steps (e.g. a jump motion), and `interruptible: false` rejects switches while it runs.
 All models are loaded at configuration: switching never loads or allocates.
+
+The loaded policies (name, stage plugins, `max_steps`, `interruptible`; the first one is the
+default) are listed by the `~/list_policies` service. The `~/active_policies` topic holds the
+policies being run, as an array for when several can run at once (today exactly one). It is
+latched (transient local, depth 1) and published when the active policy changes, first at the
+first step after the host is configured; it keeps its last value while no step runs (host
+inactive, latched fault). Subscribe with a transient local QoS to get the current value:
+
+```bash
+ros2 service call /<node or controller>/list_policies policy_framework_msgs/srv/ListPolicies
+ros2 topic echo --qos-durability transient_local /<node or controller>/active_policies
+```
 
 ### Kinematics
 

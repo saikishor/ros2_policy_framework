@@ -54,6 +54,8 @@ Several policies, switched at runtime
 
 - **Load several policies at once** and switch between them with the ``switch_policy``
   service while the robot moves. A switch applies at the start of the next step.
+- **See what is loaded and running**: the ``list_policies`` service lists the loaded policies,
+  the latched ``active_policies`` topic tells which one runs.
 - **Warm memory**: an inactive policy keeps observing every step, so its observation history
   follows the robot and it resumes from the real recent past.
 - **Motions that end**: ``max_steps`` returns to the first policy after N steps (for example a
