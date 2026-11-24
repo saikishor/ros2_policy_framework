@@ -182,7 +182,7 @@ jump. Do not use it on values that wrap, such as the position of a continuous jo
 
 ``MockSafetyCheck`` fails on request, to see how the robot really reacts to a fault at a chosen
 moment (standing, walking, during a jump) before a real one happens. It subscribes to
-``topic`` (default ``~/<name>``, ``policy_framework/msg/MockFault``) and fails on every cycle
+``topic`` (default ``~/<name>``, ``policy_framework_msgs/msg/MockFault``) and fails on every cycle
 while the latest message has ``fault: true``, with the message's ``reaction`` (empty: its
 ``on_fault``), for its ``duration`` in seconds (0: until the next message). A message may
 ask only for the reactions listed in ``reactions``, which the host checks against its
@@ -200,13 +200,13 @@ forgets the latest message, so that the robot does not fault again at once:
 
 .. code-block:: bash
 
-   ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault \
+   ros2 topic pub --once /policy_controller/mock policy_framework_msgs/msg/MockFault \
      "{fault: true, reaction: damp, reason: 'test while walking'}"
    # neutral_commands recovers once the check passes again: here after 2 s by itself
-   ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault \
+   ros2 topic pub --once /policy_controller/mock policy_framework_msgs/msg/MockFault \
      "{fault: true, reaction: neutral_commands, duration: 2.0}"
    # or until told otherwise
-   ros2 topic pub --once /policy_controller/mock policy_framework/msg/MockFault "{fault: false}"
+   ros2 topic pub --once /policy_controller/mock policy_framework_msgs/msg/MockFault "{fault: false}"
 
 Remove it from the configuration outside of testing: anyone who can publish on its topic can
 stop the robot.
