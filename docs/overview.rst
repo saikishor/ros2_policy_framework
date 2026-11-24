@@ -71,8 +71,8 @@ either the policy keeps running with neutral user commands, or it is no longer s
 node stops sending, and the controller's executors hold, damp or zero the joints, or hand
 over to the fallback controllers (:doc:`safety`).
 
-The two packages
-----------------
+The packages
+------------
 
 ``policy_framework``
    The core. It knows nothing about any training framework: the stores, the pipeline that
@@ -85,8 +85,12 @@ The two packages
    laid out, how their actions are scaled, where their gains go, and the configuration and
    launch file for the Kangaroo robot.
 
-To support another training framework you would write a package like the second one, without
-changing the first.
+``policy_framework_msgs``
+   The interfaces: the ``SwitchPolicy`` service of the hosts and the ``MockFault`` message of
+   the ``MockSafetyCheck``.
+
+To support another training framework you would write a package like
+``policy_framework_mjlab``, without changing ``policy_framework``.
 
 Where the files are
 -------------------
@@ -112,7 +116,6 @@ parameters are always found under the same path.
        plugin_interfaces.hpp
      src/  test/  params/   same folders as above
      test/fixtures/         test models and URDF
-     msg/  srv/             MockFault, SwitchPolicy
 
 .. list-table::
    :header-rows: 1

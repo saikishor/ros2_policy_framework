@@ -19,7 +19,8 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 
 | Package | Content |
 |---------|---------|
-| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`, `CommandTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck`, `JumpCheck` and `MockSafetyCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks), `SwitchPolicy` service, `MockFault` message |
+| `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`, `CommandTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck`, `JumpCheck` and `MockSafetyCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks)|
+| `policy_framework_msgs` | Interfaces: the `SwitchPolicy` service and the `MockFault` message |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` observation term and the Kangaroo deployment config/launch |
 
 ### Repository layout
@@ -234,7 +235,7 @@ name. Write floating point values with a decimal point (`50.0`).
 ### Policy switching
 
 ```bash
-ros2 service call /<node or controller>/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: jump}"
+ros2 service call /<node or controller>/switch_policy policy_framework_msgs/srv/SwitchPolicy "{policy_name: jump}"
 ```
 
 A switch applies at the start of the next step and calls `reset()` on the activated policy's
@@ -279,7 +280,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions: `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; a joint with a missing or non-finite value is left unchanged |
 | `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `<interface>.hysteresis` (0: once failed, passes again only within the bounds narrowed by it), `trigger_cycles` (1), `escalation.count` (0: never) / `escalation.on_fault` (`error`): from that many entries failing at once, asks for that reaction instead of its `on_fault`; a non-finite value is out of bounds, an entry never received is not checked |
 | `policy_framework/JumpCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.max_delta` (required): fails on a change above it between two cycles (e.g. an encoder glitch) or a non-finite value; do not use on wrapping values |
-| `policy_framework/MockSafetyCheck` | SafetyCheck | `topic` (`~/<name>`, `policy_framework/msg/MockFault`), `reactions` (default empty): fails while the latest message has `fault: true`, with its `reaction` (empty: `on_fault`; must be listed in `reactions`, else `error`) and for its `duration` (s, 0: until the next message); reactivation forgets the latest message. For testing how the robot reacts to a fault only, see [safety](docs/safety.rst) |
+| `policy_framework/MockSafetyCheck` | SafetyCheck | `topic` (`~/<name>`, `policy_framework_msgs/msg/MockFault`), `reactions` (default empty): fails while the latest message has `fault: true`, with its `reaction` (empty: `on_fault`; must be listed in `reactions`, else `error`) and for its `duration` (s, 0: until the next message); reactivation forgets the latest message. For testing how the robot reacts to a fault only, see [safety](docs/safety.rst) |
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |
 | `policy_framework/SplitPostprocessor` | Postprocessor | `output_tensor` (`actions`), `output_entries`: values written as-is |
@@ -388,7 +389,7 @@ ros2 launch kangaroo_mujoco kangaroo_mujoco.launch.py arm_type:=no-arm moveit:=F
 ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py mode:=controller
 # walk, jump
 ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.6}}"
-ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: imitation_v719}"
+ros2 service call /policy_controller/switch_policy policy_framework_msgs/srv/SwitchPolicy "{policy_name: imitation_v719}"
 ```
 
 Several versions are loaded side by side from comma-separated lists, one policy each, named
@@ -398,8 +399,8 @@ imitation returns to it when its motion ends, whichever loco policy was active b
 ```bash
 ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py robot_type:=full_body_4dof \
   loco_models:=v265,v700 imitation_models:=v30,v31 imitation_frames:=300,250
-ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: loco_v700}"
-ros2 service call /policy_controller/switch_policy policy_framework/srv/SwitchPolicy "{policy_name: imitation_v31}"
+ros2 service call /policy_controller/switch_policy policy_framework_msgs/srv/SwitchPolicy "{policy_name: loco_v700}"
+ros2 service call /policy_controller/switch_policy policy_framework_msgs/srv/SwitchPolicy "{policy_name: imitation_v31}"
 ```
 
 | `mode` | What runs |
