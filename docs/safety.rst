@@ -18,7 +18,7 @@ From activation to deactivation
      start [shape=point];
      hold [label="Hold\nexecutors keep the robot\nwhere it is", fillcolor="#fff6d9"];
      run [label="Run\nexecutors follow\nthe policy's commands", fillcolor="#e8f5e9"];
-     safe [label="Safe values\nzero effort", fillcolor="#fde8e8"];
+     safe [label="Safe values\n(zero effort for\nPdEffortExecutor)", fillcolor="#fde8e8"];
      fault [label="Fault reaction\nhold, damp or safe,\nuntil reactivated", fillcolor="#fde8e8"];
      error [label="Error\ndeactivated by the controller\nmanager, fallback controllers", fillcolor="#fde8e8"];
      start -> hold [label="activate"];
@@ -26,11 +26,11 @@ From activation to deactivation
      run -> run [label="policy waits for data:\nkeep the last commands"];
      hold -> fault [label="latched fault"];
      hold -> error [label="reaction error, or\ninterfaces unreadable"];
-     run -> fault [label="latched fault\n(a check, or a failed step)"];
+     run -> fault [label="latched fault\n(a check, a source or term\nmax_age, or a failed step)"];
      fault -> fault [label="escalates"];
      run -> error [label="reaction error, or\ninterfaces unreadable"];
-     fault -> error [label="escalates to error"];
-     error -> safe;
+     fault -> error [label="escalates to error, or\ninterfaces unreadable"];
+     error -> safe [label="safe values written"];
      hold -> safe [label="deactivate"];
      run -> safe [label="deactivate"];
      fault -> safe [label="deactivate"];
@@ -82,8 +82,6 @@ Inputs that are missing or late
        is sending any more. The same applies before the first command arrives, so a policy
        does not wait for one to start. The timeout cannot be disabled: nothing else catches
        an operator who stopped sending (commands do not count for the input age below).
-   * - A motion reference is old or malformed
-     - The goal becomes a still stand at the robot's heading.
    * - A state interface cannot be read (controller)
      - This happens when its writer holds it, for example an asynchronous hardware component.
        The previous value is used for up to ``max_failed_reads`` updates in a row. One more
@@ -122,7 +120,7 @@ balancing:
      user [label="User command\n(velocity, motion reference)", shape=plaintext, fillcolor=none];
      gate [label="safety entry > 0 (if set)\nand no neutral commands\nreaction ?", shape=diamond, fillcolor="#fff6d9"];
      real [label="The command"];
-     neutral [label="Neutral command\nzero velocity, still stand", fillcolor="#fde8e8"];
+     neutral [label="Neutral command\n(e.g. zero velocity)", fillcolor="#fde8e8"];
      policy [label="Policy\n(always running)", fillcolor="#e8f5e9"];
      user -> gate;
      gate -> real [label="yes"];
@@ -231,7 +229,8 @@ received is not checked. The name in the first column is the one
    * - ``joint_position_limits`` (``safety.joint_position_limits``,
        ``safety.position_margin``)
      - the position of a commanded joint leaves the limits of the robot description, narrowed
-       by the margin; continuous joints have none.
+       by the margin; continuous joints have none. ``joint_position_limits: true`` enables it
+       and needs the robot description (the node's ``robot_description`` parameter).
    * - ``max_input_age`` (``safety.max_input_age``)
      - the observation of the last policy step (its oldest input, user commands excluded) is
        older than this many seconds: a topic stopped, so the policy acts on the past.
@@ -326,6 +325,11 @@ and every other policy keeps them. A new policy keeps every check unless it says
      max_tilt: 0.6
      imu: imu
    safety_checks: [joint_velocity, encoders]
+   encoders:                    # as above
+     type: policy_framework/JumpCheck
+     prefixes: [leg_left_1_joint, leg_left_2_joint]
+     interfaces: [position]
+     position: {max_delta: 0.2}
    joint_velocity:
      type: policy_framework/StateBoundsCheck
      prefixes: [leg_left_4_joint, leg_right_4_joint]
@@ -406,7 +410,7 @@ too fast is better stopped at once. The reactions, from the most control kept to
      - ``ReferenceInterfaceExecutor``
    * - ``NEUTRAL_COMMANDS``
      - the policy keeps running and the executors keep following it, with neutral user
-       commands: zero velocity, a still stand (see `The safety entry`_)
+       commands, e.g. zero velocity (see `The safety entry`_)
      - same
    * - ``HOLD``
      - PD law around the position at the fault; zero effort for a joint without gains
