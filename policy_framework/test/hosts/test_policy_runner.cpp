@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "policy_framework/hosts/policy_runner.hpp"
+#include "policy_framework_msgs/msg/active_policies.hpp"
 #include "policy_framework_msgs/msg/mock_fault.hpp"
 #include "policy_framework_msgs/srv/list_policies.hpp"
 #include "policy_framework_msgs/srv/switch_policy.hpp"
@@ -161,6 +162,55 @@ TEST_F(PolicyRunnerTest, ListsTheLoadedPolicies)
   EXPECT_EQ(policies[1].max_steps, 1);
   EXPECT_FALSE(policies[1].interruptible);
 }
+
+class ActivePoliciesTest : public PolicyRunnerTest,
+  public ::testing::WithParamInterface<bool>
+{
+protected:
+  // Subscribes like a late joiner would: the topic is latched.
+  void subscribe()
+  {
+    sub = helper->create_subscription<policy_framework_msgs::msg::ActivePolicies>(
+      "/runner/active_policies", rclcpp::QoS(1).transient_local(),
+      [this](policy_framework_msgs::msg::ActivePolicies::ConstSharedPtr m) {
+        received.push_back(m->policies);
+      });
+  }
+  /// Spin until a message arrives; @return its policies (empty when none arrived).
+  StringArray next()
+  {
+    for (int i = 0; i < 200 && received.empty(); ++i) {spin_for(std::chrono::milliseconds(5));}
+    if (received.empty()) {return {};}
+    auto front = received.front();
+    received.erase(received.begin());
+    return front;
+  }
+
+  rclcpp::Subscription<policy_framework_msgs::msg::ActivePolicies>::SharedPtr sub;
+  std::vector<StringArray> received;
+};
+
+TEST_P(ActivePoliciesTest, PublishesTheActivePolicyWhenItChanges)
+{
+  step_in_other_thread = GetParam();
+  configure(runner_params(GetParam() ? "/runner_js_active_thread" : "/runner_js_active"));
+  runner.step();  // waiting for data, but the policy is active
+  subscribe();
+  EXPECT_EQ(next(), StringArray{"walk"});
+
+  std::string message;
+  ASSERT_TRUE(runner.pipeline().request_switch("jump", message)) << message;
+  runner.step();
+  EXPECT_EQ(next(), StringArray{"jump"});
+  runner.step();  // unchanged: nothing published
+  spin_for(std::chrono::milliseconds(50));
+  EXPECT_TRUE(received.empty());
+  runner.restart();  // as on a host activation: back to the default at the next step
+  runner.step();
+  EXPECT_EQ(next(), StringArray{"walk"});
+}
+
+INSTANTIATE_TEST_SUITE_P(StepThread, ActivePoliciesTest, ::testing::Bool());
 
 TEST_F(PolicyRunnerTest, ReportsStateEntriesNoSourceProvides)
 {
