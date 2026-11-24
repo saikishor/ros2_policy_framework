@@ -1,0 +1,4 @@
+# Policies loaded by a policy_framework runner (node or controller).
+---
+# In the order of the `policies` parameter; the first one is the default policy.
+PolicyInfo[] policies
