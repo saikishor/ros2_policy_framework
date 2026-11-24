@@ -42,12 +42,15 @@ that other link?*
      model -> base;
    }
 
-``world_orientation(link, imu_link, imu_orientation)``
+``world_orientation(frame, imu_frame, imu_orientation)``
    The orientation of a link in the world.
 
-``world_angular_velocity(link, imu_link, gyroscope)``
-   The angular velocity of a link in the world, with the motion of the joints between the
-   IMU and that link removed.
+``world_angular_velocity(frame, imu_frame, gyroscope)``
+   The angular velocity of a link relative to the world, expressed in the link's own axes,
+   with the motion of the joints between the IMU and that link accounted for.
+
+``frame`` and ``imu_frame`` are indices returned by ``frame(link)``, looked up once while
+configuring.
 
 Who feeds it
 ------------
@@ -55,7 +58,8 @@ Who feeds it
 When enabled, the joints of the model are registered as state entries
 (``<joint>/position`` and ``<joint>/velocity``), so the controller claims them as state
 interfaces and the node expects them from an input source. The host updates the model from
-those entries: the controller on every update, the node on every tick.
+those entries: the controller on every update, the node on every tick, once every joint
+position and velocity has been received.
 
 If only some joints have a state, list them in ``joints``; the others are locked at zero.
 
@@ -64,6 +68,8 @@ Who reads it
 
 Policy plugins receive the model in their configuration context (``ctx.kinematics``). They
 look up the links they need once, while configuring, and read poses during the cycle.
+``SafetyCheck`` plugins receive the host model the same way; input sources and executors get
+none.
 
 Other code can read it too, through ``PolicyController::kinematics()``. Reading and updating
 are protected by a real-time mutex: the update never waits (if a reader holds the lock, that
@@ -99,7 +105,9 @@ then keeps two models:
        snap -> terms;
      }
      live -> snap [label="copied at the\npolicy tick"];
+     host_model -> checks [label="read by"];
      host_model -> others [label="read by"];
+     checks [label="Safety checks", fillcolor="#fde8e8"];
      others [label="Other code", shape=plaintext, fillcolor=none];
    }
 
