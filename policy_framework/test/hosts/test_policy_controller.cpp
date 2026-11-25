@@ -36,6 +36,7 @@
 #include "policy_framework/core/kinematics.hpp"
 #include "policy_framework/hosts/policy_controller.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 using controller_interface::interface_configuration_type;
 using hardware_interface::CommandInterface;
@@ -562,7 +563,80 @@ protected:
     ASSERT_EQ(update(), controller_interface::return_type::OK);
     ASSERT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));  // following the policy
   }
+
+  /// Call ~/reset_safety on the controller's node, as an operator would.
+  void reset_safety()
+  {
+    auto helper = std::make_shared<rclcpp::Node>("reset_client");
+    rclcpp::executors::SingleThreadedExecutor exec;
+    exec.add_node(controller.get_node()->get_node_base_interface());
+    exec.add_node(helper);
+    auto client =
+      helper->create_client<std_srvs::srv::Trigger>("/policy_controller/reset_safety");
+    ASSERT_TRUE(client->wait_for_service(std::chrono::seconds(2)));
+    auto future = client->async_send_request(std::make_shared<std_srvs::srv::Trigger::Request>());
+    ASSERT_EQ(exec.spin_until_future_complete(future, std::chrono::seconds(2)),
+      rclcpp::FutureReturnCode::SUCCESS);
+    EXPECT_TRUE(future.get()->success) << future.get()->message;
+    exec.remove_node(controller.get_node()->get_node_base_interface());
+  }
 };
+
+TEST_F(ControllerSafetyTest, AResetFollowsThePolicyAgainWithoutReactivation)
+{
+  // With max_input_age: the observation of the last step before the fault is old by now, which
+  // must not fault again after the reset.
+  init_checked("damp", {
+    {"pd.fault_damping", std::vector<double>{2.0, 2.0}}, {"safety.max_input_age", 0.1},
+    {"safety.input_age_on_fault", "damp"}});
+  start();
+  set_state("j1/velocity", 20.0);
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 20.0);
+  set_state("j1/velocity", 1.0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 1.0);  // still damping
+  reset_safety();
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));  // a fresh step, followed
+}
+
+TEST_F(ControllerSafetyTest, AResetWhileTheCheckStillFailsKeepsTheReaction)
+{
+  init_checked("damp", {{"pd.fault_damping", std::vector<double>{2.0, 2.0}}});
+  start();
+  set_state("j1/velocity", 20.0);
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  reset_safety();
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), -2.0 * 20.0);
+}
+
+TEST_F(ControllerSafetyTest, AResetWithAsyncInferenceDropsAStepFromBeforeTheFault)
+{
+  init_checked("damp", {
+    {"pd.fault_damping", std::vector<double>{2.0, 2.0}}, {"async_inference", true}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  set_state("j3/position", 3.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);  // triggers a step
+  set_state("j1/velocity", 20.0);
+  EXPECT_EQ(update(), controller_interface::return_type::OK);  // damping, the step not collected
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));  // the step finished meanwhile
+  set_state("j1/velocity", 0.0);
+  reset_safety();
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  // Holding where it is (not following the step from before the fault) until a fresh step.
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
+  ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
+}
 
 TEST_F(ControllerSafetyTest, RefusesAReactionAnExecutorCannotApply)
 {

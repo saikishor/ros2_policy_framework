@@ -236,16 +236,11 @@ PolicyController::CallbackReturn PolicyController::on_activate(const rclcpp_life
     values_.emplace_back(loaned.size(), 0.0);
     loaned_command_.push_back(std::move(loaned));
   }
-  policy_ready_ = false;
-  hold_start_ = true;
   failed_reads_ = 0;
   timing_ = Timing();
   update_timing_ = UpdateTiming();
   updates_ = 0;
-  inference_pending_ = false;
-  observation_stamp_ = 0.0;
-  fault_applied_.reset();
-  std::fill(input_ages_ms_.begin(), input_ages_ms_.end(), 0.0);
+  start_over();
   runner_->restart();
   return CallbackReturn::SUCCESS;
 }
@@ -331,6 +326,18 @@ controller_interface::return_type PolicyController::react(FaultReaction reaction
   return controller_interface::return_type::OK;
 }
 
+void PolicyController::start_over()
+{
+  policy_ready_ = false;
+  hold_start_ = true;
+  // A step triggered before the fault may still finish: its result is never collected.
+  inference_pending_ = false;
+  // The last step's observation is as old as the fault: it would fail max_input_age at once.
+  observation_stamp_ = 0.0;
+  fault_applied_.reset();
+  std::fill(input_ages_ms_.begin(), input_ages_ms_.end(), 0.0);
+}
+
 void PolicyController::write_safe_values()
 {
   for (size_t k = 0; k < values_.size(); ++k) {
@@ -398,6 +405,7 @@ controller_interface::return_type PolicyController::update_items(
   // reaction is latched the policy is neither stepped nor followed (a step still running in the
   // inference thread is ignored).
   item_start = std::chrono::steady_clock::now();
+  if (runner_->apply_safety_reset()) {start_over();}
   const auto reaction = runner_->update_safety(observation_stamp_, now);
   update_timing_.safety_time_us = elapsed_us(item_start);
   if (reaction && *reaction != FaultReaction::NEUTRAL_COMMANDS) {
