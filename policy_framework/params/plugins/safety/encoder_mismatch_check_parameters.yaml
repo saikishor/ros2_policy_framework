@@ -1,0 +1,20 @@
+encoder_mismatch_check:
+  joints:
+    type: string_array
+    description: "Joints whose state entries <joint>/absolute_position and <joint>/position are compared."
+    read_only: true
+    validation:
+      not_empty<>: null
+      unique<>: null
+  tolerance:
+    type: double
+    default_value: 0.0
+    description: "Largest allowed difference between the absolute and the position of a joint; required, above zero."
+    read_only: true
+    validation:
+      gt<>: [0.0]
+  persist:
+    type: bool
+    default_value: false
+    description: "Once failed, keep failing until the controller is reactivated, even when the positions agree again."
+    read_only: true

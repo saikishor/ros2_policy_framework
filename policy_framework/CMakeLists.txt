@@ -56,6 +56,7 @@ foreach(path IN ITEMS
     params/plugins/executors/pd_effort_executor_parameters.yaml
     params/plugins/executors/reference_interface_executor_parameters.yaml
     params/plugins/inference/onnx_inference_parameters.yaml
+    params/plugins/safety/encoder_mismatch_check_parameters.yaml
     params/plugins/safety/jump_check_parameters.yaml
     params/plugins/safety/mock_safety_check_parameters.yaml
     params/plugins/safety/state_bounds_check_parameters.yaml
