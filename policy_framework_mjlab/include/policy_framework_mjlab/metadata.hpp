@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fmt/format.h>
 
 namespace policy_framework_mjlab
 {
@@ -50,7 +51,7 @@ inline const std::string & require(
 {
   const auto it = metadata.find(key);
   if (it == metadata.end()) {
-    throw std::runtime_error("Model metadata has no '" + key + "'");
+    throw std::runtime_error(fmt::format("Model metadata has no '{}'", key));
   }
   return it->second;
 }
@@ -88,7 +89,8 @@ inline Joints joints(const std::map<std::string, std::string> & metadata, const 
   for (const auto & name : split(it->second)) {
     const auto pos = std::find(all.names.begin(), all.names.end(), name);
     if (pos == all.names.end()) {
-      throw std::runtime_error("Model metadata '" + key + "' has unknown joint '" + name + "'");
+      throw std::runtime_error(
+              fmt::format("Model metadata '{}' has unknown joint '{}'", key, name));
     }
     subset.names.push_back(name);
     subset.defaults.push_back(all.defaults[static_cast<size_t>(pos - all.names.begin())]);
@@ -109,14 +111,14 @@ inline std::vector<size_t> parse_counts(
   for (const double v : parse_doubles(require(metadata, key))) {
     if (v < static_cast<double>(min) || std::trunc(v) < v) {
       throw std::runtime_error(
-              "Model metadata '" + key + "' must hold integers >= " + std::to_string(min));
+              fmt::format("Model metadata '{}' must hold integers >= {}", key, min));
     }
     out.push_back(static_cast<size_t>(v));
   }
   if (out.size() != size) {
     throw std::runtime_error(
-            "Model metadata '" + key + "' has " + std::to_string(out.size()) + " values, expected " +
-            std::to_string(size));
+            fmt::format(
+              "Model metadata '{}' has {} values, expected {}", key, out.size(), size));
   }
   return out;
 }

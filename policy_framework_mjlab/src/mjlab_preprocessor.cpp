@@ -22,6 +22,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <fmt/format.h>
 
 #include "policy_framework_mjlab/mjlab_preprocessor_parameters.hpp"
 #include "pluginlib/class_list_macros.hpp"
@@ -63,7 +64,9 @@ Names entries(const std::string & prefix, const Names & names, const std::string
 size_t output_size(const ModelInfo & model, const std::string & name)
 {
   const auto it = model.outputs.find(name);
-  if (it == model.outputs.end()) {throw std::runtime_error("Model has no '" + name + "' output");}
+  if (it == model.outputs.end()) {
+    throw std::runtime_error(fmt::format("Model has no '{}' output", name));
+  }
   return it->second.data.size();
 }
 
@@ -282,11 +285,13 @@ void MjlabPreprocessor::configure(
     } else {
       t.term = builtin(name);
     }
-    if (!t.term) {throw std::runtime_error("Unsupported mjlab observation term '" + name + "'");}
+    if (!t.term) {
+      throw std::runtime_error(fmt::format("Unsupported mjlab observation term '{}'", name));
+    }
     t.dim = t.term->configure(
       {ctx.node, ctx.name + ".terms." + name, ctx.kinematics, ctx.safety_entry}, model, state);
     if (t.dim == 0) {
-      throw std::runtime_error("Observation term '" + name + "' has size 0");
+      throw std::runtime_error(fmt::format("Observation term '{}' has size 0", name));
     }
     single_dim += t.dim;
     terms_.push_back(std::move(t));
@@ -297,7 +302,7 @@ void MjlabPreprocessor::configure(
 
   const auto in = model.inputs.find(obs_input_);
   if (in == model.inputs.end()) {
-    throw std::runtime_error("Model has no '" + obs_input_ + "' input");
+    throw std::runtime_error(fmt::format("Model has no '{}' input", obs_input_));
   }
   const auto obs_dim = in->second.data.size();
   if (md.count("observation_terms_dim")) {
@@ -305,8 +310,9 @@ void MjlabPreprocessor::configure(
     for (size_t k = 0; k < names.size(); ++k) {
       if (dims[k] != terms_[k].dim) {
         throw std::runtime_error(
-                "Observation term '" + names[k] + "' has size " + std::to_string(dims[k]) +
-                " in the model metadata but " + std::to_string(terms_[k].dim) + " here");
+                fmt::format(
+                  "Observation term '{}' has size {} in the model metadata but {} here", names[k],
+                  dims[k], terms_[k].dim));
       }
     }
   }
@@ -319,8 +325,9 @@ void MjlabPreprocessor::configure(
   } else {
     if (single_dim == 0 || obs_dim % single_dim != 0) {
       throw std::runtime_error(
-              "Observation size " + std::to_string(obs_dim) +
-              " is not a multiple of the single observation size " + std::to_string(single_dim));
+              fmt::format(
+                "Observation size {} is not a multiple of the single observation size {}",
+                obs_dim, single_dim));
     }
     lengths.assign(names.size(), obs_dim / single_dim);
   }
@@ -333,8 +340,9 @@ void MjlabPreprocessor::configure(
   }
   if (total != obs_dim) {
     throw std::runtime_error(
-            "The observation terms add up to " + std::to_string(total) + " values, but the '" +
-            obs_input_ + "' input has " + std::to_string(obs_dim));
+            fmt::format(
+              "The observation terms add up to {} values, but the '{}' input has {}", total,
+              obs_input_, obs_dim));
   }
   has_time_step_ = model.inputs.count("time_step") > 0;
   RCLCPP_INFO(

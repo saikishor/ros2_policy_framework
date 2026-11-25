@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fmt/format.h>
 
 #include "policy_framework/core/kinematics.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
@@ -48,10 +49,10 @@ public:
     const std::string & imu_name, const std::string & imu_frame, const std::string & base)
   {
     if (!ctx.kinematics) {
-      throw std::runtime_error("The base '" + base + "' needs kinematics.enabled");
+      throw std::runtime_error(fmt::format("The base '{}' needs kinematics.enabled", base));
     }
     if (imu_frame.empty()) {
-      throw std::runtime_error("The base '" + base + "' needs the 'imu_frame' parameter");
+      throw std::runtime_error(fmt::format("The base '{}' needs the 'imu_frame' parameter", base));
     }
     kinematics_ = ctx.kinematics;
     base_ = kinematics_->frame(base);
