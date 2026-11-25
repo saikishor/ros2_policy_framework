@@ -120,6 +120,8 @@ public:
    * @brief Start over from the default policy with every policy cleared (at the next step()),
    *        and write its initial commands, with every safety check reset and nothing latched.
    *        Hosts call it when they are activated. Drops a pending `~/reset_safety` request.
+   *
+   * Clears the faults, and the `~/safety_status` entries at the next update_safety().
    */
   void restart();
 
@@ -132,8 +134,8 @@ public:
    * default one with every policy cleared, since it was not stepped while latched; neutral
    * commands kept it running on its inputs, so it goes on. The service only records the
    * request: hosts call this on every cycle in their control thread, right before
-   * update_safety(), which latches again at once whatever still fails. Real-time safe while
-   * nothing was requested.
+   * update_safety(), which latches again at once whatever still fails and publishes the
+   * `~/safety_status` entries left. Real-time safe while nothing was requested.
    * @return Whether the policy restarts: the host then resets what it resets when activated
    *         (e.g. the observation stamp, old by now, and a step still pending).
    */
@@ -159,7 +161,7 @@ public:
 
   /**
    * @brief Latch a failed policy step (including a non-finite model output) with
-   *        `on_policy_failure`.
+   *        `on_policy_failure`, listed as `policy_failure` on `~/safety_status`.
    * @return The reaction in effect.
    */
   FaultReaction policy_failure(const std::string & reason);
@@ -168,7 +170,8 @@ public:
    * @brief Check the inputs of the step that just finished against their `max_age` (see
    *        TopicTerm), and latch the reaction of the most severe stale one. Hosts call it right
    *        after a successful step, in their own thread (with an inference thread: when they
-   *        collect the step's result, before the next step starts).
+   *        collect the step's result, before the next step starts). A stale input is listed as
+   *        `policy_input` on `~/safety_status`.
    * @param now Current time in seconds, on the clock of the receive times.
    * @return The latched reaction in effect, if any.
    */
