@@ -148,7 +148,7 @@ one is shown in :doc:`extending`.
 They are listed in ``safety_checks``, each with its ``type`` and its reaction ``on_fault``
 (default ``error``, see `Fault reactions`_). ``policy_node`` runs them on every tick, before
 the policy step. ``PolicyController`` runs them on every update, before the policy, and claims
-what they read as state interfaces. The framework ships three:
+what they read as state interfaces. The framework ships four:
 
 ``StateBoundsCheck`` checks every ``<prefix>/<interface>`` entry against the bounds of its
 interface. A non-finite value is out of bounds; an entry never received is not checked. With a
@@ -177,6 +177,22 @@ jump. Do not use it on values that wrap, such as the position of a continuous jo
      prefixes: [leg_left_1_joint, leg_left_2_joint]
      interfaces: [position]
      position: {max_delta: 0.2}
+
+``EncoderMismatchCheck`` fails when the ``<joint>/absolute_position`` and ``<joint>/position``
+of a joint differ more than ``tolerance``, for example a slipping incremental encoder or a
+wrong homing, or when one of them is not finite. A joint is checked once both were received.
+With ``neutral_commands``, the one reaction that recovers by itself, the robot gets the
+operator's commands back once the positions agree again; ``persist: true`` keeps the check
+failing until reactivation instead. The reason names the joint and both values:
+
+.. code-block:: yaml
+
+   homing:
+     type: policy_framework/EncoderMismatchCheck
+     on_fault: neutral_commands
+     joints: [leg_left_1_joint, leg_left_2_joint]
+     tolerance: 0.05
+     persist: true   # never recover by itself
 
 ``MockSafetyCheck`` fails on request, to see how the robot really reacts to a fault at a chosen
 moment (standing, walking, during a jump) before a real one happens. It subscribes to
