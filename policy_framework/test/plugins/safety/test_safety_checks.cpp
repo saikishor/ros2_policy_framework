@@ -285,6 +285,97 @@ TEST(JumpCheckConfigTest, RejectsAnInterfaceWithoutMaxDelta)
   EXPECT_THROW(check.configure({node, "encoders"}, commands, state), std::runtime_error);
 }
 
+class EncoderMismatchCheckTest : public ::testing::Test
+{
+protected:
+  void configure(bool persist)
+  {
+    const auto node = make_node(
+      "mismatch", {
+        {"encoders.joints", StringArray{"j1", "j2"}},
+        {"encoders.tolerance", 0.1},
+        {"encoders.persist", persist}});
+    check.configure({node, "encoders"}, commands, state);
+  }
+
+  void set(const std::string & joint, double absolute, double position)
+  {
+    state.set(state.index(joint + "/absolute_position"), absolute, 0.0);
+    state.set(state.index(joint + "/position"), position, 0.0);
+  }
+  bool ok()
+  {
+    verdict = check.check(state, 0.0, reason);
+    return verdict.safe;
+  }
+
+  policy_framework::EncoderMismatchCheck check;
+  DataStore commands;
+  DataStore state;
+  std::string reason;
+  policy_framework::SafetyCheck::Verdict verdict;
+};
+
+TEST_F(EncoderMismatchCheckTest, RegistersBothPositionsOfEveryJoint)
+{
+  configure(false);
+  for (const auto * n : {"j1/absolute_position", "j1/position", "j2/absolute_position",
+      "j2/position"})
+  {
+    EXPECT_TRUE(state.find(n).has_value()) << n;
+  }
+}
+
+TEST_F(EncoderMismatchCheckTest, FaultsWhileBothPositionsDifferMoreThanTheTolerance)
+{
+  configure(false);
+  EXPECT_TRUE(ok());  // nothing received yet
+  state.set(state.index("j1/position"), 5.0, 0.0);
+  EXPECT_TRUE(ok());  // the absolute position not received yet: nothing to compare
+  set("j1", 1.0, 1.05);
+  set("j2", -1.0, -1.0);
+  EXPECT_TRUE(ok());
+  set("j2", -1.0, -1.2);
+  EXPECT_FALSE(ok());
+  EXPECT_FALSE(verdict.reaction.has_value());  // the configured on_fault
+  EXPECT_NE(reason.find("j2"), std::string::npos) << reason;
+  EXPECT_NE(reason.find("0.1"), std::string::npos) << reason;  // the tolerance
+  set("j2", -1.0, -1.05);  // without persist: passes again once back within the tolerance
+  EXPECT_TRUE(ok());
+}
+
+TEST_F(EncoderMismatchCheckTest, FaultsOnANonFinitePosition)
+{
+  configure(false);
+  set("j1", std::nan(""), 1.0);
+  EXPECT_FALSE(ok());
+  set("j1", 1.0, std::nan(""));
+  EXPECT_FALSE(ok());
+}
+
+TEST_F(EncoderMismatchCheckTest, WithPersistKeepsFailingUntilReset)
+{
+  configure(true);
+  set("j1", 1.0, 1.5);
+  EXPECT_FALSE(ok());
+  set("j1", 1.0, 1.0);
+  EXPECT_FALSE(ok());
+  EXPECT_NE(reason.find("j1"), std::string::npos) << reason;
+  check.reset();
+  EXPECT_TRUE(ok());
+}
+
+TEST(EncoderMismatchCheckConfigTest, RejectsANonPositiveTolerance)
+{
+  const auto node = make_node(
+    "zero_tolerance", {
+      {"encoders.joints", StringArray{"j1"}},
+      {"encoders.tolerance", 0.0}});
+  policy_framework::EncoderMismatchCheck check;
+  DataStore commands, state;
+  EXPECT_ANY_THROW(check.configure({node, "encoders"}, commands, state));
+}
+
 }  // namespace
 
 namespace

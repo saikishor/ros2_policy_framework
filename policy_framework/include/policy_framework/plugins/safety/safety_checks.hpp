@@ -103,6 +103,43 @@ private:
 };
 
 /**
+ * @brief SafetyCheck that fails when the two position measurements of a joint disagree: the
+ *        state entries `<joint>/absolute_position` and `<joint>/position` differ more than
+ *        `tolerance`, e.g. a slipping incremental encoder or a wrong homing.
+ *
+ * Parameters (under `<name>.`):
+ * - `joints` (string array): the compared joints
+ * - `tolerance` (double, required, > 0): largest allowed difference
+ * - `persist` (bool, default false): once failed, keep failing until reset() (controller
+ *   reactivation), even when the positions agree again. Only changes something for
+ *   `on_fault: neutral_commands`, the one reaction that recovers by itself.
+ *
+ * A non-finite position fails; a joint is not checked until both entries were received. Values
+ * that wrap differently (a continuous joint reported in [0, 2 pi] by one and [-pi, pi] by the
+ * other) are not handled.
+ */
+class EncoderMismatchCheck : public SafetyCheck
+{
+public:
+  void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) override;
+  Verdict check(const DataStore & state, double now, std::string & reason) override;
+  /// Forgets a persisting failure.
+  void reset() override;
+
+private:
+  struct Joint
+  {
+    size_t absolute;
+    size_t position;
+  };
+  std::vector<Joint> joints_;
+  double tolerance_ = 0.0;
+  bool persist_ = false;
+  /// With persist: the reason of the first failure since reset(); empty while none.
+  std::string persisted_reason_;
+};
+
+/**
  * @brief Fails on request, to see how the robot really reacts to a fault in a given situation.
  *
  * Subscribes to `topic` (default `~/<name>`, policy_framework_msgs/msg/MockFault) and fails on

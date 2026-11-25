@@ -19,6 +19,7 @@
 #include <string>
 
 #include "pluginlib/class_list_macros.hpp"
+#include "policy_framework/encoder_mismatch_check_parameters.hpp"
 #include "policy_framework/jump_check_parameters.hpp"
 #include "policy_framework/mock_safety_check_parameters.hpp"
 #include "policy_framework/state_bounds_check_parameters.hpp"
@@ -150,6 +151,43 @@ void JumpCheck::reset()
   for (auto & e : entries_) {e.has_previous = false;}
 }
 
+void EncoderMismatchCheck::configure(
+  const PluginContext & ctx, const DataStore &, DataStore & state)
+{
+  const auto params = encoder_mismatch_check::ParamListener(ctx.node, ctx.name).get_params();
+  tolerance_ = params.tolerance;
+  persist_ = params.persist;
+  persisted_reason_.clear();
+  joints_.clear();
+  for (const auto & joint : params.joints) {
+    joints_.push_back({state.add(joint + "/absolute_position"), state.add(joint + "/position")});
+  }
+}
+
+SafetyCheck::Verdict EncoderMismatchCheck::check(
+  const DataStore & state, double, std::string & reason)
+{
+  if (!persisted_reason_.empty()) {
+    reason = persisted_reason_;
+    return {false, std::nullopt};
+  }
+  for (const auto & j : joints_) {
+    if (!state.received(j.absolute) || !state.received(j.position)) {continue;}
+    const double absolute = state.get(j.absolute);
+    const double position = state.get(j.position);
+    // Written so that a NaN on either side fails: every comparison with it is false.
+    if (std::abs(absolute - position) <= tolerance_) {continue;}
+    reason = state.names()[j.absolute] + " is " + std::to_string(absolute) + " but " +
+      state.names()[j.position] + " is " + std::to_string(position) + ", more than " +
+      std::to_string(tolerance_) + " apart";
+    if (persist_) {persisted_reason_ = reason + " (persists until reactivation)";}
+    return {false, std::nullopt};
+  }
+  return {};
+}
+
+void EncoderMismatchCheck::reset() {persisted_reason_.clear();}
+
 void MockSafetyCheck::configure(const PluginContext & ctx, const DataStore &, DataStore &)
 {
   const auto params = mock_safety_check::ParamListener(ctx.node, ctx.name).get_params();
@@ -182,4 +220,5 @@ void MockSafetyCheck::reset() {forgotten_ = topic_.get().msg;}
 
 PLUGINLIB_EXPORT_CLASS(policy_framework::StateBoundsCheck, policy_framework::SafetyCheck)
 PLUGINLIB_EXPORT_CLASS(policy_framework::JumpCheck, policy_framework::SafetyCheck)
+PLUGINLIB_EXPORT_CLASS(policy_framework::EncoderMismatchCheck, policy_framework::SafetyCheck)
 PLUGINLIB_EXPORT_CLASS(policy_framework::MockSafetyCheck, policy_framework::SafetyCheck)
