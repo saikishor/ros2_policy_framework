@@ -362,6 +362,46 @@ TEST(MjlabPreprocessor, MotionCommandIsSeededFromRobotThenFedFromOutputs)
   EXPECT_FLOAT_EQ(in["time_step"].data[0], 0.0F);
 }
 
+TEST(MjlabPreprocessor, ObstacleHeightIsLatchedAtReset)
+{
+  auto model = motion_model();
+  model.inputs["obstacle_height"] = zeros(1);
+  model.metadata["reference_obstacle_height"] = "0.59";
+  DataStore state;
+  for (const auto * n : {"a/position", "b/position", "a/velocity", "b/velocity"}) {
+    set(state, n, 0.0);
+  }
+  TensorMap in = model.inputs;
+
+  // Default: the reference height of the metadata.
+  {
+    MjlabPreprocessor pre;
+    pre.configure(make_context(), model, state);
+    pre.reset();
+    ASSERT_TRUE(pre.compute(state, model.outputs, in));
+    EXPECT_FLOAT_EQ(in["obstacle_height"].data[0], 0.59F);
+  }
+
+  // Set: used from configure(); a runtime change waits for the next reset().
+  const auto ctx = make_context({{"p.obstacle_height", 0.4}});
+  MjlabPreprocessor pre;
+  pre.configure(ctx, model, state);
+  pre.reset();
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_FLOAT_EQ(in["obstacle_height"].data[0], 0.4F);
+  ASSERT_TRUE(ctx.node->set_parameter({"p.obstacle_height", 0.7}).successful);
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_FLOAT_EQ(in["obstacle_height"].data[0], 0.4F);
+  pre.reset();
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_FLOAT_EQ(in["obstacle_height"].data[0], 0.7F);
+
+  // Without metadata the parameter is required.
+  model.metadata.erase("reference_obstacle_height");
+  MjlabPreprocessor no_ref;
+  EXPECT_THROW(no_ref.configure(make_context(), model, state), std::runtime_error);
+}
+
 TEST(MjlabPreprocessor, RejectsInconsistentModels)
 {
   DataStore state;

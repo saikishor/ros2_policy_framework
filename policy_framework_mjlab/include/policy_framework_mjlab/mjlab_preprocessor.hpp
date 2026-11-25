@@ -15,6 +15,7 @@
 #ifndef POLICY_FRAMEWORK_MJLAB__MJLAB_PREPROCESSOR_HPP_
 #define POLICY_FRAMEWORK_MJLAB__MJLAB_PREPROCESSOR_HPP_
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <utility>
@@ -84,8 +85,14 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * If the model has a `time_step` input it receives the number of steps since reset(); the
  * motion command is re-seeded from the robot state after reset().
  *
+ * If the model has an `obstacle_height` input (pal_mjlab box-drop tracking) it receives the
+ * parameter `obstacle_height` (m) as it was at reset(), so a running motion keeps its height;
+ * negative (the default) uses the `reference_obstacle_height` metadata. The parameter can be
+ * set at runtime (`ros2 param set <node> <policy>.obstacle_height 0.45`) for the next motion.
+ *
  * Parameters (under `<policy>.`): `imu_name` (default `imu`), `imu_frame`, `velocity_command_name`
- * (default `cmd_vel`), `odometry_name` (default `odom`), `observation_input` (default `obs`).
+ * (default `cmd_vel`), `odometry_name` (default `odom`), `observation_input` (default `obs`),
+ * `obstacle_height` (default -1).
  */
 class MjlabPreprocessor : public policy_framework::Preprocessor
 {
@@ -117,6 +124,8 @@ private:
     std::vector<float> history;  ///< history_length * dim values, oldest first.
   };
 
+  /// Latch the obstacle_height parameter (or the metadata default) for the next motion.
+  void reset_obstacle_height();
   /// @return true when every input of every term is available.
   bool ready(const policy_framework::DataStore & state) const;
   /// Append the current value of every term to its history (and record the stamps).
@@ -129,6 +138,11 @@ private:
   size_t history_length_ = 1;
   std::string obs_input_;
   bool has_time_step_ = false;
+  bool has_obstacle_height_ = false;
+  double default_obstacle_height_ = 0.0;  ///< `reference_obstacle_height` metadata.
+  std::atomic<double> obstacle_height_param_{-1.0};  ///< Set by the parameter callback.
+  float obstacle_height_ = 0.0F;  ///< Latched at reset().
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_;
   // Control-cycle state.
   bool history_filled_ = false;
   policy_framework::InputStamps stamps_;

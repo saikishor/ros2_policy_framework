@@ -345,6 +345,34 @@ void MjlabPreprocessor::configure(
               obs_input_, obs_dim));
   }
   has_time_step_ = model.inputs.count("time_step") > 0;
+  has_obstacle_height_ = model.inputs.count("obstacle_height") > 0;
+  param_callback_.reset();
+  if (has_obstacle_height_) {
+    const auto ref = md.find("reference_obstacle_height");
+    default_obstacle_height_ = ref == md.end() ? -1.0 : std::stod(ref->second);
+    obstacle_height_param_ = params.obstacle_height;
+    if (params.obstacle_height < 0.0 && default_obstacle_height_ < 0.0) {
+      throw std::runtime_error(
+              "The model has an 'obstacle_height' input but no 'reference_obstacle_height' "
+              "metadata: set the parameter " + ctx.name + ".obstacle_height");
+    }
+    // Runtime changes, read at the next reset() (lock-free in the control cycle).
+    param_callback_ = ctx.node->add_on_set_parameters_callback(
+      [this, full = ctx.name + ".obstacle_height"](const std::vector<rclcpp::Parameter> & ps) {
+        for (const auto & p : ps) {
+          if (p.get_name() == full && p.get_type() == rclcpp::ParameterType::PARAMETER_DOUBLE) {
+            obstacle_height_param_ = p.as_double();
+          }
+        }
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = true;
+        return result;
+      });
+    reset_obstacle_height();
+    RCLCPP_INFO(
+      ctx.node->get_logger(), "[%s] obstacle_height input: %.3f m (reference %.3f m)",
+      ctx.name.c_str(), obstacle_height_, default_obstacle_height_);
+  }
   RCLCPP_INFO(
     ctx.node->get_logger(), "[%s] mjlab observation: %zu terms, single size %zu, history %zu%s",
     ctx.name.c_str(), terms_.size(), single_dim, history_length_,
@@ -357,9 +385,16 @@ void MjlabPreprocessor::clear()
   prev_obs_stamp_ = 0.0;
 }
 
+void MjlabPreprocessor::reset_obstacle_height()
+{
+  const double h = obstacle_height_param_.load();
+  obstacle_height_ = static_cast<float>(h < 0.0 ? default_obstacle_height_ : h);
+}
+
 void MjlabPreprocessor::reset()
 {
   step_ = 0;
+  if (has_obstacle_height_) {reset_obstacle_height();}
   for (auto & t : terms_) {t.term->reset();}
 }
 
@@ -422,6 +457,9 @@ bool MjlabPreprocessor::compute(
   }
   if (has_time_step_) {
     inputs.at("time_step").data[0] = static_cast<float>(step_);
+  }
+  if (has_obstacle_height_) {
+    inputs.at("obstacle_height").data[0] = obstacle_height_;
   }
   ++step_;
   return true;
