@@ -88,7 +88,7 @@ The life of a plugin
      configure -> reset [label="policy first activated"];
      reset -> cycle;
      cycle -> cycle [label="every step\nor update"];
-     cycle -> reset [label="policy activated\n(clear() too after a\nhost reactivation)", style=dashed];
+     cycle -> reset [label="policy activated\n(clear() too after a host\nreactivation or safety reset)", style=dashed];
    }
 
 Two phases, with different rules:
@@ -355,7 +355,7 @@ the situations described in the other pages:
        ``max_age`` checks and the ``input_age_ms.*`` introspection (:doc:`data_flow`).
    * - ``Preprocessor::clear()``
      - When the policy is activated for the first time, and for its first activation after
-       the host is reactivated: forget everything.
+       the host is reactivated or its safety is reset after a latched stop: forget everything.
    * - ``Preprocessor::reset()``, ``Postprocessor::reset()``, ``ObservationTerm::reset()``
      - Whenever the policy becomes active: restart per-activation state.
    * - ``Preprocessor::observe()``
@@ -369,8 +369,10 @@ the situations described in the other pages:
        law). They must come from state interfaces: configuration fails if an input source
        provides one.
    * - ``InterfaceExecutor::hold()``
-     - Every update until the policy's first commands: keep the robot where it is
-       (:doc:`safety`).
+     - Every update from an activation, or a safety reset after a latched stop, until the
+       policy's first commands: keep the robot where it is (:doc:`safety`). Use only what
+       ``Postprocessor::initial_commands()`` writes, such as gains: after a reset the store
+       still holds the commands from before the fault.
    * - ``InterfaceExecutor::safe_values()``
      - On deactivation and failure: the values that stop commanding.
    * - ``InterfaceExecutor::fault()``

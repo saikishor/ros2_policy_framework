@@ -40,7 +40,7 @@ is applied at the beginning of the next step, so one step never mixes two polici
      imitation -> loco [label="after 147 steps"];
      imitation -> imitation [label="switch_policy(...)\nrejected"];
      loco -> loco [label="switch_policy(loco)\nrestarts it"];
-     imitation -> loco [label="host reactivated\n(bypasses interruptible)", style=dashed];
+     imitation -> loco [label="host reactivated or safety\nreset after a stop\n(bypasses interruptible)", style=dashed];
    }
 
 Two per-policy parameters shape this:
@@ -66,7 +66,8 @@ plugins, ``max_steps`` and ``interruptible``.
 The ``~/active_policies`` topic (``policy_framework_msgs/msg/ActivePolicies``) holds the
 policies being run. It is an array so that it can list several policies running at once;
 today it holds exactly one. It is published from the step when the active policy changes
-(a switch, the end of a ``max_steps`` motion, a reactivation of the host), first at the
+(a switch, the end of a ``max_steps`` motion, a reactivation of the host, a safety reset after
+a latched stop), first at the
 first step after the host is configured. It is latched (transient local, depth 1): a
 subscriber with a transient local QoS gets the current value when it joins, and the value
 stays while no step runs (host inactive, latched fault).
