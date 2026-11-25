@@ -30,6 +30,7 @@ set(THIS_PACKAGE_DEPENDS
   rclcpp_lifecycle
   realtime_tools
   sensor_msgs
+  std_srvs
 )
 
 find_package(ament_cmake REQUIRED)
