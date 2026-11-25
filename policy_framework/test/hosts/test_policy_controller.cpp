@@ -632,8 +632,12 @@ TEST_F(ControllerSafetyTest, AResetWithAsyncInferenceDropsAStepFromBeforeTheFaul
   EXPECT_EQ(update(), controller_interface::return_type::OK);
   // Holding where it is (not following the step from before the fault) until a fresh step.
   EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  EXPECT_EQ(update(), controller_interface::return_type::OK);
+  // A trigger is dropped while the inference thread holds its lock: retry, as the controller
+  // does on every update.
+  for (int i = 0; i < 100 && std::abs(command("j1/effort")) < 1e-9; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    EXPECT_EQ(update(), controller_interface::return_type::OK);
+  }
   EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));
   ASSERT_EQ(controller.get_node()->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
 }
