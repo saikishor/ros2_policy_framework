@@ -181,13 +181,6 @@ void ExtraInputs::compute(
   }
 }
 
-std::vector<std::string> ExtraInputs::names() const
-{
-  std::vector<std::string> out;
-  for (const auto & e : inputs_) {out.push_back(e.input);}
-  return out;
-}
-
 }  // namespace policy_framework_mjlab
 
 PLUGINLIB_EXPORT_CLASS(policy_framework_mjlab::TimeStepInput, policy_framework_mjlab::ExtraInput)

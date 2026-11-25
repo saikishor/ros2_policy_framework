@@ -154,8 +154,6 @@ public:
   void compute(
     const policy_framework::DataStore & state, const policy_framework::TensorMap & last_outputs,
     policy_framework::TensorMap & inputs);
-  /// @return The model inputs filled here, in model input order. Valid after configure().
-  std::vector<std::string> names() const;
 
 private:
   struct Entry
