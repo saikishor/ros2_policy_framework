@@ -275,6 +275,32 @@ void PolicyRunner::configure_safety(
   // Reserved now, so that a failing check does not allocate for its reason in most cases.
   reason_.reserve(256);
   check_reason_.reserve(256);
+
+  fault_slots_.clear();
+  for (const auto & m : monitor_checks) {fault_slots_.push_back({m.first, std::nullopt, ""});}
+  source_slots_ = fault_slots_.size();
+  for (const auto & a : source_ages_) {fault_slots_.push_back({a.name, std::nullopt, ""});}
+  check_slots_ = fault_slots_.size();
+  for (const auto & c : checks_) {fault_slots_.push_back({c.name, std::nullopt, ""});}
+  input_slot_ = fault_slots_.size();
+  fault_slots_.push_back({"policy_input", std::nullopt, ""});
+  failure_slot_ = fault_slots_.size();
+  fault_slots_.push_back({"policy_failure", std::nullopt, ""});
+  for (auto & f : fault_slots_) {f.reason.reserve(256);}
+  published_slots_.assign(fault_slots_.size(), std::nullopt);
+  published_reaction_.reset();
+
+  clock_ = node->get_clock();
+  // Latched, so that a user interface started during a fault shows it.
+  status_pub_ = std::make_unique<
+    realtime_tools::RealtimePublisher<policy_framework_msgs::msg::SafetyStatusArray>>(
+    node->create_publisher<policy_framework_msgs::msg::SafetyStatusArray>(
+      "~/safety_status", rclcpp::QoS(1).transient_local()));
+  // The initial state, every check passing.
+  status_msg_ = policy_framework_msgs::msg::SafetyStatusArray();
+  status_msg_.stamp = clock_->now();
+  status_msg_.active_policy = pipeline_->active_policy();
+  status_pending_ = !status_pub_->try_publish(status_msg_);
 }
 
 void PolicyRunner::restart()
@@ -291,6 +317,8 @@ void PolicyRunner::clear_safety()
   latched_.reset();
   reported_.reset();
   for (auto & c : checks_) {c.check->reset();}
+  // Published by the next update_safety().
+  for (auto & f : fault_slots_) {f.reaction.reset();}
 }
 
 bool PolicyRunner::apply_safety_reset()
@@ -341,20 +369,35 @@ std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stam
   // next step, after this, so a new policy's exemptions apply from the cycle after its first
   // step, and the checks it disabled come back from the cycle after the next policy's first step.
   const auto & disabled = policy_safety_[pipeline_->active_index()];
-  if (const auto v = monitor_.check(state_, observation_stamp, now, disabled.monitor)) {
+  const auto v = monitor_.check(state_, observation_stamp, now, disabled.monitor);
+  if (v) {
     worst = v->check == SafetyMonitor::Check::TILT ? tilt_on_fault_ :
       v->check == SafetyMonitor::Check::JOINT_POSITION ? position_on_fault_ :
       input_age_on_fault_;
     reason_ = v->describe();
   }
-  for (auto & s : source_ages_) {
+  for (size_t i = 0; i < source_slots_; ++i) {
+    // The slots are in the order of SafetyMonitor::Check.
+    if (set_fault(i, v && SafetyMonitor::bit(v->check) == i ? worst : std::nullopt)) {
+      fault_slots_[i].reason = reason_;
+    }
+  }
+  for (size_t i = 0; i < source_ages_.size(); ++i) {
+    const auto & s = source_ages_[i];
     const double received = s.source->receive_time();
     // Nothing received yet: the policy waits for it, this is not a fault.
-    if (received <= 0.0 || now - received <= s.max_age) {continue;}
-    if (!worst || s.on_fault > *worst) {
+    const bool stale = received > 0.0 && now - received > s.max_age;
+    const bool new_fault = set_fault(source_slots_ + i, stale ? std::optional{s.on_fault} :
+        std::nullopt);
+    if (!stale) {continue;}
+    const bool most_severe = !worst || s.on_fault > *worst;
+    if (!most_severe && !new_fault) {continue;}
+    const auto reason = fmt::format(
+      "source '{}': no message for {} s, above its max_age", s.name, now - received);
+    if (new_fault) {fault_slots_[source_slots_ + i].reason = reason;}
+    if (most_severe) {
       worst = s.on_fault;
-      reason_ = fmt::format(
-        "source '{}': no message for {} s, above its max_age", s.name, now - received);
+      reason_ = reason;
     }
   }
   // Every check runs, also after a failing one: the most severe reaction wins.
@@ -364,6 +407,7 @@ std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stam
       // Not run at all: a check that fails throughout a jump would allocate its reason on every
       // cycle.
       c.skipped = true;
+      set_fault(check_slots_ + i, std::nullopt);
       continue;
     }
     if (c.skipped) {
@@ -372,8 +416,14 @@ std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stam
       c.skipped = false;
     }
     const auto verdict = c.check->check(state_, now, check_reason_);
-    if (verdict.safe) {continue;}
+    if (verdict.safe) {
+      set_fault(check_slots_ + i, std::nullopt);
+      continue;
+    }
     const auto r = reaction_of(verdict, c.on_fault, c.declared);
+    if (set_fault(check_slots_ + i, r)) {
+      fault_slots_[check_slots_ + i].reason.assign(c.name).append(": ").append(check_reason_);
+    }
     if (!worst || r > *worst) {
       worst = r;
       reason_ = fmt::format("{}: {}", c.name, check_reason_);
@@ -385,6 +435,7 @@ std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stam
   set_neutral_commands(!latched_ && worst == FaultReaction::NEUTRAL_COMMANDS, now);
   const auto effective = latched_ ? latched_ : worst;
   report(effective, reason_);
+  publish_status();
   return effective;
 }
 
@@ -408,18 +459,24 @@ std::optional<FaultReaction> PolicyRunner::check_input_ages(double now)
   if (const auto i = stale_input(stamps, now)) {
     const auto & s = stamps[*i];
     escalate(s.max_age_on_fault);
-    report(
-      latched_, fmt::format(
-        "input '{}' of policy '{}': no message for {} s, above its max_age", s.name,
-        pipeline_->active_policy(), now - s.receive_time));
+    const auto reason = fmt::format(
+      "input '{}' of policy '{}': no message for {} s, above its max_age", s.name,
+      pipeline_->active_policy(), now - s.receive_time);
+    if (set_fault(input_slot_, s.max_age_on_fault)) {fault_slots_[input_slot_].reason = reason;}
+    report(latched_, reason);
   }
+  publish_status();
   return latched_;
 }
 
 FaultReaction PolicyRunner::policy_failure(const std::string & reason)
 {
   escalate(policy_failure_reaction_);
+  if (set_fault(failure_slot_, policy_failure_reaction_)) {
+    fault_slots_[failure_slot_].reason = reason;
+  }
   report(latched_, reason);
+  publish_status();
   return *latched_;
 }
 
@@ -439,6 +496,50 @@ void PolicyRunner::report(std::optional<FaultReaction> effective, const std::str
     RCLCPP_INFO(logger_, "Safety: every check passes again");
   }
   reported_ = effective;
+}
+
+bool PolicyRunner::set_fault(size_t slot, std::optional<FaultReaction> reaction)
+{
+  auto & f = fault_slots_[slot];
+  const bool stop = f.reaction && *f.reaction != FaultReaction::NEUTRAL_COMMANDS;
+  if (stop && (!reaction || *reaction <= *f.reaction)) {return false;}
+  if (reaction == f.reaction) {return false;}
+  f.reaction = reaction;
+  return reaction.has_value();
+}
+
+void PolicyRunner::publish_status()
+{
+  bool changed = reported_ != published_reaction_;
+  for (size_t i = 0; i < fault_slots_.size() && !changed; ++i) {
+    changed = fault_slots_[i].reaction != published_slots_[i];
+  }
+  if (changed) {
+    // ponytail: builds the message on changes only (rare), allocating like report(); not
+    // real-time safe.
+    published_reaction_ = reported_;
+    status_msg_.stamp = clock_->now();
+    status_msg_.active_policy = pipeline_->active_policy();
+    status_msg_.reaction = reported_ ? to_string(*reported_) : "";
+    status_msg_.statuses.clear();
+    for (size_t i = 0; i < fault_slots_.size(); ++i) {
+      const auto & f = fault_slots_[i];
+      published_slots_[i] = f.reaction;
+      if (!f.reaction) {continue;}
+      policy_framework_msgs::msg::SafetyStatus s;
+      s.name = f.name;
+      s.reaction = to_string(*f.reaction);
+      s.reason = f.reason;
+      status_msg_.statuses.push_back(std::move(s));
+    }
+    status_pending_ = true;
+  }
+  // Retried on the next cycles while the previous message is still being published: the topic
+  // is latched, a lost change would stay wrong until the next one.
+  // ponytail: never waits (the controller is deactivated from the real-time loop), so a second
+  // change in the last cycle before an `error` deactivation is not sent until the next change
+  // (e.g. a reactivation); a non-real-time retry timer if that case ever matters.
+  if (status_pending_ && status_pub_->try_publish(status_msg_)) {status_pending_ = false;}
 }
 
 std::vector<std::string> PolicyRunner::unprovided_state() const
