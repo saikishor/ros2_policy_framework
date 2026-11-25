@@ -48,8 +48,7 @@ an input that has not arrived yet. During that gap the executors *hold* the robo
 - ``PdEffortExecutor`` runs its PD law around the joint positions measured at activation (or
   at the reset), with a zero velocity reference. It uses the gains the policy provides before
   its first step (after a reset: the last ones it provided), or else its own ``stiffness`` and
-  ``damping`` parameters. A joint without gains is
-  left untouched.
+  ``damping`` parameters. A joint without gains is left untouched.
 - ``ReferenceInterfaceExecutor`` writes nothing: the chained controller keeps holding its
   own reference.
 
