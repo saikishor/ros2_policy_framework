@@ -224,7 +224,7 @@ These words are used with one meaning throughout the code and the documentation.
    * - Fault reaction
      - What a failing check makes the host do: ``neutral_commands``, ``hold``, ``damp``,
        ``safe`` or ``error``. Every reaction but ``neutral_commands`` is *latched*: it stays
-       until the host is reactivated.
+       until the host is reactivated or its safety is reset (``~/reset_safety``).
    * - Safety entry
      - A state entry that is 0 while user commands must be ignored, for example a dead-man
        switch. ``CommandGate`` applies it, and the ``neutral_commands`` reaction.

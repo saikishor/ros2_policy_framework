@@ -92,8 +92,8 @@ come from an input source (configuration fails listing the missing ones); comman
 through topic executors. The policy steps on a timer at `update_rate`, which follows `/clock`
 with `use_sim_time`. Crashes print a stack trace (`backward_ros`). The safety checks run on
 every tick: a fault with a latched reaction, or a failed policy step, stops the commands until
-the node is reactivated (the node does not own the hardware); neutral commands keep the policy
-running.
+the node is reactivated or its safety is reset (see [Safety reset](#safety-reset); the node
+does not own the hardware); neutral commands keep the policy running.
 
 ### ros2_control controller
 
@@ -156,7 +156,8 @@ or, chaining into a pid_controller that closes the loop:
     check applies its reaction; a failed policy step (including a non-finite model output,
     which never reaches the commands) applies `on_policy_failure`. While a reaction other than
     `neutral_commands` is latched the policy is neither stepped nor followed: the executors
-    write `hold`, `damp` or `safe` on every update until the controller is reactivated, or for
+    write `hold`, `damp` or `safe` on every update until the controller is reactivated or its
+    safety is reset (see [Safety reset](#safety-reset)), or for
     `error` they write their safe values and `update()` returns `ERROR` (the controller manager
     deactivates the controller and activates its `fallback_controllers`). A reaction an
     executor cannot apply is refused while configuring. See `docs/safety.rst`.
@@ -262,6 +263,22 @@ ros2 service call /<node or controller>/list_policies policy_framework_msgs/srv/
 ros2 topic echo --qos-durability transient_local /<node or controller>/active_policies
 ```
 
+### Safety reset
+
+```bash
+ros2 service call /<node or controller>/reset_safety std_srvs/srv/Trigger
+```
+
+Clears what the safety latched, so that the robot goes on without reactivating the host, e.g.
+after a `damp`, or after a `persist` check kept `neutral_commands` on. Applied at the start of
+the next cycle, before the checks run: every check is reset and runs again at once, so whatever
+still fails latches again before the policy runs. After a latched `hold`, `damp` or `safe` the
+first policy restarts from scratch (it was not stepped meanwhile) and the executors hold the
+robot until its first step; after neutral commands only, the running policy simply goes on. An
+`error` in the controller is not reset this way: the controller manager already deactivated it
+and activated the `fallback_controllers`, and reactivation is the way back. See
+`docs/safety.rst`.
+
 ### Kinematics
 
 ```yaml
@@ -294,7 +311,7 @@ must be revolute, continuous or prismatic (lock the others).
 | `policy_framework/PdEffortExecutor` | InterfaceExecutor | `joints` (default: every `<joint>/position` command), `effort_interface` (`effort`), `stiffness`/`damping` (per joint, used when the policy writes no `<joint>/stiffness`/`damping` commands), `effort_limits` (per joint, 0 or empty: none), `fault_damping` (per joint, default empty; the `DAMP` fault reaction writes `-fault_damping · velocity` within the effort limits, supported only when every value is above zero). Fault reactions: `HOLD` PD around the position at the fault, `DAMP`, `SAFE` zero effort; in `HOLD` and `DAMP` a joint with a missing value gets zero effort. Outside faults a joint with a missing or non-finite value is left unchanged |
 | `policy_framework/StateBoundsCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.min`/`.max` (at least one), `<interface>.hysteresis` (0: once failed, passes again only within the bounds narrowed by it), `trigger_cycles` (1), `escalation.count` (0: never) / `escalation.on_fault` (`error`): from that many entries failing at once, asks for that reaction instead of its `on_fault`; a non-finite value is out of bounds, an entry never received is not checked |
 | `policy_framework/JumpCheck` | SafetyCheck | `prefixes`, `interfaces` → `<prefix>/<interface>`, `<interface>.max_delta` (required): fails on a change above it between two cycles (e.g. an encoder glitch) or a non-finite value; do not use on wrapping values |
-| `policy_framework/EncoderMismatchCheck` | SafetyCheck | `joints` → `<joint>/absolute_position` and `<joint>/position`, `tolerance` (required, above zero), `persist` (false): fails while both differ more than `tolerance` or one is not finite; with `persist`, keeps failing until reactivation (only matters for `on_fault: neutral_commands`, the one reaction that recovers by itself); a joint is checked once both were received |
+| `policy_framework/EncoderMismatchCheck` | SafetyCheck | `joints` → `<joint>/absolute_position` and `<joint>/position`, `tolerance` (required, above zero), `persist` (false): fails while both differ more than `tolerance` or one is not finite; with `persist`, keeps failing until reactivation or a [safety reset](#safety-reset) (only matters for `on_fault: neutral_commands`, the one reaction that recovers by itself); a joint is checked once both were received |
 | `policy_framework/MockSafetyCheck` | SafetyCheck | `topic` (`~/<name>`, `policy_framework_msgs/msg/MockFault`), `reactions` (default empty): fails while the latest message has `fault: true`, with its `reaction` (empty: `on_fault`; must be listed in `reactions`, else `error`) and for its `duration` (s, 0: until the next message); reactivation forgets the latest message. For testing how the robot reacts to a fault only, see [safety](docs/safety.rst) |
 | `policy_framework/ReferenceInterfaceExecutor` | InterfaceExecutor | `prefix` (empty: the entry name), `interfaces` (`[position, velocity]`) → `<prefix>/<joint>/<interface>`; entries never written are left unchanged |
 | `policy_framework/ConcatPreprocessor` | Preprocessor | `input_tensor` (`obs`), `input_entries`: entries copied as-is |

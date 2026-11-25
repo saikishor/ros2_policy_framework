@@ -383,8 +383,9 @@ the situations described in the other pages:
        ``PolicyController`` refuses to configure when an executor cannot apply one. Default:
        none.
    * - ``SafetyCheck::reset()``
-     - When the host is reactivated, and when a check disabled by the previous policy
-       applies again (:ref:`checks-per-policy`): forget filters and counters.
+     - When the host is reactivated, when its safety is reset (``~/reset_safety``), and when
+       a check disabled by the previous policy applies again (:ref:`checks-per-policy`):
+       forget filters, counters and a persisting failure.
    * - ``CommandGate::open()``
      - False while the safety entry has not been received or is not above 0, or the
        ``NEUTRAL_COMMANDS`` fault reaction is active
