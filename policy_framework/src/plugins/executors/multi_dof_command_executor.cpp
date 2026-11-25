@@ -18,6 +18,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <fmt/format.h>
 
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework/multi_dof_command_executor_parameters.hpp"
@@ -45,7 +46,8 @@ void MultiDofCommandExecutor::configure(const PluginContext & ctx, const DataSto
   }
   if (values_idx_.empty()) {
     throw std::runtime_error(
-            "Executor '" + ctx.name + "': no command entry ends with '" + values_suffix + "'");
+            fmt::format(
+              "Executor '{}': no command entry ends with '{}'", ctx.name, values_suffix));
   }
   msg_.values.assign(values_idx_.size(), 0.0);
   msg_.values_dot.assign(values_idx_.size(), 0.0);

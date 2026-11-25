@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fmt/format.h>
 
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework/pd_effort_executor_parameters.hpp"
@@ -60,8 +61,8 @@ void PdEffortExecutor::configure(
   auto check_size = [&](const std::vector<double> & v, const std::string & what) {
       if (!v.empty() && v.size() != names.size()) {
         throw std::runtime_error(
-                ctx.name + ": " + what + " has " + std::to_string(v.size()) + " values for " +
-                std::to_string(names.size()) + " joints");
+                fmt::format(
+                  "{}: {} has {} values for {} joints", ctx.name, what, v.size(), names.size()));
       }
     };
   check_size(kp, "stiffness");
@@ -76,14 +77,17 @@ void PdEffortExecutor::configure(
   for (size_t i = 0; i < names.size(); ++i) {
     const auto & j = names[i];
     const auto ref_pos = commands.find(j + "/position");
-    if (!ref_pos) {throw std::runtime_error(ctx.name + ": no command entry " + j + "/position");}
+    if (!ref_pos) {
+      throw std::runtime_error(fmt::format("{}: no command entry {}/position", ctx.name, j));
+    }
     Joint joint{*ref_pos, state.add(j + "/position"), state.add(j + "/velocity"),
       commands.find(j + "/velocity"), commands.find(j + "/stiffness"),
       commands.find(j + "/damping")};
     if ((!joint.kp_entry && kp.empty()) || (!joint.kd_entry && kd.empty())) {
       throw std::runtime_error(
-              ctx.name + ": no gains for " + j +
-              " (neither stiffness/damping command entries nor parameters)");
+              fmt::format(
+                "{}: no gains for {} (neither stiffness/damping command entries nor parameters)",
+                ctx.name, j));
     }
     joint.has_kp = !kp.empty();
     joint.has_kd = !kd.empty();

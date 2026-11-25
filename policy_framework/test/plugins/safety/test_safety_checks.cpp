@@ -122,7 +122,7 @@ TEST_F(StateBoundsCheckTest, PassesAgainOnlyInsideTheBoundsNarrowedByTheHysteres
   EXPECT_FALSE(ok());
   set("j1/temperature", 75.0);  // back below max, but not below max - hysteresis
   EXPECT_FALSE(ok());
-  EXPECT_NE(reason.find("70.0"), std::string::npos) << reason;  // the bound to get back within
+  EXPECT_NE(reason.find("70]"), std::string::npos) << reason;  // the bound to get back within
   set("j1/temperature", 69.0);
   EXPECT_TRUE(ok());
   set("j1/temperature", 75.0);  // not failed any more: the plain bounds again
