@@ -23,6 +23,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fmt/format.h>
 
 #include "policy_framework_mjlab/mjlab_postprocessor_parameters.hpp"
 #include "pluginlib/class_list_macros.hpp"
@@ -124,9 +125,9 @@ std::vector<rclcpp::Parameter> make_gain_parameters(
 {
   if (joints.empty() || stiffness.size() != joints.size() || damping.size() != joints.size()) {
     throw std::invalid_argument(
-            "Expected one stiffness and damping per actuated joint (" +
-            std::to_string(joints.size()) + "), got " + std::to_string(stiffness.size()) +
-            " and " + std::to_string(damping.size()));
+            fmt::format(
+              "Expected one stiffness and damping per actuated joint ({}), got {} and {}",
+              joints.size(), stiffness.size(), damping.size()));
   }
   std::vector<rclcpp::Parameter> params;
   for (size_t i = 0; i < joints.size(); ++i) {
@@ -170,10 +171,10 @@ void MjlabPostprocessor::configure(
     offset_.size() != actuated.size())
   {
     throw std::runtime_error(
-            "Model has " + std::to_string(actions->second.data.size()) + " actions and " +
-            std::to_string(scale_.size()) + " action scales but " +
-            std::to_string(actuated.size()) +
-            " actuated joints; set 'excluded_joints' to the joints the policy does not drive");
+            fmt::format(
+              "Model has {} actions and {} action scales but {} actuated joints; set "
+              "'excluded_joints' to the joints the policy does not drive",
+              actions->second.data.size(), scale_.size(), actuated.size()));
   }
   position_idx_.clear();
   velocity_idx_.clear();
@@ -198,7 +199,8 @@ void MjlabPostprocessor::configure(
   gain_values_.clear();
   if (params.gains_as_commands) {
     if (!gains_error.empty()) {
-      throw std::runtime_error("gains_as_commands: model metadata gains: " + gains_error);
+      throw std::runtime_error(
+              fmt::format("gains_as_commands: model metadata gains: {}", gains_error));
     }
     for (size_t i = 0; i < actuated.size(); ++i) {
       gain_idx_.push_back(commands.add(actuated[i] + "/stiffness"));
