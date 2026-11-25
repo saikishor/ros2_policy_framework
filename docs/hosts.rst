@@ -27,7 +27,7 @@ Standalone node
        policy [label="Active policy\n(one step per tick)"];
        ages [label="Term input ages", fillcolor="#fff6d9"];
        execs [label="Topic executors"];
-       stop [label="No commands\nuntil reactivated", fillcolor="#fde8e8"];
+       stop [label="No commands\nuntil reactivated\nor reset", fillcolor="#fde8e8"];
        wait [label="Nothing sent\nthis tick", fillcolor="#f2f2f2"];
        sources -> kin -> safety -> policy -> ages -> execs;
        policy -> wait [label="waiting for data", style=dashed];
@@ -48,8 +48,8 @@ Standalone node
   loop at a high rate: a ros2_control ``pid_controller``, or the robot's own driver.
 - The safety checks run on every tick, before the step, and the ``max_age`` of the terms
   after it. The node does not own the hardware: a fault with a latched reaction, a failed
-  step or a stale input stops the commands until the node is reactivated; neutral commands
-  keep the policy running (:doc:`safety`).
+  step or a stale input stops the commands until the node is reactivated or its safety is
+  reset (``~/reset_safety``); neutral commands keep the policy running (:doc:`safety`).
 
 Use it when the robot has no ros2_control, or when the policy should live outside the
 control process.

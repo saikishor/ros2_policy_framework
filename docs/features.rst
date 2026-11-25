@@ -85,6 +85,9 @@ Safety built in
 - **A reaction per check**: ``neutral_commands``, ``hold``, ``damp``, ``safe`` or ``error``.
   Every check states its own, and a reaction an executor cannot apply is refused while
   configuring. On ``error`` the controller manager activates the ``fallback_controllers``.
+- **Reset the safety** with the ``reset_safety`` service: a latched ``hold``, ``damp`` or
+  ``safe``, or a persisting ``neutral_commands``, clears once the cause is gone, without
+  reactivating the host.
 - **Checks per policy**: a policy can disable checks that do not fit it, for example a joint
   velocity bound during a jump.
 - **Bad model outputs never reach the robot**: a non-finite output fails the step, which

@@ -19,7 +19,7 @@ From activation to deactivation
      hold [label="Hold\nexecutors keep the robot\nwhere it is", fillcolor="#fff6d9"];
      run [label="Run\nexecutors follow\nthe policy's commands", fillcolor="#e8f5e9"];
      safe [label="Safe values\n(zero effort for\nPdEffortExecutor)", fillcolor="#fde8e8"];
-     fault [label="Fault reaction\nhold, damp or safe,\nuntil reactivated", fillcolor="#fde8e8"];
+     fault [label="Fault reaction\nhold, damp or safe,\nuntil reactivated or reset", fillcolor="#fde8e8"];
      error [label="Error\ndeactivated by the controller\nmanager, fallback controllers", fillcolor="#fde8e8"];
      start -> hold [label="activate"];
      hold -> run [label="first commands\nfrom the policy"];
@@ -28,6 +28,7 @@ From activation to deactivation
      hold -> error [label="reaction error, or\ninterfaces unreadable"];
      run -> fault [label="latched fault\n(a check, a source or term\nmax_age, or a failed step)"];
      fault -> fault [label="escalates"];
+     fault -> hold [label="reset_safety,\nevery check passes"];
      run -> error [label="reaction error, or\ninterfaces unreadable"];
      fault -> error [label="escalates to error, or\ninterfaces unreadable"];
      error -> safe [label="safe values written"];
@@ -183,7 +184,8 @@ of a joint differ more than ``tolerance``, for example a slipping incremental en
 wrong homing, or when one of them is not finite. A joint is checked once both were received.
 With ``neutral_commands``, the one reaction that recovers by itself, the robot gets the
 operator's commands back once the positions agree again; ``persist: true`` keeps the check
-failing until reactivation instead. The reason names the joint and both values:
+failing until reactivation or a reset (`Resetting the safety`_) instead. The reason names the
+joint and both values:
 
 .. code-block:: yaml
 
@@ -202,8 +204,9 @@ while the latest message has ``fault: true``, with the message's ``reaction`` (e
 ask only for the reactions listed in ``reactions``, which the host checks against its
 executors at configure, like any reaction a check declares; an unknown name asks for
 ``error``, and the host applies ``error`` for a valid but undeclared one. As for any
-fault, every reaction but ``neutral_commands`` stays latched until reactivation, which also
-forgets the latest message, so that the robot does not fault again at once:
+fault, every reaction but ``neutral_commands`` stays latched until reactivation or a reset
+(`Resetting the safety`_), which also forget the latest message, so that the robot does not
+fault again at once:
 
 .. code-block:: yaml
 
@@ -401,7 +404,7 @@ Skipped, then started afresh
 
 Faults stay latched
    Switching policy never clears a fault: a reaction latched while one policy ran stays latched
-   under the next one, until reactivation.
+   under the next one, until reactivation or a reset (`Resetting the safety`_).
 
 .. warning::
 
@@ -507,7 +510,7 @@ The behaviour is still dynamic while running:
 - **Recovering**: ``NEUTRAL_COMMANDS`` lifts as soon as no failing check asks for it any more,
   so the robot walks again once its motors cooled down. Give such a check a ``hysteresis`` so
   that a value hovering at a bound does not toggle it. Every other reaction is latched until
-  the controller is reactivated.
+  the controller is reactivated or its safety is reset (`Resetting the safety`_).
 - **Escalating**: a faulted controller only ever moves to a later reaction, never back. Warm
   motors stop the walking, hot ones damp the robot down, a failing leg actuator returns an
   error.
@@ -526,6 +529,34 @@ There is no global default reaction on purpose. With one, a check without its ow
 would not say what it does, and changing the default would silently change every such check.
 Instead each check has its own, ``error`` until set: an unset check does the safest thing,
 and the reaction of every check can be read next to it.
+
+Resetting the safety
+~~~~~~~~~~~~~~~~~~~~
+
+Once the cause is dealt with (the motors cooled down, the robot was put back on its feet, the
+encoders homed again), an operator clears what the safety latched without reactivating the
+host:
+
+.. code-block:: bash
+
+   ros2 service call /policy_controller/reset_safety std_srvs/srv/Trigger
+
+The service only records the request. The host applies it at the start of its next cycle, in
+its control thread, right before the checks run:
+
+- Every check is reset, as on reactivation: a ``persist`` failure, the ``trigger_cycles``
+  counts and the ``hysteresis`` are forgotten (a value within the hysteresis band passes
+  again), and ``MockSafetyCheck`` forgets its latest message.
+- The checks then run at once: whatever still fails latches again in the same cycle, before
+  the policy runs on it. A reset never overrides a fault that is still there.
+- After a latched ``hold``, ``damp`` or ``safe``, the policy was not stepped for a while: the
+  first policy restarts with every policy cleared, the executors hold the robot until its first
+  step (as after an activation), and a step still running in the inference thread is dropped.
+- After ``neutral_commands`` only, such as a ``persist`` check, the policy kept running on its
+  inputs: it goes on, and the operator's commands are accepted again.
+- ``error`` in the controller is not reset this way: the controller manager already deactivated
+  the controller and activated its ``fallback_controllers``. Reactivating it is the way back.
+  In ``policy_node``, which only stops its commands, a reset clears ``error`` too.
 
 A reaction chosen while running
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -571,8 +602,8 @@ otherwise, but not ``neutral_commands``: the policy itself failed, it cannot kee
 Unreadable state interfaces in the controller still return an error.
 
 - ``policy_node`` does not own the hardware: every latched reaction (anything but
-  ``neutral_commands``) stops the commands until the node is reactivated; neutral commands keep
-  the policy running.
+  ``neutral_commands``) stops the commands until the node is reactivated or its safety is reset
+  (`Resetting the safety`_); neutral commands keep the policy running.
 - ``PolicyController`` refuses, while configuring, a reaction of the configuration that one
   of its executors cannot apply. While a reaction is latched it neither steps nor follows the
   policy: on every update its executors write the reaction (``InterfaceExecutor::fault()``),
