@@ -148,6 +148,18 @@ void PolicyRunner::configure(
       std::shared_ptr<policy_framework_msgs::srv::ListPolicies::Response> res) {
       res->policies = policy_infos_;
     });
+  reset_service_ = node->create_service<std_srvs::srv::Trigger>(
+    "~/reset_safety",
+    [this](
+      const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+      std::shared_ptr<std_srvs::srv::Trigger::Response> res) {
+      // Only a request: the latch and the checks belong to the control thread.
+      reset_requested_.store(true);
+      res->success = true;
+      res->message =
+        "Safety reset requested: applied at the next cycle, whatever still fails latches again";
+      RCLCPP_INFO(logger_, "reset_safety: %s", res->message.c_str());
+    });
   // Latched, so that a late subscriber gets the current policy (published only on changes).
   active_pub_ = std::make_unique<
     realtime_tools::RealtimePublisher<policy_framework_msgs::msg::ActivePolicies>>(
@@ -269,10 +281,30 @@ void PolicyRunner::restart()
 {
   pipeline_->restart();
   pipeline_->write_initial_commands(commands_);
+  clear_safety();
+  reset_requested_.store(false);
+}
+
+void PolicyRunner::clear_safety()
+{
   set_neutral_commands(false, 0.0);
   latched_.reset();
   reported_.reset();
   for (auto & c : checks_) {c.check->reset();}
+}
+
+bool PolicyRunner::apply_safety_reset()
+{
+  if (!reset_requested_.exchange(false)) {return false;}
+  // Only stops are latched; neutral commands are re-evaluated on every cycle.
+  const bool stopped = latched_.has_value();
+  // Not write_initial_commands() (outside the control cycle only): the executors hold with the
+  // commands the store already has until the first step.
+  if (stopped) {pipeline_->restart();}
+  clear_safety();
+  // ponytail: logs from the control cycle, on an operator's request only, like report().
+  RCLCPP_INFO(logger_, "Safety reset%s", stopped ? ": restarting the default policy" : "");
+  return stopped;
 }
 
 FaultReaction PolicyRunner::reaction_of(
