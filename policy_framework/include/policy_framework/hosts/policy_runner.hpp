@@ -122,13 +122,13 @@ public:
    * @brief Apply a reset of the safety requested on `~/reset_safety` (std_srvs/Trigger), if
    *        any, so that the robot can go on without reactivating the host.
    *
-   * Every check is reset (forgetting e.g. a persisting failure, its trigger_cycles count and
-   * its hysteresis) and neutral commands are lifted. A latched HOLD, DAMP or SAFE (or, in
-   * policy_node, ERROR) is cleared and the policy restarts from the default one with every
-   * policy cleared, since it was not stepped while latched; neutral commands kept it running
-   * on its inputs, so it goes on. The service only records the request: hosts call this on
-   * every cycle in their control thread, right before update_safety(), which latches again at
-   * once whatever still fails. Real-time safe while nothing was requested.
+   * Every check is reset (SafetyCheck::reset()) and neutral commands are lifted. A latched
+   * HOLD, DAMP or SAFE (or, in policy_node, ERROR) is cleared and the policy restarts from the
+   * default one with every policy cleared, since it was not stepped while latched; neutral
+   * commands kept it running on its inputs, so it goes on. The service only records the
+   * request: hosts call this on every cycle in their control thread, right before
+   * update_safety(), which latches again at once whatever still fails. Real-time safe while
+   * nothing was requested.
    * @return Whether the policy restarts: the host then resets what it resets when activated
    *         (e.g. the observation stamp, old by now, and a step still pending).
    */

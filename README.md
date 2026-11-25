@@ -157,10 +157,10 @@ or, chaining into a pid_controller that closes the loop:
     which never reaches the commands) applies `on_policy_failure`. While a reaction other than
     `neutral_commands` is latched the policy is neither stepped nor followed: the executors
     write `hold`, `damp` or `safe` on every update until the controller is reactivated or its
-    safety is reset (see [Safety reset](#safety-reset)), or for
-    `error` they write their safe values and `update()` returns `ERROR` (the controller manager
-    deactivates the controller and activates its `fallback_controllers`). A reaction an
-    executor cannot apply is refused while configuring. See `docs/safety.rst`.
+    safety is reset (see [Safety reset](#safety-reset)), or for `error` they write their safe
+    values and `update()` returns `ERROR` (the controller manager deactivates the controller
+    and activates its `fallback_controllers`). A reaction an executor cannot apply is refused
+    while configuring. See `docs/safety.rst`.
   - *Unreadable state interfaces* (locked by their writer, e.g. an asynchronous hardware
     component): the previous value is used for up to `max_failed_reads` consecutive updates;
     one more writes the safe values and returns `ERROR`.
