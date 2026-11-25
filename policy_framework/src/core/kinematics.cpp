@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <fmt/format.h>
 
 #include "pinocchio/algorithm/frames.hpp"
 #include "pinocchio/algorithm/joint-configuration.hpp"
@@ -72,7 +73,9 @@ Kinematics::Kinematics(const std::string & robot_description, const std::vector<
     m.model = full;
   } else {
     for (const auto & j : joints) {
-      if (!full.existJointName(j)) {throw std::runtime_error("Kinematics: unknown joint '" + j + "'");}
+      if (!full.existJointName(j)) {
+        throw std::runtime_error(fmt::format("Kinematics: unknown joint '{}'", j));
+      }
     }
     std::vector<pinocchio::JointIndex> locked;
     for (pinocchio::JointIndex j = 1; j < static_cast<pinocchio::JointIndex>(full.njoints); ++j) {
@@ -87,8 +90,9 @@ Kinematics::Kinematics(const std::string & robot_description, const std::vector<
     const int nq = m.model.nqs[j];
     if (m.model.nvs[j] != 1 || (nq != 1 && nq != 2)) {
       throw std::runtime_error(
-              "Kinematics: joint '" + m.model.names[j] +
-              "' is not revolute, continuous or prismatic: leave it out of the joints");
+              fmt::format(
+                "Kinematics: joint '{}' is not revolute, continuous or prismatic: leave it out of "
+                "the joints", m.model.names[j]));
     }
     m.joint_names.push_back(m.model.names[j]);
     m.idx_q.push_back(m.model.idx_qs[j]);
@@ -108,7 +112,7 @@ size_t Kinematics::frame(const std::string & link) const
 {
   // Links only (BODY frames), so that a joint of the same name cannot match.
   if (!model_->model.existFrame(link, pinocchio::BODY)) {
-    throw std::runtime_error("Kinematics: unknown link '" + link + "'");
+    throw std::runtime_error(fmt::format("Kinematics: unknown link '{}'", link));
   }
   return model_->model.getFrameId(link, pinocchio::BODY);
 }

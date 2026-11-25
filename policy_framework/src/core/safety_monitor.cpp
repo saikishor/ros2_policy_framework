@@ -18,6 +18,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <fmt/format.h>
 
 #include "pinocchio/multibody/model.hpp"
 #include "pinocchio/parsers/urdf.hpp"
@@ -29,12 +30,12 @@ std::string SafetyMonitor::Violation::describe() const
 {
   switch (check) {
     case Check::TILT:
-      return "tilt of " + std::to_string(value) + " rad above safety.max_tilt";
+      return fmt::format("tilt of {} rad above safety.max_tilt", value);
     case Check::JOINT_POSITION:
-      return "position " + std::to_string(value) + " of joint " + joint +
-             " outside its limits minus safety.position_margin";
+      return fmt::format(
+        "position {} of joint {} outside its limits minus safety.position_margin", value, joint);
     case Check::INPUT_AGE:
-      return "observation " + std::to_string(value) + " s old, above safety.max_input_age";
+      return fmt::format("observation {} s old, above safety.max_input_age", value);
   }
   return "unknown check";
 }
