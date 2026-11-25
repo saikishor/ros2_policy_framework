@@ -31,6 +31,7 @@
 #include "policy_framework_msgs/srv/switch_policy.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 using policy_framework::FaultReaction;
 using policy_framework::PolicyPipeline;
@@ -255,7 +256,77 @@ protected:
   {
     return runner.state().get(runner.state().index(policy_framework::kNeutralCommandsEntry));
   }
+  /// Call ~/reset_safety, as an operator would; the runner applies it in apply_safety_reset().
+  void request_reset()
+  {
+    auto client = helper->create_client<std_srvs::srv::Trigger>("/runner/reset_safety");
+    ASSERT_TRUE(client->wait_for_service(std::chrono::seconds(2)));
+    auto future = client->async_send_request(std::make_shared<std_srvs::srv::Trigger::Request>());
+    ASSERT_EQ(exec.spin_until_future_complete(future, std::chrono::seconds(2)),
+      rclcpp::FutureReturnCode::SUCCESS);
+    EXPECT_TRUE(future.get()->success) << future.get()->message;
+  }
 };
+
+TEST_F(RunnerSafetyTest, AResetRecoversALatchedReactionOnceTheCheckPasses)
+{
+  configure(safety_params("/runner_reset_latch", "damp", "error"));
+  EXPECT_FALSE(runner.apply_safety_reset());  // nothing requested
+  set("j1/temperature", 85.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::DAMP);
+  set("j1/temperature", 70.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::DAMP);
+  request_reset();
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::DAMP);  // applied by the host only
+  EXPECT_TRUE(runner.apply_safety_reset());  // a stop was latched: the policy restarts
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
+  EXPECT_FALSE(runner.apply_safety_reset());  // applied once
+}
+
+TEST_F(RunnerSafetyTest, AResetWhileTheCheckStillFailsLatchesAgainAtOnce)
+{
+  configure(safety_params("/runner_reset_failing", "damp", "error"));
+  set("j1/temperature", 85.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::DAMP);
+  request_reset();
+  EXPECT_TRUE(runner.apply_safety_reset());
+  // The same cycle's update_safety(): the policy never runs on the unsafe state.
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::DAMP);
+}
+
+TEST_F(RunnerSafetyTest, AResetLiftsPersistingNeutralCommandsWithoutRestartingThePolicy)
+{
+  auto params = runner_params("/runner_reset_neutral");
+  const std::vector<rclcpp::Parameter> more = {
+    {"safety_checks", StringArray{"encoders"}},
+    {"encoders.type", "policy_framework/EncoderMismatchCheck"},
+    {"encoders.joints", StringArray{"j1"}},
+    {"encoders.tolerance", 0.1},
+    {"encoders.persist", true},
+    {"encoders.on_fault", "neutral_commands"},
+  };
+  params.insert(params.end(), more.begin(), more.end());
+  configure(params);
+  set("j1/absolute_position", 1.0);
+  set("j1/position", 1.5);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);
+  set("j1/position", 1.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);  // persists
+  EXPECT_DOUBLE_EQ(neutral(), 1.0);
+  request_reset();
+  // Only neutral commands: the policy kept running on its inputs, so it goes on.
+  EXPECT_FALSE(runner.apply_safety_reset());
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
+  EXPECT_DOUBLE_EQ(neutral(), 0.0);
+}
+
+TEST_F(RunnerSafetyTest, ARestartDropsAPendingResetRequest)
+{
+  configure(safety_params("/runner_reset_restart", "damp", "error"));
+  request_reset();  // e.g. while the host is inactive
+  runner.restart();  // its activation already starts afresh
+  EXPECT_FALSE(runner.apply_safety_reset());
+}
 
 TEST_F(RunnerSafetyTest, LoadsTheSafetyChecksAndRegistersWhatTheyRead)
 {

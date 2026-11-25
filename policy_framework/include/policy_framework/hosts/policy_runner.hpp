@@ -15,6 +15,7 @@
 #ifndef POLICY_FRAMEWORK__HOSTS__POLICY_RUNNER_HPP_
 #define POLICY_FRAMEWORK__HOSTS__POLICY_RUNNER_HPP_
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
@@ -31,6 +32,7 @@
 #include "policy_framework_msgs/msg/active_policies.hpp"
 #include "policy_framework_msgs/srv/list_policies.hpp"
 #include "policy_framework_msgs/srv/switch_policy.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 namespace policy_runner
 {
@@ -42,8 +44,9 @@ namespace policy_framework
 
 /**
  * @brief Everything a policy host (standalone node or ros2_control controller) needs: loads the
- *        plugins from parameters, owns the stores, serves `~/switch_policy` and
- *        `~/list_policies` (the loaded policies, policy_framework_msgs/srv/ListPolicies),
+ *        plugins from parameters, owns the stores, serves `~/switch_policy`,
+ *        `~/list_policies` (the loaded policies, policy_framework_msgs/srv/ListPolicies) and
+ *        `~/reset_safety` (std_srvs/srv/Trigger, see apply_safety_reset()),
  *        publishes `~/active_policies` and runs the cycle.
  *
  * `~/active_policies` (policy_framework_msgs/msg/ActivePolicies, latched: transient local,
@@ -83,15 +86,17 @@ namespace policy_framework
  *   step() from its own state when it runs in another thread.
  *
  * A cycle: [controller: copy state interfaces] → read_sources() → update_kinematics() →
- * update_safety() → step() (unless a latched reaction is active) → check_input_ages() (after a
- * successful step) → node: write_executors() / controller: its InterfaceExecutors.
+ * apply_safety_reset() → update_safety() → step() (unless a latched reaction is active) →
+ * check_input_ages() (after a successful step) → node: write_executors() / controller: its
+ * InterfaceExecutors.
  */
 class PolicyRunner
 {
 public:
   /**
-   * @brief Load and configure every plugin, create the `~/switch_policy` and
-   *        `~/list_policies` services and the `~/active_policies` publisher.
+   * @brief Load and configure every plugin, create the `~/switch_policy`, `~/list_policies`
+   *        and `~/reset_safety` (see apply_safety_reset()) services and the `~/active_policies`
+   *        publisher.
    * @param load_executors Load the `executors` as topic Executor plugins. The controller
    *        passes false and loads them itself as InterfaceExecutor plugins.
    * @param robot_description URDF of the robot; required only by the kinematics.
@@ -108,9 +113,26 @@ public:
 
   /**
    * @brief Start over from the default policy with every policy cleared (at the next step()),
-   *        and write its initial commands. Hosts call it when they are activated.
+   *        and write its initial commands, with every safety check reset and nothing latched.
+   *        Hosts call it when they are activated. Drops a pending `~/reset_safety` request.
    */
   void restart();
+
+  /**
+   * @brief Apply a reset of the safety requested on `~/reset_safety` (std_srvs/Trigger), if
+   *        any, so that the robot can go on without reactivating the host.
+   *
+   * Every check is reset (forgetting e.g. a persisting failure, its trigger_cycles count and
+   * its hysteresis) and neutral commands are lifted. A latched HOLD, DAMP or SAFE (or, in
+   * policy_node, ERROR) is cleared and the policy restarts from the default one with every
+   * policy cleared, since it was not stepped while latched; neutral commands kept it running
+   * on its inputs, so it goes on. The service only records the request: hosts call this on
+   * every cycle in their control thread, right before update_safety(), which latches again at
+   * once whatever still fails. Real-time safe while nothing was requested.
+   * @return Whether the policy restarts: the host then resets what it resets when activated
+   *         (e.g. the observation stamp, old by now, and a step still pending).
+   */
+  bool apply_safety_reset();
 
   /**
    * @brief Run the `safety.*` checks and every `safety_checks` plugin on state(), and apply the
@@ -120,7 +142,8 @@ public:
    * Checks the active policy lists in `disabled_safety_checks` are skipped (not run), and reset
    * when they apply again, so that they start afresh; a latched reaction stays latched.
    * NEUTRAL_COMMANDS lasts while a failing check asks for it (set_neutral_commands()); every
-   * other reaction is latched until restart(), and only ever escalates. Changes are logged.
+   * other reaction is latched until restart() or apply_safety_reset(), and only ever escalates.
+   * Changes are logged.
    * Real-time safe while every check passes; a failing check builds its reason.
    * @param observation_stamp Stamp of the observation of the last successful step (0: none).
    * @param now Current time in seconds, on the clock of the state stamps.
@@ -295,6 +318,8 @@ private:
   void escalate(FaultReaction reaction);
   /// Log a change of the reaction in effect, caused by @p reason.
   void report(std::optional<FaultReaction> effective, const std::string & reason);
+  /// Reset every check, lift neutral commands and forget the latched reaction.
+  void clear_safety();
 
   SafetyMonitor monitor_;
   bool monitor_enabled_ = false;
@@ -316,7 +341,10 @@ private:
   std::vector<SourceAge> source_ages_;
   std::vector<FaultReaction> input_age_reactions_;  ///< Of the inputs with a max_age.
   std::vector<PolicyInputs> policy_inputs_;
-  std::optional<FaultReaction> latched_;   ///< Latched reaction, until restart().
+  std::optional<FaultReaction> latched_;   ///< Latched reaction, until restart() or a reset.
+  /// Set by `~/reset_safety`, applied by apply_safety_reset() in the control thread.
+  std::atomic<bool> reset_requested_{false};
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_service_;
   std::optional<FaultReaction> reported_;  ///< Reaction in effect when last logged.
   std::string reason_;        ///< Of the most severe failing check of the current cycle.
   std::string check_reason_;  ///< Written by a failing check.
