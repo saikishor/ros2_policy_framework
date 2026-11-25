@@ -40,7 +40,8 @@ public:
   virtual void configure(const PluginContext & ctx, const ModelInfo & model, DataStore & state) = 0;
   /**
    * @brief Forget everything observed so far (e.g. the observation history). Called before
-   *        the first activation and when the host (re)starts, never in between.
+   *        the first activation and when the host (re)starts, including a safety reset after a
+   *        latched stop (`~/reset_safety`), never in between.
    */
   virtual void clear() {}
   /**

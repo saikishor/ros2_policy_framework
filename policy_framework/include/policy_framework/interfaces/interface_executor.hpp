@@ -67,11 +67,13 @@ public:
   virtual void write(const DataStore & commands, const DataStore & state, std::vector<double> & values) = 0;
   /**
    * @brief Compute the interface values that keep the robot where it is. Called from the
-   *        control loop on every update from the activation of the controller until the active
-   *        policy produced its first commands (e.g. while it waits for its inputs, or for its
-   *        first inference), instead of write().
-   * @param commands Only holds the policy's Postprocessor::initial_commands().
-   * @param start true on the first call after an activation.
+   *        control loop on every update from the activation of the controller, or from a
+   *        safety reset after a latched stop (`~/reset_safety`), until the active policy
+   *        produced its first commands (e.g. while it waits for its inputs, or for its first
+   *        inference), instead of write().
+   * @param commands Rely only on what Postprocessor::initial_commands() writes (e.g. gains):
+   *        after a safety reset it still holds the commands of the run before the fault.
+   * @param start true on the first call after an activation or a safety reset.
    * @param values One per command_interfaces(); NaN leaves that interface unchanged. Default:
    *        all NaN.
    */

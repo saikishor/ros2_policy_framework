@@ -64,13 +64,13 @@ namespace policy_framework
  * an instant (the trigger never waits for its lock), is skipped with a warning.
  * Exclusive with is_async.
  *
- * Safety: from activation until the active policy produced its first commands (it may wait for
- * its inputs, or for its first inference) the executors hold() the robot where it is
- * (PdEffortExecutor: a PD around the position at activation); after that, a step waiting for
- * data keeps the last commands applied. On deactivation, when the policy fails, and when a
- * state interface could not be read for more than `max_failed_reads` updates in a row (the
- * previous value is used meanwhile), every executor's safe_values() are written (zero effort
- * for PdEffortExecutor).
+ * Safety: from activation (or a safety reset after a latched stop) until the active policy
+ * produced its first commands (it may wait for its inputs, or for its first inference) the
+ * executors hold() the robot where it is (PdEffortExecutor: a PD around the position then);
+ * after that, a step waiting for data keeps the last commands applied. On deactivation, when
+ * the policy fails, and when a state interface could not be read for more than
+ * `max_failed_reads` updates in a row (the previous value is used meanwhile), every executor's
+ * safe_values() are written (zero effort for PdEffortExecutor).
  *
  * Introspection: the durations of each policy step and of its stages and the age of its
  * observation (see Timing), the duration of each item of update() (see UpdateTiming), and the
