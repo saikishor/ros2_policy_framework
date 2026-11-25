@@ -77,8 +77,10 @@ void PolicyNode::update()
   const double t = now().seconds();
   runner_->read_sources(t);
   runner_->update_kinematics();
+  // The last step's observation is as old as the fault: it would fail max_input_age at once.
+  if (runner_->apply_safety_reset()) {observation_stamp_ = 0.0;}
   // The node does not own the hardware: every latched reaction stops the commands, until
-  // reactivated. Neutral commands keep the policy running.
+  // reactivated or reset (~/reset_safety). Neutral commands keep the policy running.
   if (const auto r = runner_->update_safety(observation_stamp_, t);
     r && *r != FaultReaction::NEUTRAL_COMMANDS)
   {

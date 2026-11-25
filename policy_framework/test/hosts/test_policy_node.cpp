@@ -29,6 +29,7 @@
 #include "policy_framework_msgs/srv/switch_policy.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 using lifecycle_msgs::msg::State;
 using StringArray = std::vector<std::string>;
@@ -64,9 +65,11 @@ std::shared_ptr<policy_framework::PolicyNode> make_node(const StringArray & prov
 }
 
 /// A node whose safety check fails while |j1/velocity| > 10, with the reaction @p on_fault.
-std::shared_ptr<policy_framework::PolicyNode> make_checked_node(const std::string & on_fault)
+std::shared_ptr<policy_framework::PolicyNode> make_checked_node(
+  const std::string & on_fault, const std::vector<rclcpp::Parameter> & extra = {})
 {
   auto params = node_params({});
+  params.insert(params.end(), extra.begin(), extra.end());
   const std::vector<rclcpp::Parameter> more = {
     {"safety_checks", StringArray{"speed"}},
     {"speed.type", "policy_framework/StateBoundsCheck"},
@@ -109,6 +112,17 @@ public:
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     return count_;
+  }
+
+  /// Call ~/reset_safety, as an operator would.
+  void reset_safety()
+  {
+    auto client = helper_->create_client<std_srvs::srv::Trigger>("/policy_node/reset_safety");
+    ASSERT_TRUE(client->wait_for_service(std::chrono::seconds(2)));
+    auto future = client->async_send_request(std::make_shared<std_srvs::srv::Trigger::Request>());
+    ASSERT_EQ(exec_.spin_until_future_complete(future, std::chrono::seconds(2)),
+      rclcpp::FutureReturnCode::SUCCESS);
+    EXPECT_TRUE(future.get()->success);
   }
 
 private:
@@ -176,6 +190,24 @@ TEST(PolicyNode, StopsSendingCommandsAfterALatchedFaultUntilReactivated)
 
   ASSERT_EQ(node->deactivate().id(), State::PRIMARY_STATE_INACTIVE);
   ASSERT_EQ(node->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  EXPECT_GT(counter.run(0.0, 500), 0);
+  node->deactivate();
+}
+
+TEST(PolicyNode, SendsCommandsAgainAfterAResetOnceTheCheckPasses)
+{
+  // With max_input_age: the observation of the last step before the fault is old by now, which
+  // must not fault again after the reset.
+  auto node = make_checked_node("error", {{"safety.max_input_age", 0.2}});
+  ASSERT_EQ(node->configure().id(), State::PRIMARY_STATE_INACTIVE);
+  ASSERT_EQ(node->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  CommandCounter counter(node);
+  EXPECT_GT(counter.run(0.0, 500), 0);
+  counter.run(20.0, 200);  // the fault, and the commands still in flight
+  EXPECT_EQ(counter.run(20.0, 300), 0);
+  counter.reset_safety();
+  EXPECT_EQ(counter.run(20.0, 300), 0);  // still failing: latched again at once
+  counter.reset_safety();
   EXPECT_GT(counter.run(0.0, 500), 0);
   node->deactivate();
 }
