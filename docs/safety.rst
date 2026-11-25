@@ -495,6 +495,27 @@ ones, and applies it; only neutral commands recover by themselves:
      latched -> ok [label="deactivate and\nactivate", style=dashed];
    }
 
+Following faults from outside
+-----------------------------
+
+Every change is logged, and the failing checks are published on the ``~/safety_status`` topic
+(``policy_framework_msgs/msg/SafetyStatusArray``), e.g. for a user interface to show a fault
+as it happens. Each entry names what failed (a ``safety_checks`` name, a source name, ``tilt``,
+``joint_position_limits``, ``max_input_age``, ``policy_input`` for a stale policy input or
+``policy_failure``), with its own reaction and the logged reason; the message adds the
+reaction in effect, the most severe one, empty when every check passes.
+
+It follows the diagram above: a ``neutral_commands`` entry leaves when its check passes again,
+an entry with a latched reaction stays until the host is reactivated or its safety is reset,
+also once its check passes, so that the cause of the stop stays visible. The topic is latched
+(transient local, depth 1) and published on changes only: an entry appearing or leaving, or its
+reaction changing. A reason is the one of when its entry appeared: a value in it, e.g. the age of a
+stale input, is not updated while the entry stays.
+
+.. code-block:: bash
+
+   ros2 topic echo --qos-durability transient_local /policy_controller/safety_status
+
 The plugin decides *whether*, the configuration decides *what*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

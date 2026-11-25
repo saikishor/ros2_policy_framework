@@ -20,7 +20,7 @@ features are summarised in [`docs/features.rst`](docs/features.rst).
 | Package | Content |
 |---------|---------|
 | `policy_framework` | Core: plugin base classes (incl. `ObservationTerm`, `TopicTerm`, `CommandTerm`), `DataStore`, `PolicyPipeline`, `PolicyRunner`, `Kinematics`, `PolicyNode` (standalone), `PolicyController` (ros2_control), generic plugins (ONNX inference, topic sources, MultiDOFCommand executor, PD effort and reference interface executors, concat/split stages, `StateBoundsCheck`, `JumpCheck`, `EncoderMismatchCheck`, `StateValueCheck` and `MockSafetyCheck` safety checks), `SafetyCheck` plugin interface, `SafetyMonitor` (built-in state checks)|
-| `policy_framework_msgs` | Interfaces: the `SwitchPolicy` and `ListPolicies` services, the `ActivePolicies` and `PolicyInfo` messages and the `MockFault` message |
+| `policy_framework_msgs` | Interfaces: the `SwitchPolicy` and `ListPolicies` services, the `ActivePolicies`, `PolicyInfo`, `SafetyStatus` and `SafetyStatusArray` messages and the `MockFault` message |
 | `policy_framework_mjlab` | Pre/postprocessor plugins for mjlab and pal_mjlab policies (observation terms with history, action scaling, per-policy gains), the `TwistCommandTerm` observation term and the Kangaroo deployment config/launch |
 
 ### Repository layout
@@ -160,7 +160,8 @@ or, chaining into a pid_controller that closes the loop:
     safety is reset (see [Safety reset](#safety-reset)), or for `error` they write their safe
     values and `update()` returns `ERROR` (the controller manager deactivates the controller
     and activates its `fallback_controllers`). A reaction an executor cannot apply is refused
-    while configuring. See `docs/safety.rst`.
+    while configuring. Every failing check is published on `~/safety_status` (see
+    [Safety status](#safety-status)). See `docs/safety.rst`.
   - *Unreadable state interfaces* (locked by their writer, e.g. an asynchronous hardware
     component): the previous value is used for up to `max_failed_reads` consecutive updates;
     one more writes the safe values and returns `ERROR`.
@@ -279,6 +280,26 @@ robot until its first step; after neutral commands only, the running policy simp
 `error` in the controller is not reset this way: the controller manager already deactivated it
 and activated the `fallback_controllers`, and reactivation is the way back. See
 `docs/safety.rst`.
+
+### Safety status
+
+The `~/safety_status` topic (`policy_framework_msgs/msg/SafetyStatusArray`) lists every failing
+safety check, for a user interface to show a fault as it happens rather than reading the log.
+Each entry (`SafetyStatus`) has the `name` of what failed (a `safety_checks` name, a source
+name, `tilt`, `joint_position_limits`, `max_input_age`, `policy_input` for a stale policy input,
+`policy_failure`), its `reaction` and the logged `reason`; the array adds the `reaction` in
+effect (the most severe, empty when every check passes), the `active_policy` and a `stamp`.
+
+It is latched (transient local, depth 1) and published when it changes: a check starts or
+stops failing, or its reaction changes; not when only a value in a reason changes (the reason
+is the one of when the entry appeared). The first message, at configuration, is empty. A
+`neutral_commands` entry leaves when its check passes again; an entry with any other reaction
+stays until the host is reactivated or its safety is reset, so that the cause of the stop stays
+visible. An empty `statuses` means every check passes.
+
+```bash
+ros2 topic echo --qos-durability transient_local /<node or controller>/safety_status
+```
 
 ### Kinematics
 
