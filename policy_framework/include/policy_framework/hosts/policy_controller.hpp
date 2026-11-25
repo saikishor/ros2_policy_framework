@@ -80,7 +80,9 @@ namespace policy_framework
  *
  * On activation the first policy restarts from scratch. Policies are switched with the
  * `~/switch_policy` service, listed by `~/list_policies`, and the running one is published on
- * `~/active_policies`.
+ * `~/active_policies`. `~/reset_safety` clears a latched hold, damp or safe without
+ * reactivation (PolicyRunner::apply_safety_reset()); an error hands over to the fallback
+ * controllers, and only a reactivation brings the controller back.
  */
 class PolicyController : public controller_interface::ControllerInterface
 {
@@ -164,6 +166,9 @@ private:
   controller_interface::return_type react(FaultReaction reaction);
   /// Write the executors' safe values.
   void write_safe_values();
+  /// Forget the previous run of the policy (when activated, and when the safety is reset): the
+  /// executors hold until a fresh step, a pending step is dropped, the observation is unknown.
+  void start_over();
   /// Register one introspection value per input of every policy (and drop the previous ones).
   void register_input_ages();
   /// Update the input ages from the stamps of the step that just finished.
