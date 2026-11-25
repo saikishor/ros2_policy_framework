@@ -134,19 +134,20 @@ private:
  * - `time_step`: TimeStepInput
  * - `obstacle_height`: ParameterInput (default: the `reference_obstacle_height` metadata)
  *
- * An input with neither is an error unless `<policy>.unknown_extra_inputs` is `ignore`
- * (then it stays at zero).
+ * An input with neither is an error unless @p ignore_unknown (then it stays at zero).
  */
 class ExtraInputs
 {
 public:
   /**
-   * @param handled The model inputs filled by the caller, skipped here.
+   * @param observation_input The model input filled by the caller, skipped here.
+   * @param ignore_unknown Leave an input with no ExtraInput at zero instead of throwing.
    * @throws std::exception on an unsupported input or a configuration error of an input.
    */
   void configure(
     const policy_framework::PluginContext & ctx, const policy_framework::ModelInfo & model,
-    policy_framework::DataStore & state, const std::vector<std::string> & handled);
+    policy_framework::DataStore & state, const std::string & observation_input,
+    bool ignore_unknown);
   /// @return true when every input is ready(). Control cycle.
   bool ready(const policy_framework::DataStore & state) const;
   /// Called whenever the policy becomes active. Real-time safe.

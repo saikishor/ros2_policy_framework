@@ -1,8 +1,0 @@
-extra_inputs:
-  unknown_extra_inputs:
-    type: string
-    default_value: "error"
-    description: "What to do with a model input other than the observation that has neither a built-in filler (time_step, obstacle_height) nor an extra_inputs.<input>.type plugin: 'error' fails the configuration, 'ignore' leaves it at zero."
-    read_only: true
-    validation:
-      one_of<>: [["error", "ignore"]]

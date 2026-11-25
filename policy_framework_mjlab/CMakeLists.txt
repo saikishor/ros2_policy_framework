@@ -28,7 +28,7 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
 # Not linked by ament_auto (fmt exports only CMake targets); its headers use it too.
 target_link_libraries(${PROJECT_NAME} fmt::fmt)
 # Parameter declaration and validation, generated from params/*.yaml.
-foreach(params IN ITEMS mjlab_preprocessor mjlab_postprocessor extra_inputs)
+foreach(params IN ITEMS mjlab_preprocessor mjlab_postprocessor)
   generate_parameter_library(${params}_parameters params/${params}_parameters.yaml)
   target_link_libraries(${PROJECT_NAME} ${params}_parameters)
 endforeach()

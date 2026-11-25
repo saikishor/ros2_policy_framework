@@ -23,7 +23,6 @@
 #include <vector>
 
 #include "pluginlib/class_list_macros.hpp"
-#include "policy_framework_mjlab/extra_inputs_parameters.hpp"
 
 using policy_framework::DataStore;
 using policy_framework::get_parameter;
@@ -123,13 +122,12 @@ void ParameterInput::compute(const DataStore &, const TensorMap &, float * out)
 
 void ExtraInputs::configure(
   const PluginContext & ctx, const ModelInfo & model, DataStore & state,
-  const std::vector<std::string> & handled)
+  const std::string & observation_input, bool ignore_unknown)
 {
-  const auto params = extra_inputs::ParamListener(ctx.node, ctx.name).get_params();
   inputs_.clear();
-  for (const auto & [name, tensor] : model.inputs) {
-    (void)tensor;
-    if (std::find(handled.begin(), handled.end(), name) != handled.end()) {continue;}
+  for (const auto & kv : model.inputs) {
+    const auto & name = kv.first;
+    if (name == observation_input) {continue;}
     const auto prefix = "extra_inputs." + name;
     // Not a generated parameter: the input names come from the model.
     const auto type = get_parameter<std::string>(ctx, prefix + ".type", "");
@@ -144,7 +142,7 @@ void ExtraInputs::configure(
       filler = builtin(name);
     }
     if (!filler) {
-      if (params.unknown_extra_inputs == "ignore") {
+      if (ignore_unknown) {
         RCLCPP_WARN(
           ctx.node->get_logger(), "[%s] model input '%s' is not supported: left at zero",
           ctx.name.c_str(), name.c_str());

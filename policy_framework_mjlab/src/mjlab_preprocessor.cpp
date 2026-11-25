@@ -344,7 +344,8 @@ void MjlabPreprocessor::configure(
               "The observation terms add up to {} values, but the '{}' input has {}", total,
               obs_input_, obs_dim));
   }
-  extra_inputs_.configure(ctx, model, state, {obs_input_});
+  extra_inputs_.configure(
+    ctx, model, state, obs_input_, params.unknown_extra_inputs == "ignore");
   RCLCPP_INFO(
     ctx.node->get_logger(), "[%s] mjlab observation: %zu terms, single size %zu, history %zu%s",
     ctx.name.c_str(), terms_.size(), single_dim, history_length_,
