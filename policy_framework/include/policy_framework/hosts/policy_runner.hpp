@@ -30,6 +30,7 @@
 #include "policy_framework/core/policy_pipeline.hpp"
 #include "policy_framework/core/safety_monitor.hpp"
 #include "policy_framework_msgs/msg/active_policies.hpp"
+#include "policy_framework_msgs/msg/safety_status_array.hpp"
 #include "policy_framework_msgs/srv/list_policies.hpp"
 #include "policy_framework_msgs/srv/switch_policy.hpp"
 #include "std_srvs/srv/trigger.hpp"
@@ -89,6 +90,10 @@ namespace policy_framework
  * apply_safety_reset() → update_safety() → step() (unless a latched reaction is active) →
  * check_input_ages() (after a successful step) → node: write_executors() / controller: its
  * InterfaceExecutors.
+ *
+ * Every failing check is published latched on `~/safety_status`
+ * (`policy_framework_msgs/msg/SafetyStatusArray`) when the set of failing checks or their
+ * reactions change, e.g. for a user interface to show a fault as it happens.
  */
 class PolicyRunner
 {
@@ -96,7 +101,7 @@ public:
   /**
    * @brief Load and configure every plugin, create the `~/switch_policy`, `~/list_policies`
    *        and `~/reset_safety` (see apply_safety_reset()) services and the `~/active_policies`
-   *        publisher.
+   *        and `~/safety_status` publishers.
    * @param load_executors Load the `executors` as topic Executor plugins. The controller
    *        passes false and loads them itself as InterfaceExecutor plugins.
    * @param robot_description URDF of the robot; required only by the kinematics.
@@ -143,7 +148,8 @@ public:
    * when they apply again, so that they start afresh; a latched reaction stays latched.
    * NEUTRAL_COMMANDS lasts while a failing check asks for it (set_neutral_commands()); every
    * other reaction is latched until restart() or apply_safety_reset(), and only ever escalates.
-   * Changes are logged.
+   * Changes are logged and published on `~/safety_status`, every failing check with its own
+   * reaction.
    * Real-time safe while every check passes; a failing check builds its reason.
    * @param observation_stamp Stamp of the observation of the last successful step (0: none).
    * @param now Current time in seconds, on the clock of the state stamps.
@@ -320,6 +326,20 @@ private:
   void report(std::optional<FaultReaction> effective, const std::string & reason);
   /// Reset every check, lift neutral commands and forget the latched reaction.
   void clear_safety();
+  /**
+   * @brief Record that the fault slot @p slot fails with @p reaction (nothing: it passes).
+   *
+   * A slot failing with a stop (any reaction but NEUTRAL_COMMANDS) keeps it until restart() or
+   * apply_safety_reset(), like latched_, so that the cause of a stop stays on
+   * `~/safety_status`; it only escalates.
+   * @return true when the slot's reason must be (re)written: it starts failing or its reaction
+   *         changed. Not on every cycle, so that a reason with a changing value (an age) does
+   *         not cause a message per cycle.
+   */
+  bool set_fault(size_t slot, std::optional<FaultReaction> reaction);
+  /// Publish `~/safety_status` when a slot or the reaction in effect changed since the last
+  /// message, and retry a message not sent yet.
+  void publish_status();
 
   SafetyMonitor monitor_;
   bool monitor_enabled_ = false;
@@ -348,6 +368,30 @@ private:
   std::optional<FaultReaction> reported_;  ///< Reaction in effect when last logged.
   std::string reason_;        ///< Of the most severe failing check of the current cycle.
   std::string check_reason_;  ///< Written by a failing check.
+
+  /// A possible cause of a fault, a `~/safety_status` entry while it fails.
+  struct FaultSlot
+  {
+    std::string name;
+    std::optional<FaultReaction> reaction;  ///< Failing with it; nothing: passing.
+    std::string reason;  ///< Of when the reaction last changed.
+  };
+  // In the order of the message: the monitor checks (one per SafetyMonitor::Check), then
+  // source_ages_, checks_, the stale input of the policy and the policy failure.
+  std::vector<FaultSlot> fault_slots_;
+  size_t source_slots_ = 0;  ///< First slot of source_ages_.
+  size_t check_slots_ = 0;   ///< First slot of checks_.
+  size_t input_slot_ = 0;
+  size_t failure_slot_ = 0;
+  /// Reactions of fault_slots_ and the reaction in effect in the last message built.
+  std::vector<std::optional<FaultReaction>> published_slots_;
+  std::optional<FaultReaction> published_reaction_;
+  rclcpp::Clock::SharedPtr clock_;
+  std::unique_ptr<
+    realtime_tools::RealtimePublisher<policy_framework_msgs::msg::SafetyStatusArray>>
+  status_pub_;
+  policy_framework_msgs::msg::SafetyStatusArray status_msg_;
+  bool status_pending_ = false;  ///< status_msg_ is not published yet.
 
   // Used only from step(), to log transitions once instead of every cycle.
   CommandGate command_gate_;

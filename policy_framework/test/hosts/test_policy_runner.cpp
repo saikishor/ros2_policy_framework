@@ -27,6 +27,7 @@
 #include "policy_framework/hosts/policy_runner.hpp"
 #include "policy_framework_msgs/msg/active_policies.hpp"
 #include "policy_framework_msgs/msg/mock_fault.hpp"
+#include "policy_framework_msgs/msg/safety_status_array.hpp"
 #include "policy_framework_msgs/srv/list_policies.hpp"
 #include "policy_framework_msgs/srv/switch_policy.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -517,6 +518,131 @@ TEST_F(RunnerSafetyTest, FaultsWhenASourceStopsReceivingForLongerThanItsMaxAge)
   const double received = node->now().seconds();
   EXPECT_FALSE(runner.update_safety(0.0, received).has_value());
   EXPECT_EQ(runner.update_safety(0.0, received + 0.5), FaultReaction::SAFE);
+}
+
+using policy_framework_msgs::msg::SafetyStatusArray;
+
+class SafetyStatusTest : public RunnerSafetyTest
+{
+protected:
+  void subscribe()
+  {
+    sub = helper->create_subscription<SafetyStatusArray>(
+      "/runner/safety_status", rclcpp::QoS(1).transient_local(),
+      [this](SafetyStatusArray::ConstSharedPtr m) {received.push_back(*m);});
+  }
+  // Several cycles, as a host runs them: a change held back while the previous message was
+  // still being published goes out on a later one.
+  void update(double observation_stamp, double now)
+  {
+    for (int i = 0; i < 5; ++i) {
+      runner.update_safety(observation_stamp, now);
+      spin_for(std::chrono::milliseconds(20));
+    }
+  }
+  // The last message; empty (no reaction, no statuses) while none was received.
+  const SafetyStatusArray & back()
+  {
+    static const SafetyStatusArray none;
+    return received.empty() ? none : received.back();
+  }
+  // (name, reaction) of the statuses of the last message.
+  std::vector<std::pair<std::string, std::string>> last()
+  {
+    std::vector<std::pair<std::string, std::string>> out;
+    if (received.empty()) {return out;}
+    for (const auto & s : back().statuses) {out.emplace_back(s.name, s.reaction);}
+    return out;
+  }
+  using Statuses = std::vector<std::pair<std::string, std::string>>;
+
+  rclcpp::Subscription<SafetyStatusArray>::SharedPtr sub;
+  std::vector<SafetyStatusArray> received;
+};
+
+TEST_F(SafetyStatusTest, ListsEveryFailingCheckAndKeepsTheCauseOfAStopUntilRestarted)
+{
+  configure(safety_params("/runner_status_list", "neutral_commands", "safe"));
+  subscribe();
+  update(0.0, 1.0);
+  ASSERT_FALSE(received.empty());  // the initial state, every check passing
+  EXPECT_EQ(back().reaction, "");
+  EXPECT_EQ(last(), Statuses{});
+  EXPECT_EQ(back().active_policy, "walk");
+
+  set("j1/temperature", 85.0);
+  update(0.0, 1.0);
+  EXPECT_EQ(back().reaction, "neutral_commands");
+  EXPECT_EQ(last(), (Statuses{{"hot", "neutral_commands"}}));
+  ASSERT_EQ(back().statuses.size(), 1u);
+  EXPECT_NE(back().statuses[0].reason.find("temperature"), std::string::npos);
+
+  set("j2/error_code", 3.0);  // both fail
+  update(0.0, 1.0);
+  EXPECT_EQ(back().reaction, "safe");
+  EXPECT_EQ(last(), (Statuses{{"hot", "neutral_commands"}, {"errors", "safe"}}));
+
+  set("j1/temperature", 70.0);
+  set("j2/error_code", 0.0);
+  update(0.0, 1.0);
+  // The neutral one leaves, the cause of the latched stop stays.
+  EXPECT_EQ(back().reaction, "safe");
+  EXPECT_EQ(last(), (Statuses{{"errors", "safe"}}));
+
+  runner.restart();
+  update(0.0, 1.0);
+  EXPECT_EQ(back().reaction, "");
+  EXPECT_EQ(last(), Statuses{});
+}
+
+TEST_F(SafetyStatusTest, ASafetyResetClearsTheCauseOfAStopOnceItsCheckPasses)
+{
+  configure(safety_params("/runner_status_reset", "damp", "error"));
+  subscribe();
+  set("j1/temperature", 85.0);
+  update(0.0, 1.0);
+  EXPECT_EQ(last(), (Statuses{{"hot", "damp"}}));
+  set("j1/temperature", 70.0);
+  update(0.0, 1.0);
+  EXPECT_EQ(last(), (Statuses{{"hot", "damp"}}));  // latched
+  request_reset();
+  EXPECT_TRUE(runner.apply_safety_reset());
+  update(0.0, 1.0);
+  EXPECT_EQ(back().reaction, "");
+  EXPECT_EQ(last(), Statuses{});
+}
+
+TEST_F(SafetyStatusTest, PublishesOnChangesOnlyAlsoWhenTheReasonTextChanges)
+{
+  auto params = runner_params("/runner_status_changes");
+  params.push_back({"safety.max_input_age", 0.2});
+  params.push_back({"safety.input_age_on_fault", "safe"});
+  configure(params);
+  subscribe();
+  update(9.9, 10.0);
+  ASSERT_FALSE(received.empty());  // the initial state
+  const auto before = received.size();
+  // The input gets older every cycle: the reason changes, the fault does not.
+  for (int i = 0; i < 20; ++i) {
+    runner.update_safety(9.7 - 0.01 * i, 10.0);
+    spin_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(received.size(), before + 1);
+  EXPECT_EQ(last(), (Statuses{{"max_input_age", "safe"}}));
+}
+
+TEST_F(SafetyStatusTest, ListsAPolicyFailure)
+{
+  configure(runner_params("/runner_status_host"));
+  subscribe();
+  update(0.0, 1.0);
+  ASSERT_FALSE(received.empty());  // the initial state
+  runner.policy_failure("The policy step failed");
+  update(0.0, 1.0);
+  EXPECT_EQ(back().reaction, "error");
+  EXPECT_EQ(last(), (Statuses{{"policy_failure", "error"}}));
+  ASSERT_EQ(back().statuses.size(), 1u);
+  EXPECT_EQ(back().statuses[0].reason, "The policy step failed");
 }
 
 // walk runs every step; jump (max_steps 1) runs one step after a switch, then walk again.
