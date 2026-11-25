@@ -82,7 +82,8 @@ public:
    * @brief Clear every policy and activate the default (first) one at the next step().
    *        Thread-safe.
    *
-   * Bypasses the interruptible check; meant for (re)activation of the host, not for users.
+   * Bypasses the interruptible check; meant for the host's (re)activation and for a safety reset
+   * after a latched stop (PolicyRunner::apply_safety_reset()), not for users.
    */
   void restart()
   {
