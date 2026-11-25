@@ -110,9 +110,9 @@ private:
  * Parameters (under `<name>.`):
  * - `joints` (string array): the compared joints
  * - `tolerance` (double, required, > 0): largest allowed difference
- * - `persist` (bool, default false): once failed, keep failing until reset() (controller
- *   reactivation), even when the positions agree again. Only changes something for
- *   `on_fault: neutral_commands`, the one reaction that recovers by itself.
+ * - `persist` (bool, default false): once failed, keep failing until reset() (host
+ *   reactivation or `~/reset_safety`), even when the positions agree again. Only changes
+ *   something for `on_fault: neutral_commands`, the one reaction that recovers by itself.
  *
  * A non-finite position fails; a joint is not checked until both entries were received. Values
  * that wrap differently (a continuous joint reported in [0, 2 pi] by one and [-pi, pi] by the
@@ -148,8 +148,9 @@ private:
  * `now` the host passes, on the receive time clock). A message may ask only for the reactions listed in `reactions` (declared
  * through possible_reactions(), so that the host checks its executors at configure); an unknown
  * name asks for error, and the host applies error for a valid but undeclared one. Like any
- * fault, all but neutral_commands stay latched until the controller is reactivated; reset()
- * (on reactivation) forgets the latest message, so that it does not fault again at once.
+ * fault, all but neutral_commands stay latched until the controller is reactivated or its
+ * safety is reset; reset() (on both) forgets the latest message, so that it does not fault
+ * again at once.
  *
  * E.g. `ros2 topic pub --once /policy_controller/mock policy_framework_msgs/msg/MockFault
  * "{fault: true, reaction: damp}"`.
