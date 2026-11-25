@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -118,7 +119,7 @@ public:
     float * out) override;
 
 private:
-  double default_ = 0.0;  ///< From the metadata, NaN: none.
+  double default_ = std::numeric_limits<double>::quiet_NaN();  ///< From the metadata, NaN: none.
   std::atomic<double> value_param_{0.0};  ///< Set by the parameter callback, NaN: unset.
   float value_ = 0.0F;  ///< Latched at reset().
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_;

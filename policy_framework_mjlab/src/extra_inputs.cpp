@@ -76,7 +76,6 @@ void ParameterInput::configure(
 {
   require_size(model, input, 1);
   const auto key = get_parameter<std::string>(ctx, "metadata_default", "reference_" + input);
-  default_ = kUnset;
   if (!key.empty()) {
     const auto it = model.metadata.find(key);
     if (it != model.metadata.end()) {default_ = std::stod(it->second);}
