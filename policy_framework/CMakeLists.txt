@@ -38,6 +38,8 @@ find_package(backward_ros REQUIRED)
 find_package(onnxruntime_vendor REQUIRED)
 find_package(generate_parameter_library REQUIRED)
 find_package(Eigen3 REQUIRED)
+# String formatting of messages (std::format needs C++20); kept out of the public headers.
+find_package(fmt REQUIRED)
 foreach(dep IN ITEMS ${THIS_PACKAGE_DEPENDS})
   find_package(${dep} REQUIRED)
 endforeach()
@@ -94,11 +96,11 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 # Internal headers shared by the sources (not installed).
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 ament_target_dependencies(${PROJECT_NAME} PUBLIC ${THIS_PACKAGE_DEPENDS})
-# ONNX Runtime and Pinocchio are implementation details: they do not appear in the public
+# ONNX Runtime, Pinocchio and fmt are implementation details: they do not appear in the public
 # headers.
 target_link_libraries(${PROJECT_NAME}
   PUBLIC Eigen3::Eigen
-  PRIVATE onnxruntime::onnxruntime pinocchio::pinocchio ${PARAMETER_LIBRARIES})
+  PRIVATE onnxruntime::onnxruntime pinocchio::pinocchio fmt::fmt ${PARAMETER_LIBRARIES})
 
 add_executable(policy_node src/hosts/policy_node_main.cpp)
 target_link_libraries(policy_node ${PROJECT_NAME} policy_node_parameters)
