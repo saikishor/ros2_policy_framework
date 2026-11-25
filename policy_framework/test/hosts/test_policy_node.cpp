@@ -122,7 +122,7 @@ public:
     auto future = client->async_send_request(std::make_shared<std_srvs::srv::Trigger::Request>());
     ASSERT_EQ(exec_.spin_until_future_complete(future, std::chrono::seconds(2)),
       rclcpp::FutureReturnCode::SUCCESS);
-    EXPECT_TRUE(future.get()->success);
+    EXPECT_TRUE(future.get()->success) << future.get()->message;
   }
 
 private:
