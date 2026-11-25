@@ -17,6 +17,7 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <fmt/ranges.h>
 
 #include "policy_framework/policy_node_parameters.hpp"
 
@@ -42,9 +43,9 @@ PolicyNode::CallbackReturn PolicyNode::on_configure(const rclcpp_lifecycle::Stat
   }
   const auto missing = runner_->unprovided_state();
   if (!missing.empty()) {
-    std::string list;
-    for (const auto & m : missing) {list += " " + m;}
-    RCLCPP_ERROR(get_logger(), "No input source provides:%s", list.c_str());
+    RCLCPP_ERROR(
+      get_logger(), "No input source provides: %s",
+      fmt::format("{}", fmt::join(missing, " ")).c_str());
     return CallbackReturn::FAILURE;
   }
   return CallbackReturn::SUCCESS;

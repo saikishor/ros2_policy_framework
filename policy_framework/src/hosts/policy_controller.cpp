@@ -24,6 +24,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <fmt/format.h>
 
 #include "pal_statistics/pal_statistics_macros.hpp"
 #include "pluginlib/class_list_macros.hpp"
@@ -81,8 +82,9 @@ void PolicyController::load_executors()
   for (const auto & [name, type] : runner_->executor_types()) {
     if (!executor_loader_->isClassAvailable(type)) {
       throw std::runtime_error(
-              "Executor '" + name + "' (" + type + ") is not an InterfaceExecutor plugin. Topic "
-              "executors (e.g. MultiDofCommandExecutor) only run in policy_node.");
+              fmt::format(
+                "Executor '{}' ({}) is not an InterfaceExecutor plugin. Topic executors (e.g. "
+                "MultiDofCommandExecutor) only run in policy_node.", name, type));
     }
     auto executor = executor_loader_->createSharedInstance(type);
     executor->configure({node, name}, runner_->commands(), runner_->state());
@@ -137,15 +139,16 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
       for (const auto & name : e->state_entries()) {
         if (std::find(state_names_.begin(), state_names_.end(), name) == state_names_.end()) {
           throw std::runtime_error(
-                  "State entry '" + name + "' is needed on every update by an executor and "
-                  "must come from a state interface, but an input source provides it");
+                  fmt::format(
+                    "State entry '{}' is needed on every update by an executor and must come "
+                    "from a state interface, but an input source provides it", name));
         }
       }
       for (const auto & name : e->command_interfaces()) {
         if (std::find(command_names_.begin(), command_names_.end(), name) !=
           command_names_.end())
         {
-          throw std::runtime_error("Command interface '" + name + "' claimed twice");
+          throw std::runtime_error(fmt::format("Command interface '{}' claimed twice", name));
         }
         command_names_.push_back(name);
       }
@@ -155,8 +158,9 @@ PolicyController::CallbackReturn PolicyController::on_configure(const rclcpp_lif
       for (const auto r : runner_->fault_reactions()) {
         if (!executors_[k]->supports_fault_reaction(r)) {
           throw std::runtime_error(
-                  "Executor '" + runner_->executor_types()[k].first + "' cannot apply the fault "
-                  "reaction '" + to_string(r) + "' of the safety configuration");
+                  fmt::format(
+                    "Executor '{}' cannot apply the fault reaction '{}' of the safety "
+                    "configuration", runner_->executor_types()[k].first, to_string(r)));
         }
       }
     }
