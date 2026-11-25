@@ -40,14 +40,15 @@ From activation to deactivation
 Hold
 ~~~~
 
-Between the activation of the controller and the first commands of the policy there is a
-gap. It is short when everything is ready (one inference), and it can be long when the
-policy is waiting for an input that has not arrived yet. During that gap the executors
-*hold* the robot:
+Between the activation of the controller (or a safety reset that clears a latched stop, see
+`Resetting the safety`_) and the first commands of the policy there is a gap. It is short
+when everything is ready (one inference), and it can be long when the policy is waiting for
+an input that has not arrived yet. During that gap the executors *hold* the robot:
 
-- ``PdEffortExecutor`` runs its PD law around the joint positions measured at activation,
-  with a zero velocity reference. It uses the gains the policy provides before its first
-  step, or else its own ``stiffness`` and ``damping`` parameters. A joint without gains is
+- ``PdEffortExecutor`` runs its PD law around the joint positions measured at activation (or
+  at the reset), with a zero velocity reference. It uses the gains the policy provides before
+  its first step (after a reset: the last ones it provided), or else its own ``stiffness`` and
+  ``damping`` parameters. A joint without gains is
   left untouched.
 - ``ReferenceInterfaceExecutor`` writes nothing: the chained controller keeps holding its
   own reference.

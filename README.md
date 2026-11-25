@@ -246,7 +246,8 @@ outputs) when switched away and back, as `pal_policy_deployer` does, and while i
 its preprocessor still `observe()`s every step, so its observation history follows the robot
 and it resumes from the real recent past. The memory is cleared only before its first
 activation and on every (re)activation of the node/controller, which also restarts the first
-policy. Per policy, `max_steps` (default 0 = unlimited) returns to the first policy
+policy; a [safety reset](#safety-reset) after a latched `hold`, `damp` or `safe` does the
+same. Per policy, `max_steps` (default 0 = unlimited) returns to the first policy
 after N steps (e.g. a jump motion), and `interruptible: false` rejects switches while it runs.
 All models are loaded at configuration: switching never loads a model; the only work on a
 switch is a log line and the `~/active_policies` message.
