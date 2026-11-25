@@ -23,15 +23,18 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   src/mjlab_preprocessor.cpp
   src/mjlab_postprocessor.cpp
   src/twist_command_term.cpp
+  src/extra_inputs.cpp
 )
 # Not linked by ament_auto (fmt exports only CMake targets); its headers use it too.
 target_link_libraries(${PROJECT_NAME} fmt::fmt)
 # Parameter declaration and validation, generated from params/*.yaml.
-foreach(params IN ITEMS mjlab_preprocessor mjlab_postprocessor)
+foreach(params IN ITEMS mjlab_preprocessor mjlab_postprocessor extra_inputs)
   generate_parameter_library(${params}_parameters params/${params}_parameters.yaml)
   target_link_libraries(${PROJECT_NAME} ${params}_parameters)
 endforeach()
 pluginlib_export_plugin_description_file(policy_framework plugins.xml)
+# ExtraInput is a base class of this package.
+pluginlib_export_plugin_description_file(policy_framework_mjlab extra_input_plugins.xml)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)

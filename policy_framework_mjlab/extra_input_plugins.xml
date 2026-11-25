@@ -1,0 +1,10 @@
+<library path="policy_framework_mjlab">
+  <class name="policy_framework_mjlab/TimeStepInput"
+    type="policy_framework_mjlab::TimeStepInput" base_class_type="policy_framework_mjlab::ExtraInput">
+    <description>Model input: the number of policy steps since activation.</description>
+  </class>
+  <class name="policy_framework_mjlab/ParameterInput"
+    type="policy_framework_mjlab::ParameterInput" base_class_type="policy_framework_mjlab::ExtraInput">
+    <description>Model input: a scalar parameter (or metadata default), latched at activation.</description>
+  </class>
+</library>

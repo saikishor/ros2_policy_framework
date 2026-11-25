@@ -116,6 +116,37 @@ term: every policy reads the shared ``cmd_vel/*`` entries from a single subscrip
 source name must match the preprocessor's ``velocity_command_name`` (default ``cmd_vel``).
 The Kangaroo configuration does this.
 
+Extra inputs
+------------
+
+Every model input other than the observation (``observation_input``) is filled by an
+``ExtraInput`` plugin: ``<policy>.extra_inputs.<input>.type`` when set, else the built-in one of
+that name. An input with neither fails the configuration, unless
+``<policy>.unknown_extra_inputs`` is ``ignore`` (it then stays at zero).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 35 40
+
+   * - Input
+     - Built-in
+     - Value
+   * - ``time_step``
+     - ``policy_framework_mjlab/TimeStepInput``
+     - The steps since the policy became active
+   * - ``obstacle_height``
+     - ``policy_framework_mjlab/ParameterInput``
+     - ``<policy>.extra_inputs.obstacle_height.value``; unset: the ``reference_obstacle_height``
+       metadata
+
+``ParameterInput`` fits any scalar input (parameters ``value`` and ``metadata_default``, default
+``reference_<input>``). Its value is taken when the policy becomes active, so a running motion
+keeps it and a change at runtime applies to the next one:
+
+.. code-block:: bash
+
+   ros2 param set /policy_node imitation_v30.extra_inputs.obstacle_height.value 0.45
+
 pal_mjlab exports
 -----------------
 

@@ -32,7 +32,3 @@ mjlab_preprocessor:
     read_only: true
     validation:
       not_empty<>: null
-  obstacle_height:
-    type: double
-    default_value: -1.0
-    description: "Box height (m) fed to the 'obstacle_height' input of the models that have it (pal_mjlab box-drop tracking). Can be changed at runtime; a motion uses the value set when it starts (reset()). Negative: the model's 'reference_obstacle_height' metadata."
