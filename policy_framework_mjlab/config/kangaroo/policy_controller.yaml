@@ -4,7 +4,6 @@
 policy_controller:
   ros__parameters:
     type: policy_framework/PolicyController
-    update_rate: 1000
     policy_rate: 50.0
     # true: inference in its own real-time thread, the PD law stays in the control loop.
     async_inference: @ASYNC_INFERENCE@
