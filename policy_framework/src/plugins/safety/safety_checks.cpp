@@ -17,6 +17,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <fmt/format.h>
 
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework/encoder_mismatch_check_parameters.hpp"
@@ -44,13 +45,14 @@ void StateBoundsCheck::configure(const PluginContext & ctx, const DataStore &, D
     const auto & bounds = params.interfaces_map.at(interface);
     if (bounds.min <= -kUnbounded && bounds.max >= kUnbounded) {
       throw std::runtime_error(
-              ctx.name + ": interface '" + interface + "' needs " + interface + ".min and/or " +
-              interface + ".max");
+              fmt::format(
+                "{0}: interface '{1}' needs {1}.min and/or {1}.max", ctx.name, interface));
     }
     if (bounds.min + bounds.hysteresis > bounds.max - bounds.hysteresis) {
       throw std::runtime_error(
-              ctx.name + ": " + interface + ".hysteresis leaves no value to pass again within [" +
-              interface + ".min, " + interface + ".max]");
+              fmt::format(
+                "{0}: {1}.hysteresis leaves no value to pass again within [{1}.min, {1}.max]",
+                ctx.name, interface));
     }
     for (const auto & prefix : params.prefixes) {
       entries_.push_back(
@@ -88,10 +90,10 @@ SafetyCheck::Verdict StateBoundsCheck::check(
   }
   if (!first) {return {};}
   // The bounds it has to be back within: narrowed by the hysteresis once it failed.
-  reason = state.names()[first->index] + " is " + std::to_string(first_value) + ", outside [" +
-    std::to_string(first->min + first_margin) + ", " + std::to_string(first->max - first_margin) +
-    "]";
-  if (failing > 1) {reason += " (" + std::to_string(failing) + " entries failing)";}
+  reason = fmt::format(
+    "{} is {}, outside [{}, {}]", state.names()[first->index], first_value,
+    first->min + first_margin, first->max - first_margin);
+  if (failing > 1) {reason += fmt::format(" ({} entries failing)", failing);}
   if (escalation_count_ > 0 && failing >= escalation_count_) {
     return {false, escalation_reaction_};
   }
@@ -120,8 +122,8 @@ void JumpCheck::configure(const PluginContext & ctx, const DataStore &, DataStor
     const double max_delta = params.interfaces_map.at(interface).max_delta;
     if (max_delta <= 0.0) {
       throw std::runtime_error(
-              ctx.name + ": interface '" + interface + "' needs " + interface +
-              ".max_delta above zero");
+              fmt::format(
+                "{0}: interface '{1}' needs {1}.max_delta above zero", ctx.name, interface));
     }
     for (const auto & prefix : params.prefixes) {
       entries_.push_back({state.add(prefix + "/" + interface), max_delta});
@@ -136,8 +138,9 @@ SafetyCheck::Verdict JumpCheck::check(const DataStore & state, double, std::stri
     const double v = state.get(e.index);
     // isfinite() for a first value; the negated comparison also fails a NaN difference.
     if (!std::isfinite(v) || (e.has_previous && !(std::abs(v - e.previous) <= e.max_delta))) {
-      reason = state.names()[e.index] + " jumped from " + std::to_string(e.previous) + " to " +
-        std::to_string(v) + ", more than " + std::to_string(e.max_delta);
+      reason = fmt::format(
+        "{} jumped from {} to {}, more than {}", state.names()[e.index], e.previous, v,
+        e.max_delta);
       return {false, std::nullopt};
     }
     e.previous = v;
@@ -177,10 +180,10 @@ SafetyCheck::Verdict EncoderMismatchCheck::check(
     const double position = state.get(j.position);
     // Written so that a NaN on either side fails: every comparison with it is false.
     if (std::abs(absolute - position) <= tolerance_) {continue;}
-    reason = state.names()[j.absolute] + " is " + std::to_string(absolute) + " but " +
-      state.names()[j.position] + " is " + std::to_string(position) + ", more than " +
-      std::to_string(tolerance_) + " apart";
-    if (persist_) {persisted_reason_ = reason + " (persists until reactivation)";}
+    reason = fmt::format(
+      "{} is {} but {} is {}, more than {} apart", state.names()[j.absolute], absolute,
+      state.names()[j.position], position, tolerance_);
+    if (persist_) {persisted_reason_ = fmt::format("{} (persists until reactivation)", reason);}
     return {false, std::nullopt};
   }
   return {};
@@ -203,12 +206,11 @@ SafetyCheck::Verdict MockSafetyCheck::check(const DataStore &, double now, std::
   const auto & msg = latest.msg;
   if (!msg || !msg->fault || msg == forgotten_) {return {};}
   if (msg->duration > 0.0 && now - latest.receive_time > msg->duration) {return {};}
-  reason = "mock fault";
-  if (!msg->reason.empty()) {reason += ": " + msg->reason;}
+  reason = msg->reason.empty() ? "mock fault" : fmt::format("mock fault: {}", msg->reason);
   if (msg->reaction.empty()) {return {false, std::nullopt};}
   const auto reaction = fault_reaction_from_string(msg->reaction);
   if (!reaction) {
-    reason += " (unknown reaction '" + msg->reaction + "': error)";
+    reason += fmt::format(" (unknown reaction '{}': error)", msg->reaction);
     return {false, FaultReaction::ERROR};
   }
   return {false, reaction};

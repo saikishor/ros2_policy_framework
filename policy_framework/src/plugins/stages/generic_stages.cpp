@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fmt/format.h>
 
 #include "pluginlib/class_list_macros.hpp"
 #include "policy_framework/concat_preprocessor_parameters.hpp"
@@ -34,12 +35,13 @@ std::vector<size_t> register_entries(
 {
   const auto it = tensors.find(tensor);
   if (it == tensors.end()) {
-    throw std::runtime_error("Model has no tensor '" + tensor + "'");
+    throw std::runtime_error(fmt::format("Model has no tensor '{}'", tensor));
   }
   if (it->second.data.size() != entries.size()) {
     throw std::runtime_error(
-            "Tensor '" + tensor + "' has " + std::to_string(it->second.data.size()) +
-            " values but " + std::to_string(entries.size()) + " entries are configured");
+            fmt::format(
+              "Tensor '{}' has {} values but {} entries are configured", tensor,
+              it->second.data.size(), entries.size()));
   }
   std::vector<size_t> indices;
   for (const auto & e : entries) {indices.push_back(store.add(e));}

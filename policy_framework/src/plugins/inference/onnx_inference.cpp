@@ -23,6 +23,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fmt/format.h>
 
 #include "policy_framework/onnx_inference_parameters.hpp"
 #include "pluginlib/class_list_macros.hpp"
@@ -45,7 +46,7 @@ Tensor make_tensor(const Ort::TypeInfo & info, const std::string & name)
 {
   const auto shape_info = info.GetTensorTypeAndShapeInfo();
   if (shape_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
-    throw std::runtime_error("ONNX tensor '" + name + "' is not float32");
+    throw std::runtime_error(fmt::format("ONNX tensor '{}' is not float32", name));
   }
   Tensor t;
   t.shape = shape_info.GetShape();
@@ -76,7 +77,7 @@ void bind_tensors(
     const auto & t = tensors.at(name);
     const auto & spec = model.inputs.count(name) ? model.inputs.at(name) : model.outputs.at(name);
     if (t.data.size() != spec.data.size()) {
-      throw std::runtime_error("Tensor '" + name + "' has the wrong size");
+      throw std::runtime_error(fmt::format("Tensor '{}' has the wrong size", name));
     }
     // ORT never writes to input tensors; outputs are written in place (hence non-const data).
     values.push_back(
@@ -111,7 +112,7 @@ std::string OnnxInference::resolve_model_path(const std::string & path)
     return path;
   }
   if (!fs::is_directory(path)) {
-    throw std::runtime_error("Model path does not exist: " + path);
+    throw std::runtime_error(fmt::format("Model path does not exist: {}", path));
   }
   std::vector<std::string> candidates;
   for (const auto & entry : fs::directory_iterator(path)) {
@@ -120,7 +121,7 @@ std::string OnnxInference::resolve_model_path(const std::string & path)
     }
   }
   if (candidates.empty()) {
-    throw std::runtime_error("No .onnx file in directory: " + path);
+    throw std::runtime_error(fmt::format("No .onnx file in directory: {}", path));
   }
   return *std::min_element(candidates.begin(), candidates.end());
 }
