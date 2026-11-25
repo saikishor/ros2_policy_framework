@@ -19,6 +19,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <utility>
+#include <fmt/ranges.h>
 
 namespace policy_framework
 {
@@ -26,11 +27,11 @@ namespace policy_framework
 void PolicyPipeline::add_policy(Policy policy)
 {
   if (!policy.preprocessor || !policy.inference || !policy.postprocessor) {
-    throw std::invalid_argument("Policy '" + policy.name + "' is missing a stage");
+    throw std::invalid_argument(fmt::format("Policy '{}' is missing a stage", policy.name));
   }
   for (const auto & e : entries_) {
     if (e.policy.name == policy.name) {
-      throw std::invalid_argument("Duplicate policy name '" + policy.name + "'");
+      throw std::invalid_argument(fmt::format("Duplicate policy name '{}'", policy.name));
     }
   }
   Entry entry;
@@ -45,17 +46,17 @@ bool PolicyPipeline::request_switch(const std::string & name, std::string & mess
   const auto it = std::find_if(
     entries_.begin(), entries_.end(), [&](const Entry & e) {return e.policy.name == name;});
   if (it == entries_.end()) {
-    message = "Unknown policy '" + name + "'. Available: ";
-    for (const auto & n : policy_names()) {message += n + " ";}
+    message = fmt::format(
+      "Unknown policy '{}'. Available: {}", name, fmt::join(policy_names(), " "));
     return false;
   }
   const auto & active = entries_[active_.load()].policy;
   if (!active.interruptible) {
-    message = "Active policy '" + active.name + "' is not interruptible";
+    message = fmt::format("Active policy '{}' is not interruptible", active.name);
     return false;
   }
   requested_.store(static_cast<int>(it - entries_.begin()));
-  message = "Switching to policy '" + name + "'";
+  message = fmt::format("Switching to policy '{}'", name);
   return true;
 }
 
