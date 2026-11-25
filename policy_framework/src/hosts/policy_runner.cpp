@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fmt/format.h>
 
 #include "policy_framework/kinematics_parameters.hpp"
 #include "policy_framework/policy_runner_parameters.hpp"
@@ -213,8 +214,9 @@ void PolicyRunner::configure_safety(
     for (const auto & m : monitor_checks) {
       if (name == m.first) {
         throw std::runtime_error(
-                "safety_checks: '" + name + "' is the name of a monitor check, which "
-                "disabled_safety_checks would not tell apart");
+                fmt::format(
+                  "safety_checks: '{}' is the name of a monitor check, which "
+                  "disabled_safety_checks would not tell apart", name));
       }
     }
     const auto & entry = params.safety_checks_map.at(name);
@@ -250,8 +252,9 @@ void PolicyRunner::configure_safety(
       }
       if (!found) {
         throw std::runtime_error(
-                policy + ".disabled_safety_checks: unknown check '" + name +
-                "' (a safety_checks name, tilt, joint_position_limits or max_input_age)");
+                fmt::format(
+                  "{}.disabled_safety_checks: unknown check '{}' (a safety_checks name, tilt, "
+                  "joint_position_limits or max_input_age)", policy, name));
       }
       RCLCPP_INFO(logger_, "Policy '%s' disables safety check '%s'", policy.c_str(), name.c_str());
     }
@@ -318,8 +321,8 @@ std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stam
     if (received <= 0.0 || now - received <= s.max_age) {continue;}
     if (!worst || s.on_fault > *worst) {
       worst = s.on_fault;
-      reason_ = "source '" + s.name + "': no message for " + std::to_string(now - received) +
-        " s, above its max_age";
+      reason_ = fmt::format(
+        "source '{}': no message for {} s, above its max_age", s.name, now - received);
     }
   }
   // Every check runs, also after a failing one: the most severe reaction wins.
@@ -341,7 +344,7 @@ std::optional<FaultReaction> PolicyRunner::update_safety(double observation_stam
     const auto r = reaction_of(verdict, c.on_fault, c.declared);
     if (!worst || r > *worst) {
       worst = r;
-      reason_ = c.name + ": " + check_reason_;
+      reason_ = fmt::format("{}: {}", c.name, check_reason_);
     }
   }
   if (worst && *worst != FaultReaction::NEUTRAL_COMMANDS) {
@@ -374,8 +377,9 @@ std::optional<FaultReaction> PolicyRunner::check_input_ages(double now)
     const auto & s = stamps[*i];
     escalate(s.max_age_on_fault);
     report(
-      latched_, "input '" + s.name + "' of policy '" + pipeline_->active_policy() +
-      "': no message for " + std::to_string(now - s.receive_time) + " s, above its max_age");
+      latched_, fmt::format(
+        "input '{}' of policy '{}': no message for {} s, above its max_age", s.name,
+        pipeline_->active_policy(), now - s.receive_time));
   }
   return latched_;
 }
