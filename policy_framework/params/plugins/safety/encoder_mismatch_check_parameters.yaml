@@ -16,5 +16,5 @@ encoder_mismatch_check:
   persist:
     type: bool
     default_value: false
-    description: "Once failed, keep failing until the controller is reactivated, even when the positions agree again."
+    description: "Once failed, keep failing until the host is reactivated or its safety is reset (~/reset_safety), even when the positions agree again."
     read_only: true

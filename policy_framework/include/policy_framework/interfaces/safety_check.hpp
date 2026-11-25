@@ -89,7 +89,8 @@ public:
    */
   virtual std::vector<FaultReaction> possible_reactions() const {return {};}
 
-  /// Forget filters and counters, so that a new run does not inherit the previous one's.
+  /// Forget filters, counters and a persisting failure, so that a new run does not inherit the
+  /// previous one's: on host reactivation, on `~/reset_safety`, and when re-enabled by a policy.
   virtual void reset() {}
 };
 

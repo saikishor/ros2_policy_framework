@@ -183,7 +183,9 @@ SafetyCheck::Verdict EncoderMismatchCheck::check(
     reason = fmt::format(
       "{} is {} but {} is {}, more than {} apart", state.names()[j.absolute], absolute,
       state.names()[j.position], position, tolerance_);
-    if (persist_) {persisted_reason_ = fmt::format("{} (persists until reactivation)", reason);}
+    if (persist_) {
+      persisted_reason_ = fmt::format("{} (persists until reactivation or ~/reset_safety)", reason);
+    }
     return {false, std::nullopt};
   }
   return {};
