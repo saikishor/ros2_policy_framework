@@ -85,6 +85,14 @@ void set(DataStore & s, const std::string & name, double v, double stamp = 0.0)
   s.set(s.add(name), v, stamp);  // add(): a model may not read every entry a helper sets
 }
 
+/// The entries motion_model() reads, at zero.
+DataStore motion_state()
+{
+  DataStore s;
+  for (const auto * n : {"a/position", "b/position", "a/velocity", "b/velocity"}) {set(s, n, 0.0);}
+  return s;
+}
+
 void set_upright_robot(DataStore & s, double pos_a, double pos_b)
 {
   set(s, "imu/orientation.w", 1.0);
@@ -367,10 +375,7 @@ TEST(MjlabPreprocessor, ObstacleHeightIsLatchedAtReset)
   auto model = motion_model();
   model.inputs["obstacle_height"] = zeros(1);
   model.metadata["reference_obstacle_height"] = "0.59";
-  DataStore state;
-  for (const auto * n : {"a/position", "b/position", "a/velocity", "b/velocity"}) {
-    set(state, n, 0.0);
-  }
+  DataStore state = motion_state();
   TensorMap in = model.inputs;
   const auto * value = "p.extra_inputs.obstacle_height.value";
 
@@ -415,10 +420,7 @@ TEST(MjlabPreprocessor, UnknownExtraInputsFailUnlessIgnored)
 {
   auto model = motion_model();
   model.inputs["phase"] = zeros(2);
-  DataStore state;
-  for (const auto * n : {"a/position", "b/position", "a/velocity", "b/velocity"}) {
-    set(state, n, 0.0);
-  }
+  DataStore state = motion_state();
   {
     MjlabPreprocessor pre;
     EXPECT_THROW(pre.configure(make_context(), model, state), std::runtime_error);
@@ -443,10 +445,7 @@ TEST(MjlabPreprocessor, ExtraInputPluginFillsAnyInput)
   // An input of another name, filled by a shipped ExtraInput plugin.
   auto model = motion_model();
   model.inputs["box_height"] = zeros(1);
-  DataStore state;
-  for (const auto * n : {"a/position", "b/position", "a/velocity", "b/velocity"}) {
-    set(state, n, 0.0);
-  }
+  DataStore state = motion_state();
   MjlabPreprocessor pre;
   pre.configure(
     make_context({
