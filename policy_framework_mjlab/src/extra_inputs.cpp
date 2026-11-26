@@ -85,15 +85,22 @@ void ParameterInput::configure(
     throw std::runtime_error(
             "Model input '" + input + "' has no default (metadata '" + key + "'): set " + full);
   }
+  RCLCPP_INFO(
+    ctx.node->get_logger(), "[INFO] [extra_inputs] [%s] param set: using %s = %f",
+    ctx.name.c_str(), full.c_str(), value_param_.load());
   // Runtime changes, read at the next reset() (lock-free in the control cycle).
   param_callback_ = ctx.node->add_on_set_parameters_callback(
-    [this, full](const std::vector<rclcpp::Parameter> & ps) {
+    [this, full, logger = ctx.node->get_logger(), name = ctx.name](
+      const std::vector<rclcpp::Parameter> & ps) {
       rcl_interfaces::msg::SetParametersResult result;
       result.successful = true;
       for (const auto & p : ps) {
         if (p.get_name() != full || p.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE) {
           continue;
         }
+        RCLCPP_INFO(
+          logger, "[INFO] [extra_inputs] [%s] param callback: received %s = %f",
+          name.c_str(), full.c_str(), p.as_double());
         if (std::isnan(p.as_double()) && std::isnan(default_)) {
           result.successful = false;
           result.reason = full + " cannot be unset: the model has no default";
