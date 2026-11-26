@@ -236,6 +236,13 @@ TEST_F(PolicyPipelineTest, NonFiniteOutputsAreAnErrorAndNeverReachTheCommands)
   a.inf->nan = true;
   EXPECT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::ERROR);
   EXPECT_DOUBLE_EQ(cmd(), 1.0);  // the postprocessor did not run
+  EXPECT_EQ(pipeline.error(), "policy 'a': model output 'actions' is not finite");
+}
+
+TEST_F(PolicyPipelineTest, StepWithoutPoliciesSaysWhyItFailed)
+{
+  EXPECT_EQ(pipeline.step(state, commands), PolicyPipeline::Status::ERROR);
+  EXPECT_EQ(pipeline.error(), "no policy loaded");
 }
 
 TEST_F(PolicyPipelineTest, StepWithoutPoliciesIsAnError)

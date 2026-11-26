@@ -101,6 +101,7 @@ public:
    * @brief Run one step of the active policy (applying any pending switch first).
    * @param state Inputs, read by the preprocessor.
    * @param commands Outputs, written by the postprocessor.
+   * @return OK, WAITING_FOR_DATA, or ERROR with its reason in error().
    */
   Status step(const DataStore & state, DataStore & commands);
 
@@ -121,6 +122,10 @@ public:
   };
   /// @return Stage durations of the last step. Read from the thread calling step().
   const StageTimes & stage_times() const {return stage_times_;}
+
+  /// @return Why the last step returned Status::ERROR (empty before any error). Read from the
+  ///         thread calling step().
+  const std::string & error() const {return error_;}
 
   /// @return Input stamps of the active policy's last step. Read from the thread calling step().
   const InputStamps & input_stamps() const
@@ -154,6 +159,7 @@ private:
   int steps_ = 0;
   double observation_stamp_ = 0.0;
   StageTimes stage_times_;
+  std::string error_;
 };
 
 }  // namespace policy_framework

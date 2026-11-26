@@ -63,6 +63,7 @@ bool PolicyPipeline::request_switch(const std::string & name, std::string & mess
 PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore & commands)
 {
   if (entries_.empty()) {
+    error_ = "no policy loaded";
     return Status::ERROR;
   }
   if (restart_requested_.exchange(false)) {
@@ -111,18 +112,24 @@ PolicyPipeline::Status PolicyPipeline::step(const DataStore & state, DataStore &
   const bool ran = e.policy.inference->run(e.inputs, e.outputs);
   stage_times_.inference_us = us_since(start);
   if (!ran) {
+    error_ = fmt::format("policy '{}': inference failed", e.policy.name);
     return Status::ERROR;
   }
   // A diverged model must not command the robot: NaN would go through every comparison below.
   for (const auto & [name, t] : e.outputs) {
     for (const float v : t.data) {
-      if (!std::isfinite(v)) {return Status::ERROR;}
+      if (!std::isfinite(v)) {
+        // ponytail: formats (allocates) on the failure path only, which ends the control.
+        error_ = fmt::format("policy '{}': model output '{}' is not finite", e.policy.name, name);
+        return Status::ERROR;
+      }
     }
   }
   start = Clock::now();
   const bool written = e.policy.postprocessor->compute(e.outputs, observation_stamp_, commands);
   stage_times_.postprocessor_us = us_since(start);
   if (!written) {
+    error_ = fmt::format("policy '{}': postprocessor failed", e.policy.name);
     return Status::ERROR;
   }
 
