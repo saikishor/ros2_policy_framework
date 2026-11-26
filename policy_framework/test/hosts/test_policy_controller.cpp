@@ -373,6 +373,29 @@ TEST_F(PolicyControllerTest, ExecutorsHoldTheRobotUntilThePolicyProducesCommands
   EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);
 }
 
+TEST_F(PolicyControllerTest, WaitsForAStateInterfaceThatIsStillNaNAtStartup)
+{
+  with_reference_executor = false;
+  init({
+    {"executors", StringArray{"pd"}},
+    {"pd.type", "policy_framework/PdEffortExecutor"},
+    {"pd.stiffness", std::vector<double>{10.0, 10.0}},
+    {"pd.damping", std::vector<double>{0.0, 0.0}}});
+  ASSERT_EQ(controller.configure().id(), State::PRIMARY_STATE_INACTIVE);
+  assign();
+  ASSERT_EQ(controller.get_node()->activate().id(), State::PRIMARY_STATE_ACTIVE);
+  set_state("j1/position", 1.0);
+  set_state("j2/position", 2.0);
+  // Hardware interfaces start as NaN until the driver writes them: not a failed step.
+  set_state("j3/position", std::nan(""));
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 0.0);  // holding, the policy waits
+
+  set_state("j3/position", 3.0);
+  ASSERT_EQ(update(), controller_interface::return_type::OK);
+  EXPECT_DOUBLE_EQ(command("j1/effort"), 10.0 * (4.5 - 1.0));  // following the policy
+}
+
 TEST_F(PolicyControllerTest, FailsWhenAStateInterfaceCannotBeReadForTooLong)
 {
   with_reference_executor = false;

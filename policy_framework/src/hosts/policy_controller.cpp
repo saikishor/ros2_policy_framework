@@ -371,6 +371,11 @@ controller_interface::return_type PolicyController::update_items(
     // get_optional() fails only when the interface is locked by its writer (e.g. an
     // asynchronous hardware component): keep the previous value then, but not for long.
     if (const auto v = state_interfaces_[i].get_optional()) {
+      // Hardware interfaces start as NaN until their driver writes them: until then the entry
+      // stays unreceived, so the policy waits for it instead of failing on a NaN observation.
+      // Once received, a NaN goes through: a sensor failing mid-run must fail the step, not
+      // leave the policy on its last value.
+      if (std::isnan(*v) && !state.received(state_idx_[i])) {continue;}
       state.set(state_idx_[i], *v, now);
     } else {
       read_failed = true;
