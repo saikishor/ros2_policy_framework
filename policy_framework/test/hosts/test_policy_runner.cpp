@@ -320,6 +320,31 @@ TEST_F(RunnerSafetyTest, AResetLiftsPersistingNeutralCommandsWithoutRestartingTh
   EXPECT_DOUBLE_EQ(neutral(), 0.0);
 }
 
+TEST_F(RunnerSafetyTest, LoadsAStateValueCheckWatchingActuatorModesAndTheHardwareSafeFlag)
+{
+  // What rl_safety_controller watched: an actuator mode in error or a false robot/is_safe.
+  auto params = runner_params("/runner_state_value");
+  const std::vector<rclcpp::Parameter> more = {
+    {"safety_checks", StringArray{"actuators"}},
+    {"actuators.type", "policy_framework/StateValueCheck"},
+    {"actuators.prefixes", StringArray{"j1", "robot"}},
+    {"actuators.interfaces", StringArray{"mode", "is_safe"}},
+    {"actuators.mode.fault_values", std::vector<int64_t>{103}},
+    {"actuators.is_safe.fault_values", std::vector<int64_t>{0}},
+    {"actuators.on_fault", "neutral_commands"},
+  };
+  params.insert(params.end(), more.begin(), more.end());
+  configure(params);
+  set("j1/mode", 3.0);
+  set("robot/is_safe", 1.0);
+  EXPECT_FALSE(runner.update_safety(0.0, 1.0).has_value());
+  set("j1/mode", 103.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);
+  set("j1/mode", 3.0);
+  set("robot/is_safe", 0.0);
+  EXPECT_EQ(runner.update_safety(0.0, 1.0), FaultReaction::NEUTRAL_COMMANDS);
+}
+
 TEST_F(RunnerSafetyTest, ARestartDropsAPendingResetRequest)
 {
   configure(safety_params("/runner_reset_restart", "damp", "error"));
