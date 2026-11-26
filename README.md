@@ -442,6 +442,25 @@ ros2 service call /policy_controller/switch_policy policy_framework_msgs/srv/Swi
 ros2 service call /policy_controller/switch_policy policy_framework_msgs/srv/SwitchPolicy "{policy_name: imitation_v31}"
 ```
 
+Or list them in a YAML policy config, with any names and per-policy settings, and pass it with
+`config:=` (a path, or relative to `config/kangaroo/`). Each policy starts from the settings of
+its task in `policies.yaml`, takes the model `<task>/<version>` under
+`<models_dir>/<robot_type>`, then its own keys on top; the first one must be a loco policy:
+
+```yaml
+policies: [loco_v265, imitation_v30]
+loco_v265:
+  model: loco/v265
+imitation_v30:
+  model: imitation/v30
+  max_steps: 300  # optional for a known motion
+```
+
+```bash
+ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py robot_type:=full_body_4dof \
+  config:=examples/full_body_4dof_loco_imitation.yaml
+```
+
 | `mode` | What runs |
 |--------|-----------|
 | `controller` (default) | `policy_controller`: policy at 50 Hz, PD law (`PdEffortExecutor`) at 1 kHz into the joint efforts, gains of the active policy (`gains_as_commands`) |
@@ -454,6 +473,7 @@ ros2 service call /policy_controller/switch_policy policy_framework_msgs/srv/Swi
 | `models_dir` | `models` of `pal_policy_deployer` when installed; layout `<models_dir>/<robot_type>/<task>/<task>_<version>_mjlab` |
 | `loco_models`, `imitation_models` | comma-separated versions; default per robot type: `v315`, `v719` (lower body); `v265`, `v30` (4dof) |
 | `imitation_frames` | comma-separated steps of each imitation before returning to the first loco policy (the motion's frame count); may be omitted when every motion is known: `v719` 147, `v30` 300 |
+| `config` | empty; a policy config file instead of `loco_models`, `imitation_models` and `imitation_frames` (setting both is an error) |
 | `activate_impedance_controller` | `True`; `False` loads and configures the controllers inactive |
 | `use_sim_time` | `false`; `true` in simulation, in every mode: the controllers run without the real robot's safety checks (`safety.yaml`), whose state interfaces the simulation does not have; `policy_node` follows `/clock` |
 
