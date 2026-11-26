@@ -201,7 +201,8 @@ The first loco version is the default policy: every imitation returns to it afte
 ``imitation_frames``, even when another loco version was active before the motion.
 The policies can be listed in a YAML file passed as ``config`` instead, each naming its
 ``model`` as ``<task>/<version>``, with any policy name and per-policy settings on top of
-``config/kangaroo/policies.yaml``; see ``config/kangaroo/examples``.
+``config/kangaroo/policies.yaml``; see ``config/kangaroo/examples``. The models are looked up
+in ``models_dir``, by default ``models/simple`` of ``pal_rl_policies``.
 
 It runs in three modes:
 
