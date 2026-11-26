@@ -425,7 +425,7 @@ and image decoding does not belong in the control loop. Planned: a per-term mode
 ```bash
 # simulation (arm_type:=4dof for robot_type:=full_body_4dof)
 ros2 launch kangaroo_mujoco kangaroo_mujoco.launch.py arm_type:=no-arm moveit:=False
-ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py mode:=controller
+ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py mode:=controller use_sim_time:=true
 # walk, jump
 ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.6}}"
 ros2 service call /policy_controller/switch_policy policy_framework_msgs/srv/SwitchPolicy "{policy_name: imitation_v719}"
@@ -446,7 +446,7 @@ ros2 service call /policy_controller/switch_policy policy_framework_msgs/srv/Swi
 |--------|-----------|
 | `controller` (default) | `policy_controller`: policy at 50 Hz, PD law (`PdEffortExecutor`) at 1 kHz into the joint efforts, gains of the active policy (`gains_as_commands`) |
 | `controller_async` | the same with `async_inference: true` |
-| `node` | `policy_node` publishes references (`MultiDofCommandExecutor`) to `rl_impedance_controller` (pid_controller, 1 kHz); add `use_sim_time:=true` |
+| `node` | `policy_node` publishes references (`MultiDofCommandExecutor`) to `rl_impedance_controller` (pid_controller, 1 kHz) |
 
 | Launch argument | Default |
 |-----------------|---------|
@@ -455,7 +455,7 @@ ros2 service call /policy_controller/switch_policy policy_framework_msgs/srv/Swi
 | `loco_models`, `imitation_models` | comma-separated versions; default per robot type: `v315`, `v719` (lower body); `v265`, `v30` (4dof) |
 | `imitation_frames` | comma-separated steps of each imitation before returning to the first loco policy (the motion's frame count); may be omitted when every motion is known: `v719` 147, `v30` 300 |
 | `activate_impedance_controller` | `True`; `False` loads and configures the controllers inactive |
-| `use_sim_time` | `false` (node mode only) |
+| `use_sim_time` | `false`; `true` in simulation, in every mode: the controllers run without the real robot's safety checks (`safety.yaml`), whose state interfaces the simulation does not have; `policy_node` follows `/clock` |
 
 The controller manager must be started with this workspace sourced to find the controller
 plugin. In node mode the launch shuts down (unloading `rl_impedance_controller` when it was
@@ -463,7 +463,10 @@ spawned active) when the policy node exits. Configuration in `policy_framework_m
 (settings per policy kind, shared by both hosts; the launch makes one policy per version and,
 in the controller modes, sets `gains_controller` to empty and `gains_as_commands` to true),
 `policy_controller.yaml`, `policy_node.yaml`,
-`<robot_type>_impedance.yaml` (pid_controller, node mode).
+`<robot_type>_impedance.yaml` (pid_controller, node mode), `safety.yaml` (leg encoder
+mismatch and actuator error or idle checks of the real robot, loaded in the controller modes
+unless `use_sim_time:=true`; not in node mode yet, as no source of `policy_node` feeds these
+entries, see [#45](https://github.com/saikishor/ros2_policy_framework/issues/45)).
 
 ## Writing plugins
 
