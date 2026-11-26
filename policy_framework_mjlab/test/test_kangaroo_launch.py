@@ -190,13 +190,25 @@ def test_config_imitation_without_frames_uses_the_known_motion(models):
 @pytest.mark.parametrize('config, error', [
     ({'policies': ['dance'], 'dance': {'model': 'imitation/v30'}}, 'first policy'),
     ({'policies': ['walk'], 'walk': {'model': 'v1'}}, 'task/version'),
-    ({'policies': ['walk'], 'walk': {'model': 'run/v1'}}, 'task'),
+    ({'policies': ['walk'], 'walk': {'model': 'run/v1'}}, 'unknown task'),
     ({'policies': ['walk'], 'walk': {}}, 'model'),
     ({'policies': []}, 'first policy'),
 ])
 def test_config_rejects_malformed_policies(models, config, error):
     with pytest.raises(ValueError, match=error):
         launch.resolve_policies(TEMPLATE, models, 'full_body_4dof', config)
+
+
+@pytest.mark.parametrize('content, error', [
+    ('', 'empty'),
+    (yaml.safe_dump({'policy_controller': {'ros__parameters': CONFIG_POLICIES}}),
+     'ros__parameters'),
+])
+def test_read_config_rejects_a_file_that_is_not_a_policy_config(tmp_path, content, error):
+    config = tmp_path / 'policies.yaml'
+    config.write_text(content)
+    with pytest.raises(ValueError, match=error):
+        launch.read_config(str(config))
 
 
 def test_shipped_example_config_resolves(models):
