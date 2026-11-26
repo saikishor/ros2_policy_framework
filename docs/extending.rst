@@ -64,7 +64,8 @@ Which plugin to write
    * - ``SafetyCheck``
      - state entries (and the kinematics) into a ``Verdict``: safe or not, why, and
        optionally the reaction to a fault
-     - ``StateBoundsCheck``, ``JumpCheck``, ``EncoderMismatchCheck``, ``MockSafetyCheck``
+     - ``StateBoundsCheck``, ``JumpCheck``, ``EncoderMismatchCheck``, ``StateValueCheck``,
+       ``MockSafetyCheck``
 
 Both hosts run the ``SafetyCheck`` plugins (:doc:`safety`).
 

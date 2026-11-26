@@ -80,7 +80,8 @@ Safety built in
   topic term.
 - **Check plugins**: ``StateBoundsCheck`` (bounds with hysteresis and escalation),
   ``JumpCheck`` (sudden changes, such as an encoder glitch), ``EncoderMismatchCheck``
-  (absolute and incremental joint positions disagreeing), and your own ``SafetyCheck``
+  (absolute and incremental joint positions disagreeing), ``StateValueCheck`` (fault codes,
+  such as an actuator mode in error or a false ``is_safe``), and your own ``SafetyCheck``
   plugins. ``MockSafetyCheck`` injects faults from a topic to test how the robot reacts.
 - **A reaction per check**: ``neutral_commands``, ``hold``, ``damp``, ``safe`` or ``error``.
   Every check states its own, and a reaction an executor cannot apply is refused while
