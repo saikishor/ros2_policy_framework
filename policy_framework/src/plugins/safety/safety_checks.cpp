@@ -14,6 +14,7 @@
 
 #include "policy_framework/plugins/safety/safety_checks.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,7 @@
 #include "policy_framework/jump_check_parameters.hpp"
 #include "policy_framework/mock_safety_check_parameters.hpp"
 #include "policy_framework/state_bounds_check_parameters.hpp"
+#include "policy_framework/state_value_check_parameters.hpp"
 
 namespace policy_framework
 {
@@ -192,6 +194,57 @@ SafetyCheck::Verdict EncoderMismatchCheck::check(
 }
 
 void EncoderMismatchCheck::reset() {persisted_reason_.clear();}
+
+void StateValueCheck::configure(const PluginContext & ctx, const DataStore &, DataStore & state)
+{
+  const auto params = state_value_check::ParamListener(ctx.node, ctx.name).get_params();
+  persist_ = params.persist;
+  persisted_reason_.clear();
+  entries_.clear();
+  for (const auto & interface : params.interfaces) {
+    const auto & fault_values = params.interfaces_map.at(interface).fault_values;
+    if (fault_values.empty()) {
+      throw std::runtime_error(
+              fmt::format("{0}: interface '{1}' needs {1}.fault_values", ctx.name, interface));
+    }
+    for (const auto & prefix : params.prefixes) {
+      entries_.push_back({state.add(prefix + "/" + interface), fault_values});
+    }
+  }
+}
+
+bool StateValueCheck::in_fault(const Entry & e, double v)
+{
+  // Modes and codes are integers carried as doubles: round, so that 102.9999 is 103.
+  return !std::isfinite(v) ||
+         std::find(e.fault_values.begin(), e.fault_values.end(), std::lround(v)) !=
+         e.fault_values.end();
+}
+
+SafetyCheck::Verdict StateValueCheck::check(const DataStore & state, double, std::string & reason)
+{
+  if (!persisted_reason_.empty()) {
+    reason = persisted_reason_;
+    return {false, std::nullopt};
+  }
+  const auto failing = [&](const Entry & e) {
+      return state.received(e.index) && in_fault(e, state.get(e.index));
+    };
+  if (std::none_of(entries_.begin(), entries_.end(), failing)) {return {};}
+  // Failing: allocating is fine now. Name every failing entry, to see all actuators in error.
+  reason.clear();
+  for (const auto & e : entries_) {
+    if (!failing(e)) {continue;}
+    reason += fmt::format(
+      "{}{} is {}", reason.empty() ? "" : "; ", state.names()[e.index], state.get(e.index));
+  }
+  if (persist_) {
+    persisted_reason_ = fmt::format("{} (persists until reactivation or ~/reset_safety)", reason);
+  }
+  return {false, std::nullopt};
+}
+
+void StateValueCheck::reset() {persisted_reason_.clear();}
 
 void MockSafetyCheck::configure(const PluginContext & ctx, const DataStore &, DataStore &)
 {

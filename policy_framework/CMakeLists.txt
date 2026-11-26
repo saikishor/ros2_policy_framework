@@ -63,6 +63,7 @@ foreach(path IN ITEMS
     params/plugins/safety/jump_check_parameters.yaml
     params/plugins/safety/mock_safety_check_parameters.yaml
     params/plugins/safety/state_bounds_check_parameters.yaml
+    params/plugins/safety/state_value_check_parameters.yaml
     params/plugins/sources/imu_source_parameters.yaml
     params/plugins/sources/joint_state_source_parameters.yaml
     params/plugins/sources/topic_parameters.yaml

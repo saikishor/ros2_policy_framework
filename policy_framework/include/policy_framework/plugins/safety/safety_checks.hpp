@@ -15,6 +15,7 @@
 #ifndef POLICY_FRAMEWORK__PLUGINS__SAFETY__SAFETY_CHECKS_HPP_
 #define POLICY_FRAMEWORK__PLUGINS__SAFETY__SAFETY_CHECKS_HPP_
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -134,6 +135,45 @@ private:
   };
   std::vector<Joint> joints_;
   double tolerance_ = 0.0;
+  bool persist_ = false;
+  /// With persist: the reason of the first failure since reset(); empty while none.
+  std::string persisted_reason_;
+};
+
+/**
+ * @brief SafetyCheck that fails while a state entry `<prefix>/<interface>` has one of the values
+ *        that mean a fault, e.g. an actuator mode in error or a false hardware `is_safe` flag
+ *        (what rl_safety_controller watched).
+ *
+ * Parameters (under `<name>.`):
+ * - `prefixes`, `interfaces` (string arrays): the entries, as for StateBoundsCheck
+ * - `<interface>.fault_values` (int array, required): the values that fail, compared after
+ *   rounding to the nearest integer, e.g. `mode.fault_values: [103]`, `is_safe.fault_values: [0]`
+ * - `persist` (bool, default false): once failed, keep failing until reset(), as for
+ *   EncoderMismatchCheck
+ *
+ * Unlike StateBoundsCheck, the faulty values need not be at either end of the range (a mode
+ * code). The reason names every failing entry. A non-finite value fails; an entry never received
+ * is not checked.
+ */
+class StateValueCheck : public SafetyCheck
+{
+public:
+  /// @throws std::runtime_error when an interface has no `fault_values`.
+  void configure(const PluginContext & ctx, const DataStore & commands, DataStore & state) override;
+  Verdict check(const DataStore & state, double now, std::string & reason) override;
+  /// Forgets a persisting failure.
+  void reset() override;
+
+private:
+  struct Entry
+  {
+    size_t index;
+    std::vector<int64_t> fault_values;
+  };
+  static bool in_fault(const Entry & e, double v);
+
+  std::vector<Entry> entries_;
   bool persist_ = false;
   /// With persist: the reason of the first failure since reset(); empty while none.
   std::string persisted_reason_;
