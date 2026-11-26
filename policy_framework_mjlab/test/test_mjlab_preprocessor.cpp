@@ -85,6 +85,14 @@ void set(DataStore & s, const std::string & name, double v, double stamp = 0.0)
   s.set(s.add(name), v, stamp);  // add(): a model may not read every entry a helper sets
 }
 
+/// The entries motion_model() reads, at zero.
+DataStore motion_state()
+{
+  DataStore s;
+  for (const auto * n : {"a/position", "b/position", "a/velocity", "b/velocity"}) {set(s, n, 0.0);}
+  return s;
+}
+
 void set_upright_robot(DataStore & s, double pos_a, double pos_b)
 {
   set(s, "imu/orientation.w", 1.0);
@@ -360,6 +368,94 @@ TEST(MjlabPreprocessor, MotionCommandIsSeededFromRobotThenFedFromOutputs)
   ASSERT_TRUE(pre.compute(state, out, in));
   EXPECT_NEAR(in["obs"].data[0], 1.1F, 1e-6);
   EXPECT_FLOAT_EQ(in["time_step"].data[0], 0.0F);
+}
+
+TEST(MjlabPreprocessor, ObstacleHeightIsLatchedAtReset)
+{
+  auto model = motion_model();
+  model.inputs["obstacle_height"] = zeros(1);
+  model.metadata["reference_obstacle_height"] = "0.59";
+  DataStore state = motion_state();
+  TensorMap in = model.inputs;
+  const auto * value = "p.extra_inputs.obstacle_height.value";
+
+  // Default: the reference height of the metadata.
+  {
+    MjlabPreprocessor pre;
+    pre.configure(make_context(), model, state);
+    pre.reset();
+    ASSERT_TRUE(pre.compute(state, model.outputs, in));
+    EXPECT_FLOAT_EQ(in["obstacle_height"].data[0], 0.59F);
+  }
+
+  // Set: used from configure(); a runtime change waits for the next reset().
+  const auto ctx = make_context({{value, 0.4}});
+  MjlabPreprocessor pre;
+  pre.configure(ctx, model, state);
+  pre.reset();
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_FLOAT_EQ(in["obstacle_height"].data[0], 0.4F);
+  ASSERT_TRUE(ctx.node->set_parameter({value, 0.7}).successful);
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_FLOAT_EQ(in["obstacle_height"].data[0], 0.4F);
+  pre.reset();
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_FLOAT_EQ(in["obstacle_height"].data[0], 0.7F);
+  // Unset again (NaN): back to the metadata default.
+  ASSERT_TRUE(ctx.node->set_parameter({value, std::nan("")}).successful);
+  pre.reset();
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_FLOAT_EQ(in["obstacle_height"].data[0], 0.59F);
+
+  // Without metadata the parameter is required, and cannot be unset at runtime.
+  model.metadata.erase("reference_obstacle_height");
+  MjlabPreprocessor no_ref;
+  EXPECT_THROW(no_ref.configure(make_context(), model, state), std::runtime_error);
+  const auto set_ctx = make_context({{value, 0.3}});
+  no_ref.configure(set_ctx, model, state);
+  EXPECT_FALSE(set_ctx.node->set_parameter({value, std::nan("")}).successful);
+}
+
+TEST(MjlabPreprocessor, UnknownExtraInputsFailUnlessIgnored)
+{
+  auto model = motion_model();
+  model.inputs["phase"] = zeros(2);
+  DataStore state = motion_state();
+  {
+    MjlabPreprocessor pre;
+    EXPECT_THROW(pre.configure(make_context(), model, state), std::runtime_error);
+  }
+  MjlabPreprocessor pre;
+  pre.configure(make_context({{"p.unknown_extra_inputs", "ignore"}}), model, state);
+  pre.reset();
+  TensorMap in = model.inputs;
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_EQ(in["phase"].data, Floats({0.0F, 0.0F}));  // left at zero
+  EXPECT_FLOAT_EQ(in["time_step"].data[0], 0.0F);  // the known ones are still filled
+
+  // A built-in input of the wrong size is a configuration error, not a silent write.
+  auto bad = motion_model();
+  bad.inputs["time_step"] = zeros(2);
+  MjlabPreprocessor bad_pre;
+  EXPECT_THROW(bad_pre.configure(make_context(), bad, state), std::runtime_error);
+}
+
+TEST(MjlabPreprocessor, ExtraInputPluginFillsAnyInput)
+{
+  // An input of another name, filled by a shipped ExtraInput plugin.
+  auto model = motion_model();
+  model.inputs["box_height"] = zeros(1);
+  DataStore state = motion_state();
+  MjlabPreprocessor pre;
+  pre.configure(
+    make_context({
+      {"p.extra_inputs.box_height.type", "policy_framework_mjlab/ParameterInput"},
+      {"p.extra_inputs.box_height.value", 0.25}}),
+    model, state);
+  pre.reset();
+  TensorMap in = model.inputs;
+  ASSERT_TRUE(pre.compute(state, model.outputs, in));
+  EXPECT_FLOAT_EQ(in["box_height"].data[0], 0.25F);
 }
 
 TEST(MjlabPreprocessor, RejectsInconsistentModels)

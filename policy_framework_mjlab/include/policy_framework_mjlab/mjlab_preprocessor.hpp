@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "pluginlib/class_loader.hpp"
+#include "policy_framework_mjlab/extra_inputs.hpp"
 #include "policy_framework/interfaces/observation_term.hpp"
 #include "policy_framework/plugin_interfaces.hpp"
 
@@ -81,11 +82,18 @@ void projected_gravity(double w, double x, double y, double z, float out[3]);
  * command fed back from the outputs derive from the previous observation, so they have its
  * stamp (the oldest of its other terms; 0 before the first step after clear()).
  *
- * If the model has a `time_step` input it receives the number of steps since reset(); the
- * motion command is re-seeded from the robot state after reset().
+ * The motion command is re-seeded from the robot state after reset().
+ *
+ * Every other model input is filled by an ExtraInput (see ExtraInputs): built in, `time_step`
+ * (the steps since reset()) and `obstacle_height` (pal_mjlab box-drop tracking: the parameter
+ * `<policy>.extra_inputs.obstacle_height.value` as it was at reset(), default the
+ * `reference_obstacle_height` metadata); any input with `<policy>.extra_inputs.<input>.type`
+ * set, that ExtraInput plugin. Others fail the configuration unless `unknown_extra_inputs` is
+ * `ignore`.
  *
  * Parameters (under `<policy>.`): `imu_name` (default `imu`), `imu_frame`, `velocity_command_name`
- * (default `cmd_vel`), `odometry_name` (default `odom`), `observation_input` (default `obs`).
+ * (default `cmd_vel`), `odometry_name` (default `odom`), `observation_input` (default `obs`),
+ * `unknown_extra_inputs` (default `error`).
  */
 class MjlabPreprocessor : public policy_framework::Preprocessor
 {
@@ -128,12 +136,11 @@ private:
   std::vector<Term> terms_;
   size_t history_length_ = 1;
   std::string obs_input_;
-  bool has_time_step_ = false;
+  ExtraInputs extra_inputs_;  ///< Every model input but obs_input_.
   // Control-cycle state.
   bool history_filled_ = false;
   policy_framework::InputStamps stamps_;
   double prev_obs_stamp_ = 0.0;  ///< Oldest input stamp of the previous step, 0 after clear().
-  int step_ = 0;  ///< Steps since reset().
 };
 
 }  // namespace policy_framework_mjlab

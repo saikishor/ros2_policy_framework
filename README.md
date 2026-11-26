@@ -373,9 +373,23 @@ Builds the observation from the ONNX metadata exported by mjlab (`observation_na
 
 Each term is its own block of `history × dim` values, oldest first; as mjlab's
 `CircularBuffer`, the first step after a clear back-fills the whole history. The history length
-is `obs size / single observation size`, the same for every term. A `time_step` input receives
-the steps since activation, and a motion command is re-seeded from the robot state on every
-activation.
+is `obs size / single observation size`, the same for every term. A motion command is re-seeded
+from the robot state on every activation.
+
+**Extra inputs.** Every model input other than the observation is filled by an `ExtraInput`
+plugin (base class `policy_framework_mjlab::ExtraInput`, no history). The one of input `<input>`
+is `<policy>.extra_inputs.<input>.type` when set, else the built-in one of that name:
+
+| Input | Built-in | Value |
+|-------|----------|-------|
+| `time_step` | `policy_framework_mjlab/TimeStepInput` | steps since activation |
+| `obstacle_height` | `policy_framework_mjlab/ParameterInput` | `<policy>.extra_inputs.obstacle_height.value`, default the `reference_obstacle_height` metadata |
+
+`ParameterInput` works for any scalar input: parameters `value` (unset or `.nan`: the metadata
+default) and `metadata_default` (default `reference_<input>`). It is latched on activation, so a
+runtime change (`ros2 param set <node> <policy>.extra_inputs.<input>.value <v>`) applies to the
+next motion. Any other input fails the configuration, unless `<policy>.unknown_extra_inputs` is
+`ignore` (it then stays at zero).
 
 **pal_mjlab exports** are recognised by their extra metadata:
 

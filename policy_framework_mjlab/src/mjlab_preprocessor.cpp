@@ -344,7 +344,8 @@ void MjlabPreprocessor::configure(
               "The observation terms add up to {} values, but the '{}' input has {}", total,
               obs_input_, obs_dim));
   }
-  has_time_step_ = model.inputs.count("time_step") > 0;
+  extra_inputs_.configure(
+    ctx, model, state, obs_input_, params.unknown_extra_inputs == "ignore");
   RCLCPP_INFO(
     ctx.node->get_logger(), "[%s] mjlab observation: %zu terms, single size %zu, history %zu%s",
     ctx.name.c_str(), terms_.size(), single_dim, history_length_,
@@ -359,7 +360,7 @@ void MjlabPreprocessor::clear()
 
 void MjlabPreprocessor::reset()
 {
-  step_ = 0;
+  extra_inputs_.reset();
   for (auto & t : terms_) {t.term->reset();}
 }
 
@@ -411,7 +412,7 @@ void MjlabPreprocessor::observe(const DataStore & state, const TensorMap & last_
 bool MjlabPreprocessor::compute(
   const DataStore & state, const TensorMap & last_outputs, TensorMap & inputs)
 {
-  if (!ready(state)) {return false;}
+  if (!ready(state) || !extra_inputs_.ready(state)) {return false;}
   push(state, last_outputs);
   auto & obs = inputs.at(obs_input_).data;
   size_t offset = 0;
@@ -420,10 +421,7 @@ bool MjlabPreprocessor::compute(
       t.history.begin(), t.history.end(), obs.begin() + static_cast<std::ptrdiff_t>(offset));
     offset += t.history.size();
   }
-  if (has_time_step_) {
-    inputs.at("time_step").data[0] = static_cast<float>(step_);
-  }
-  ++step_;
+  extra_inputs_.compute(state, last_outputs, inputs);
   return true;
 }
 
