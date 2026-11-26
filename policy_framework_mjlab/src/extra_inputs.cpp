@@ -73,6 +73,9 @@ void TimeStepInput::compute(const DataStore &, const TensorMap &, float * out)
 void ParameterInput::configure(
   const PluginContext & ctx, const ModelInfo & model, const std::string & input, DataStore &)
 {
+  logger_ = ctx.node->get_logger().get_child("extra_inputs");
+  name_ = ctx.name;
+  
   require_size(model, input, 1);
   const auto key = get_parameter<std::string>(ctx, "metadata_default", "reference_" + input);
   if (!key.empty()) {
@@ -86,11 +89,11 @@ void ParameterInput::configure(
             "Model input '" + input + "' has no default (metadata '" + key + "'): set " + full);
   }
   RCLCPP_INFO(
-    ctx.node->get_logger(), "[INFO] [extra_inputs] [%s] param set: using %s = %f",
-    ctx.name.c_str(), full.c_str(), value_param_.load());
+    logger_, "[%s] param set: using %s = %f",
+    name_.c_str(), full.c_str(), value_param_.load());
   // Runtime changes, read at the next reset() (lock-free in the control cycle).
   param_callback_ = ctx.node->add_on_set_parameters_callback(
-    [this, full, logger = ctx.node->get_logger(), name = ctx.name](
+    [this, full, logger = logger_, name = name_](
       const std::vector<rclcpp::Parameter> & ps) {
       rcl_interfaces::msg::SetParametersResult result;
       result.successful = true;
@@ -99,7 +102,7 @@ void ParameterInput::configure(
           continue;
         }
         RCLCPP_INFO(
-          logger, "[INFO] [extra_inputs] [%s] param callback: received %s = %f",
+          logger, "[%s] param callback: received %s = %f",
           name.c_str(), full.c_str(), p.as_double());
         if (std::isnan(p.as_double()) && std::isnan(default_)) {
           result.successful = false;

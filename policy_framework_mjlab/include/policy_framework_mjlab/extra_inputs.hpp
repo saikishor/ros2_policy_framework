@@ -123,6 +123,8 @@ private:
   std::atomic<double> value_param_{0.0};  ///< Set by the parameter callback, NaN: unset.
   float value_ = 0.0F;  ///< Latched at reset().
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_;
+  rclcpp::Logger logger_ = rclcpp::get_logger("extra_inputs");  ///< Set in configure().
+  std::string name_;  ///< The plugin's parameter prefix, for the logs.
 };
 
 /**
