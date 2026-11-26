@@ -16,6 +16,9 @@
 import importlib.util
 import os
 
+from launch import LaunchContext
+from launch.utilities import perform_substitutions
+from launch_ros.parameter_descriptions import ParameterFile
 import pytest
 import yaml
 
@@ -104,3 +107,49 @@ def test_velocity_command_comes_from_one_shared_source(host, node):
     with open(os.path.join(CONFIG, 'policies.yaml')) as f:
         template = yaml.safe_load(f)
     assert all('terms' not in policy for policy in template.values())
+
+
+def test_safety_checks_only_on_the_real_robot():
+    # The simulation exposes neither <joint>/absolute_position nor <actuator>/mode.
+    assert launch.safety_parameters(CONFIG, sim=True) == []
+    assert launch.safety_parameters(CONFIG, sim=False) == [os.path.join(CONFIG, 'safety.yaml')]
+
+
+def launch_actions(mode, use_sim_time, models_dir):
+    """Actions of the launch with its defaults, for the given mode and use_sim_time."""
+    context = LaunchContext()
+    for action in launch.generate_launch_description().entities:
+        if getattr(action, 'default_value', None) is not None:
+            context.launch_configurations[action.name] = perform_substitutions(
+                context, action.default_value)
+    context.launch_configurations.update(
+        mode=mode, use_sim_time=use_sim_time, robot_type='full_body_4dof',
+        models_dir=models_dir, loco_models='v1', imitation_models='v30')
+    return launch.launch_setup(context)
+
+
+@pytest.mark.parametrize('mode', ['controller', 'controller_async'])
+def test_controller_loads_the_safety_checks_on_the_real_robot(models, mode):
+    def loads_safety(use_sim_time):
+        [spawner] = launch_actions(mode, use_sim_time, models)
+        return any(a.endswith('safety.yaml') for a in spawner._Node__arguments)
+
+    assert loads_safety('false')
+    assert not loads_safety('true')
+
+
+def test_policy_node_has_no_safety_checks(models):
+    # No source of the node feeds <joint>/absolute_position or <actuator>/mode yet.
+    _, node = launch_actions('node', 'false', models)
+    files = [perform_substitutions(LaunchContext(), p.param_file)
+             for p in node._Node__parameters if isinstance(p, ParameterFile)]
+    assert any(f.endswith('policy_node.yaml') for f in files)
+    assert not any(f.endswith('safety.yaml') for f in files)
+
+
+def test_use_sim_time_is_the_only_simulation_switch():
+    # One flag for simulation: a separate one could be forgotten while use_sim_time is set.
+    names = [a.name for a in launch.generate_launch_description().entities
+             if hasattr(a, 'default_value')]
+    assert 'use_sim_time' in names
+    assert 'sim' not in names

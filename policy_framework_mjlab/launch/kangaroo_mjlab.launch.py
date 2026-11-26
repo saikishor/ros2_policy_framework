@@ -23,6 +23,9 @@ mode:=controller_async  the same with async_inference: true: inference in its ow
                         thread, the PD law stays in the 1 kHz control loop
 
 robot_type:=lower_body | full_body_4dof selects the models and the impedance configuration.
+use_sim_time:=true in simulation, in every mode: in the controller modes it skips the safety
+checks of the real robot (config/kangaroo/safety.yaml); in node mode policy_node follows /clock
+(it has no safety checks yet: no source feeds what they read).
 loco_models and imitation_models take comma-separated versions, one policy each, named
 loco_<version> and imitation_<version>. The first loco policy is active at start and every
 imitation returns to it after its imitation_frames. Switch with:
@@ -139,6 +142,20 @@ def render(template, values):
     return out.name
 
 
+def safety_parameters(config, sim):
+    """Parameter files of the real robot's safety checks: none in simulation.
+
+    Only policy_controller loads them for now (#45): no source of policy_node feeds
+    <joint>/absolute_position and <actuator>/mode yet.
+
+    :param config: directory of the Kangaroo configuration.
+    :param sim: True when launched against the simulation, which exposes neither
+        <joint>/absolute_position nor <actuator>/mode, so the checks could not be configured.
+    :returns: a list of parameter file paths, empty in simulation.
+    """
+    return [] if sim else [os.path.join(config, 'safety.yaml')]
+
+
 def launch_setup(context):
     def arg(name):
         return LaunchConfiguration(name).perform(context)
@@ -167,6 +184,7 @@ def launch_setup(context):
         arg_list('imitation_models') or [imitation],
         arg_list('imitation_frames'),
         overrides=None if mode == 'node' else CONTROLLER_OVERRIDES))
+    safety = safety_parameters(config, arg('use_sim_time') == 'true')
     # Inactive: load and configure only, e.g. to be activated later by a supervisor.
     activation = ['--unload-on-kill'] if arg('activate_impedance_controller') == 'True' \
         else ['--inactive']
@@ -180,6 +198,8 @@ def launch_setup(context):
             Node(
                 package='policy_framework', executable='policy_node', name='policy_node',
                 output='screen',
+                # TODO(#45): pass safety too, once a source of the node feeds
+                # <joint>/absolute_position and <actuator>/mode.
                 parameters=[policies, os.path.join(config, 'policy_node.yaml'),
                             {'use_sim_time': LaunchConfiguration('use_sim_time')}],
                 # Without its policy the robot must not keep a stale reference: stop the
@@ -194,7 +214,8 @@ def launch_setup(context):
         Node(
             package='controller_manager', executable='spawner', output='screen',
             arguments=['policy_controller', '--param-file', policies,
-                       '--param-file', controller] + activation,
+                       '--param-file', controller]
+            + [a for f in safety for a in ('--param-file', f)] + activation,
         ),
     ]
 
@@ -219,7 +240,12 @@ def generate_launch_description():
         DeclareLaunchArgument('activate_impedance_controller', default_value='True',
                               choices=['True', 'False'],
                               description='False: load and configure the controllers inactive'),
-        DeclareLaunchArgument('use_sim_time', default_value='false',
-                              description='Node mode only; controllers use the manager time'),
+        # The one simulation switch: the controllers use the manager time, but it leaves out the
+        # real robot's safety checks, whose state interfaces the simulation lacks.
+        DeclareLaunchArgument('use_sim_time', default_value='false', choices=['true', 'false'],
+                              description='true in simulation: the controllers run without the '
+                                          'safety checks of the real robot '
+                                          '(config/kangaroo/safety.yaml); policy_node follows '
+                                          '/clock'),
         OpaqueFunction(function=launch_setup),
     ])
