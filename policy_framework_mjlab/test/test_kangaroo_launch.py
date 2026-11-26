@@ -115,7 +115,7 @@ def test_safety_checks_only_on_the_real_robot():
     assert launch.safety_parameters(CONFIG, sim=False) == [os.path.join(CONFIG, 'safety.yaml')]
 
 
-def launch_actions(mode, use_sim_time, models_dir):
+def launch_actions(mode, use_sim_time, models_dir, **arguments):
     """Actions of the launch with its defaults, for the given mode and use_sim_time."""
     context = LaunchContext()
     for action in launch.generate_launch_description().entities:
@@ -125,6 +125,7 @@ def launch_actions(mode, use_sim_time, models_dir):
     context.launch_configurations.update(
         mode=mode, use_sim_time=use_sim_time, robot_type='full_body_4dof',
         models_dir=models_dir, loco_models='v1', imitation_models='v30')
+    context.launch_configurations.update(arguments)
     return launch.launch_setup(context)
 
 
@@ -153,3 +154,84 @@ def test_use_sim_time_is_the_only_simulation_switch():
              if hasattr(a, 'default_value')]
     assert 'use_sim_time' in names
     assert 'sim' not in names
+
+
+CONFIG_POLICIES = {
+    'policies': ['walk', 'dance'],
+    'walk': {'model': 'loco/v2', 'interruptible': True},
+    'dance': {'model': 'imitation/v40', 'max_steps': 120},
+}
+
+
+def test_config_resolves_each_model_on_its_task_template(models):
+    params = launch.resolve_policies(TEMPLATE, models, 'full_body_4dof', CONFIG_POLICIES)
+    assert params['policies'] == ['walk', 'dance']
+    assert params['walk']['model_path'] == os.path.join(
+        models, 'full_body_4dof', 'loco', 'loco_v2_mjlab')
+    assert 'model' not in params['walk']
+    assert params['walk']['terms'] == {'command': {'topic': '/cmd_vel'}}
+    assert params['walk']['interruptible'] is True
+    assert params['dance']['interruptible'] is False
+    assert params['dance']['max_steps'] == 120
+    assert CONFIG_POLICIES['walk']['model'] == 'loco/v2'
+
+
+def test_config_imitation_without_frames_uses_the_known_motion(models):
+    params = launch.resolve_policies(TEMPLATE, models, 'full_body_4dof', {
+        'policies': ['walk', 'dance'], 'walk': {'model': 'loco/v1'},
+        'dance': {'model': 'imitation/v30'}})
+    assert params['dance']['max_steps'] == 300
+    with pytest.raises(ValueError, match='max_steps'):
+        launch.resolve_policies(TEMPLATE, models, 'full_body_4dof', {
+            'policies': ['walk', 'dance'], 'walk': {'model': 'loco/v1'},
+            'dance': {'model': 'imitation/v40'}})
+
+
+@pytest.mark.parametrize('config, error', [
+    ({'policies': ['dance'], 'dance': {'model': 'imitation/v30'}}, 'first policy'),
+    ({'policies': ['walk'], 'walk': {'model': 'v1'}}, 'task/version'),
+    ({'policies': ['walk'], 'walk': {'model': 'run/v1'}}, 'task'),
+    ({'policies': ['walk'], 'walk': {}}, 'model'),
+    ({'policies': []}, 'first policy'),
+])
+def test_config_rejects_malformed_policies(models, config, error):
+    with pytest.raises(ValueError, match=error):
+        launch.resolve_policies(TEMPLATE, models, 'full_body_4dof', config)
+
+
+def test_shipped_example_config_resolves(models):
+    # Relative to config/kangaroo/; its models are created in the models fixture layout.
+    config = launch.read_config('examples/full_body_4dof_loco_imitation.yaml')
+    for policy in config['policies']:
+        task, version = config[policy]['model'].split('/')
+        os.makedirs(os.path.join(models, 'full_body_4dof', task, f'{task}_{version}_mjlab'),
+                    exist_ok=True)
+    with open(os.path.join(CONFIG, 'policies.yaml')) as f:
+        template = yaml.safe_load(f)
+    params = launch.resolve_policies(template, models, 'full_body_4dof', config)
+    assert params['policies'][0].startswith('loco')
+
+
+def spawner_policies(spawner):
+    """Policy parameters of the policies param file given to the controller spawner."""
+    arguments = spawner._Node__arguments
+    with open(arguments[arguments.index('--param-file') + 1]) as f:
+        return yaml.safe_load(f)['/**']['ros__parameters']
+
+
+def test_controller_config_policies_get_the_controller_overrides(models, tmp_path):
+    config = tmp_path / 'policies.yaml'
+    config.write_text(yaml.safe_dump(CONFIG_POLICIES))
+    [spawner] = launch_actions('controller', 'true', models, config=str(config),
+                               loco_models='', imitation_models='')
+    params = spawner_policies(spawner)
+    assert params['policies'] == ['walk', 'dance']
+    assert params['walk']['gains_as_commands'] is True
+    assert params['dance']['gains_controller'] == ''
+
+
+def test_config_excludes_the_version_arguments(models, tmp_path):
+    config = tmp_path / 'policies.yaml'
+    config.write_text(yaml.safe_dump(CONFIG_POLICIES))
+    with pytest.raises(ValueError, match='loco_models'):
+        launch_actions('controller', 'true', models, config=str(config))

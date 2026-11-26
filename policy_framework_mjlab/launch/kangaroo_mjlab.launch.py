@@ -31,6 +31,13 @@ loco_<version> and imitation_<version>. The first loco policy is active at start
 imitation returns to it after its imitation_frames. Switch with:
   ros2 service call /<policy_node|policy_controller>/switch_policy \
     policy_framework_msgs/srv/SwitchPolicy "{policy_name: imitation_v30}"
+
+config:=<file> lists the policies in a YAML file instead, with any names and per-policy
+settings (a path, or relative to config/kangaroo/):
+  ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py robot_type:=full_body_4dof \
+    config:=examples/full_body_4dof_loco_imitation.yaml
+Each policy names its `model` as <task>/<version>, under <models_dir>/<robot_type>; see that
+example.
 """
 
 import copy
@@ -104,22 +111,70 @@ def policy_parameters(template, models_dir, robot_type, loco_models, imitation_m
                              'imitation model, the frame count of each motion)')
         imitation_frames = [known[v] for v in imitation_models]
 
-    params = {'policies': []}
+    # The same policy config as the `config` argument, so both go through one resolver.
+    config = {'policies': []}
+    for version in loco_models:
+        config['policies'].append(f'loco_{version}')
+        config[f'loco_{version}'] = {'model': f'loco/{version}'}
+    for version, frames in zip(imitation_models, imitation_frames):
+        config['policies'].append(f'imitation_{version}')
+        config[f'imitation_{version}'] = {'model': f'imitation/{version}',
+                                          'max_steps': int(frames)}
+    return resolve_policies(template, models_dir, robot_type, config, overrides)
 
-    def add(task, version, extra):
-        name = f'{task}_{version}'
+
+def resolve_policies(template, models_dir, robot_type, config, overrides=None):
+    """Build the policy parameters from a policy config, the format of the `config` argument.
+
+    :param template: settings per kind, {'loco': {...}, 'imitation': {...}}.
+    :param config: {'policies': [names], <name>: {'model': '<task>/<version>', ...}}. Each
+        policy starts from the template of its task, gets the model_path of its model under
+        <models_dir>/<robot_type>, then its own settings on top. The first policy, active at
+        start and the one every imitation returns to, must be a loco one. An imitation without
+        max_steps takes the frames of its motion from MOTION_FRAMES. The config is not changed.
+    :param overrides: settings applied to every policy last.
+    :returns: {'policies': [names], <name>: {...}}, the parameters of the policy host.
+    :raises ValueError: when the first policy is not loco, a model is missing or not
+        <task>/<version> of a known task, or an unknown motion has no max_steps.
+    :raises FileNotFoundError: when a model directory does not exist.
+    """
+    names = config.get('policies', [])
+    if not names:
+        raise ValueError('the config has no policies: the first policy must be a loco one')
+    params = {'policies': list(names)}
+    for index, name in enumerate(names):
+        entry = copy.deepcopy(config.get(name, {}))
+        if 'model' not in entry:
+            raise ValueError(f"policy '{name}' has no model (<task>/<version>)")
+        parts = str(entry.pop('model')).split('/')
+        if len(parts) != 2:
+            raise ValueError(f"policy '{name}': model must be task/version, got {parts}")
+        task, version = parts
+        if task not in template:
+            raise ValueError(f"policy '{name}': unknown task '{task}', one of {sorted(template)}")
+        if index == 0 and task != 'loco':
+            raise ValueError(f"the first policy '{name}' must be a loco one: every imitation "
+                             'returns to it')
         policy = copy.deepcopy(template[task])
         policy['model_path'] = model_dir(models_dir, robot_type, task, version)
-        policy.update(extra)
+        policy.update(entry)
+        if task == 'imitation' and 'max_steps' not in policy:
+            frames = MOTION_FRAMES.get(robot_type, {}).get(version)
+            if frames is None:
+                raise ValueError(f"policy '{name}': set max_steps, the frame count of the "
+                                 f'motion {version}')
+            policy['max_steps'] = frames
         policy.update(overrides or {})
-        params['policies'].append(name)
         params[name] = policy
-
-    for version in loco_models:
-        add('loco', version, {})
-    for version, frames in zip(imitation_models, imitation_frames):
-        add('imitation', version, {'max_steps': int(frames)})
     return params
+
+
+def read_config(path):
+    """Load a policy config: an absolute path, or relative to config/kangaroo/."""
+    path = os.path.join(get_package_share_directory('policy_framework_mjlab'), 'config',
+                        'kangaroo', path)
+    with open(path) as f:
+        return yaml.safe_load(f)
 
 
 def write_parameters(params):
@@ -178,12 +233,21 @@ def launch_setup(context):
     impedance = os.path.join(config, f'{robot_type}_impedance.yaml')
     with open(os.path.join(config, 'policies.yaml')) as f:
         template = yaml.safe_load(f)
-    policies = write_parameters(policy_parameters(
-        template, models_dir, robot_type,
-        arg_list('loco_models') or [loco],
-        arg_list('imitation_models') or [imitation],
-        arg_list('imitation_frames'),
-        overrides=None if mode == 'node' else CONTROLLER_OVERRIDES))
+    overrides = None if mode == 'node' else CONTROLLER_OVERRIDES
+    if arg('config'):
+        # One source of policies: a version argument next to a config would be ignored.
+        given = [n for n in ('loco_models', 'imitation_models', 'imitation_frames') if arg(n)]
+        if given:
+            raise ValueError(f'config replaces {given}: set one or the other')
+        policies = resolve_policies(
+            template, models_dir, robot_type, read_config(arg('config')), overrides)
+    else:
+        policies = policy_parameters(
+            template, models_dir, robot_type,
+            arg_list('loco_models') or [loco],
+            arg_list('imitation_models') or [imitation],
+            arg_list('imitation_frames'), overrides)
+    policies = write_parameters(policies)
     safety = safety_parameters(config, arg('use_sim_time') == 'true')
     # Inactive: load and configure only, e.g. to be activated later by a supervisor.
     activation = ['--unload-on-kill'] if arg('activate_impedance_controller') == 'True' \
@@ -237,6 +301,11 @@ def generate_launch_description():
         DeclareLaunchArgument('imitation_frames', default_value='',
                               description='Comma-separated steps of each imitation before '
                                           'returning to the first loco (known motions: default)'),
+        DeclareLaunchArgument('config', default_value='',
+                              description='Policy config, a path or relative to '
+                                          'config/kangaroo/ (e.g. examples/'
+                                          'full_body_4dof_loco_imitation.yaml). Replaces '
+                                          'loco_models, imitation_models and imitation_frames'),
         DeclareLaunchArgument('activate_impedance_controller', default_value='True',
                               choices=['True', 'False'],
                               description='False: load and configure the controllers inactive'),
