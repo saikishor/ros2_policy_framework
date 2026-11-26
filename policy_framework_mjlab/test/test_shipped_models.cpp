@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Runs every ONNX model found under $PAL_POLICY_MODELS_DIR (e.g. the `models` directory of
-// pal_policy_deployer) in a `*_mjlab` directory through the mjlab stages, as deployed on Kangaroo. Skipped when unset.
+// pal_rl_policies) in a `*_mjlab` directory through the mjlab stages, as deployed on Kangaroo. Skipped when unset.
 
 #include <gtest/gtest.h>
 
