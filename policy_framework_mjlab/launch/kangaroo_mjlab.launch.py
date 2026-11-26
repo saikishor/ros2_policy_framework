@@ -22,7 +22,9 @@ mode:=controller        policy_controller in the controller manager loop: policy
 mode:=controller_async  the same with async_inference: true: inference in its own real-time
                         thread, the PD law stays in the 1 kHz control loop
 
-robot_type:=lower_body | full_body_4dof selects the models and the impedance configuration.
+robot_type:=full_body_4dof | lower_body selects the models and the impedance configuration.
+The models are in models_dir, by default the joint-level (simple) models of pal_rl_policies;
+without loco_models, full_body_4dof runs loco v1741 alone, and lower_body has no default.
 use_sim_time:=true in simulation, in every mode: in the controller modes it skips the safety
 checks of the real robot (config/kangaroo/safety.yaml); in node mode policy_node follows /clock
 (it has no safety checks yet: no source feeds what they read).
@@ -30,12 +32,12 @@ loco_models and imitation_models take comma-separated versions, one policy each,
 loco_<version> and imitation_<version>. The first loco policy is active at start and every
 imitation returns to it after its imitation_frames. Switch with:
   ros2 service call /<policy_node|policy_controller>/switch_policy \
-    policy_framework_msgs/srv/SwitchPolicy "{policy_name: imitation_v30}"
+    policy_framework_msgs/srv/SwitchPolicy "{policy_name: loco_v1740}"
 
 config:=<file> lists the policies in a YAML file instead, with any names and per-policy
 settings (a path, or relative to config/kangaroo/):
   ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py robot_type:=full_body_4dof \
-    config:=examples/full_body_4dof_loco_imitation.yaml
+    config:=examples/full_body_4dof_loco.yaml
 Each policy names its `model` as <task>/<version>, under <models_dir>/<robot_type>; see that
 example.
 """
@@ -51,15 +53,11 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 import yaml
 
-# Default (loco model, imitation model) per robot type, as deployed by pal_policy_deployer.
-ROBOT_DEFAULTS = {
-    'lower_body': ('v315', 'v719'),
-    'full_body_4dof': ('v265', 'v30'),
-}
-# Frames of the known imitation motions (rows of 'joint_pos' in the model's motion.npz).
-MOTION_FRAMES = {
-    'lower_body': {'v719': 147},
-    'full_body_4dof': {'v30': 300},
+# Robot types, each with its <robot_type>_impedance.yaml, and their default loco model in
+# pal_rl_policies (None: loco_models or config must be given). No imitation runs by default.
+LOCO_DEFAULTS = {
+    'lower_body': None,
+    'full_body_4dof': 'v1741',
 }
 # In the controller, the gains go to the PD law as commands instead of to
 # rl_impedance_controller parameters.
@@ -67,9 +65,9 @@ CONTROLLER_OVERRIDES = {'gains_controller': '', 'gains_as_commands': True}
 
 
 def default_models_dir():
-    """Models shipped with pal_policy_deployer, when it is installed."""
+    """Joint-level (simple) models shipped with pal_rl_policies, when it is installed."""
     try:
-        return os.path.join(get_package_share_directory('pal_policy_deployer'), 'models')
+        return os.path.join(get_package_share_directory('pal_rl_policies'), 'models', 'simple')
     except PackageNotFoundError:
         return ''
 
@@ -91,25 +89,17 @@ def policy_parameters(template, models_dir, robot_type, loco_models, imitation_m
     :param loco_models: loco versions; the first one is active at start and is the one every
         imitation returns to.
     :param imitation_models: imitation versions.
-    :param imitation_frames: max_steps of each imitation, in the same order; empty to use
-        MOTION_FRAMES.
+    :param imitation_frames: max_steps of each imitation, in the same order.
     :param overrides: settings applied to every policy after the template.
     :returns: {'policies': [names], <name>: {...}} with names loco_<v> and imitation_<v>.
-    :raises ValueError: without loco models, or when a motion's frames are unknown.
+    :raises ValueError: without loco models, or without one frame count per imitation.
     :raises FileNotFoundError: when a model directory does not exist.
     """
     if not loco_models:
         raise ValueError('loco_models is empty: the first loco policy is the default one')
-    if imitation_frames and len(imitation_frames) != len(imitation_models):
+    if len(imitation_frames) != len(imitation_models):
         raise ValueError(f'imitation_frames {imitation_frames} needs one value per '
-                         f'imitation model {imitation_models}')
-    if not imitation_frames:
-        known = MOTION_FRAMES.get(robot_type, {})
-        unknown = [v for v in imitation_models if v not in known]
-        if unknown:
-            raise ValueError(f'set imitation_frames for the motions {unknown} (one value per '
-                             'imitation model, the frame count of each motion)')
-        imitation_frames = [known[v] for v in imitation_models]
+                         f'imitation model {imitation_models} (the frame count of each motion)')
 
     # The same policy config as the `config` argument, so both go through one resolver.
     config = {'policies': []}
@@ -130,12 +120,12 @@ def resolve_policies(template, models_dir, robot_type, config, overrides=None):
     :param config: {'policies': [names], <name>: {'model': '<task>/<version>', ...}}. Each
         policy starts from the template of its task, gets the model_path of its model under
         <models_dir>/<robot_type>, then its own settings on top. The first policy, active at
-        start and the one every imitation returns to, must be a loco one. An imitation without
-        max_steps takes the frames of its motion from MOTION_FRAMES. The config is not changed.
+        start and the one every imitation returns to, must be a loco one. Every imitation needs
+        max_steps, the frame count of its motion. The config is not changed.
     :param overrides: settings applied to every policy last.
     :returns: {'policies': [names], <name>: {...}}, the parameters of the policy host.
     :raises ValueError: when the first policy is not loco, a model is missing or not
-        <task>/<version> of a known task, or an unknown motion has no max_steps.
+        <task>/<version> of a known task, or an imitation has no max_steps.
     :raises FileNotFoundError: when a model directory does not exist.
     """
     names = config.get('policies', [])
@@ -159,11 +149,7 @@ def resolve_policies(template, models_dir, robot_type, config, overrides=None):
         policy['model_path'] = model_dir(models_dir, robot_type, task, version)
         policy.update(entry)
         if task == 'imitation' and 'max_steps' not in policy:
-            frames = MOTION_FRAMES.get(robot_type, {}).get(version)
-            if frames is None:
-                raise ValueError(f"policy '{name}': set max_steps, the frame count of the "
-                                 f'motion {version}')
-            policy['max_steps'] = frames
+            raise ValueError(f"policy '{name}': set max_steps, the frame count of the motion")
         policy.update(overrides or {})
         params[name] = policy
     return params
@@ -172,8 +158,8 @@ def resolve_policies(template, models_dir, robot_type, config, overrides=None):
 def read_config(path):
     """Load a policy config: an absolute path, or relative to config/kangaroo/.
 
-    :raises ValueError: when the file is empty or is a node parameter file (ros__parameters),
-        e.g. a pal_policy_controller config: the policies are given to whichever host the mode
+    :raises ValueError: when the file is empty or is a node parameter file (ros__parameters):
+        the policies are given to whichever host the mode
         runs, so the config holds them alone.
     """
     path = os.path.join(get_package_share_directory('policy_framework_mjlab'), 'config',
@@ -233,12 +219,11 @@ def launch_setup(context):
     if mode not in ('node', 'controller', 'controller_async'):
         raise ValueError(f"mode must be node, controller or controller_async, got '{mode}'")
     robot_type = arg('robot_type')
-    if robot_type not in ROBOT_DEFAULTS:
-        raise ValueError(f'robot_type must be one of {sorted(ROBOT_DEFAULTS)}, got {robot_type}')
-    loco, imitation = ROBOT_DEFAULTS[robot_type]
+    if robot_type not in LOCO_DEFAULTS:
+        raise ValueError(f'robot_type must be one of {sorted(LOCO_DEFAULTS)}, got {robot_type}')
     models_dir = arg('models_dir')
     if not models_dir:
-        raise ValueError('models_dir is empty and pal_policy_deployer is not installed')
+        raise ValueError('models_dir is empty and pal_rl_policies is not installed')
     config = os.path.join(
         get_package_share_directory('policy_framework_mjlab'), 'config', 'kangaroo')
     impedance = os.path.join(config, f'{robot_type}_impedance.yaml')
@@ -255,9 +240,8 @@ def launch_setup(context):
     else:
         policies = policy_parameters(
             template, models_dir, robot_type,
-            arg_list('loco_models') or [loco],
-            arg_list('imitation_models') or [imitation],
-            arg_list('imitation_frames'), overrides)
+            arg_list('loco_models') or [v for v in [LOCO_DEFAULTS[robot_type]] if v],
+            arg_list('imitation_models'), arg_list('imitation_frames'), overrides)
     policies = write_parameters(policies)
     safety = safety_parameters(config, arg('use_sim_time') == 'true')
     # Inactive: load and configure only, e.g. to be activated later by a supervisor.
@@ -299,23 +283,25 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('mode', default_value='controller',
                               description='node, controller or controller_async'),
-        DeclareLaunchArgument('robot_type', default_value='lower_body',
-                              description='lower_body or full_body_4dof'),
+        DeclareLaunchArgument('robot_type', default_value='full_body_4dof',
+                              description='full_body_4dof or lower_body'),
         DeclareLaunchArgument('models_dir', default_value=default_models_dir(),
-                              description='Directory with <robot_type>/<task>/<task>_<model>_mjlab'),
+                              description='Directory with <robot_type>/<task>/'
+                                          '<task>_<model>_mjlab (default: models/simple of '
+                                          'pal_rl_policies)'),
         DeclareLaunchArgument('loco_models', default_value='',
                               description='Comma-separated loco versions, the first one active '
-                                          'at start (default per robot_type)'),
+                                          'at start (default: v1741 for full_body_4dof)'),
         DeclareLaunchArgument('imitation_models', default_value='',
-                              description='Comma-separated imitation versions '
-                                          '(default per robot_type)'),
+                              description='Comma-separated imitation versions (default: none)'),
         DeclareLaunchArgument('imitation_frames', default_value='',
                               description='Comma-separated steps of each imitation before '
-                                          'returning to the first loco (known motions: default)'),
+                                          'returning to the first loco (the frame count of '
+                                          'each motion), required with imitation_models'),
         DeclareLaunchArgument('config', default_value='',
                               description='Policy config, a path or relative to '
                                           'config/kangaroo/ (e.g. examples/'
-                                          'full_body_4dof_loco_imitation.yaml). Replaces '
+                                          'full_body_4dof_loco.yaml). Replaces '
                                           'loco_models, imitation_models and imitation_frames'),
         DeclareLaunchArgument('activate_impedance_controller', default_value='True',
                               choices=['True', 'False'],

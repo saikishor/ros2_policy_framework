@@ -35,8 +35,8 @@ TEMPLATE = {
 
 @pytest.fixture
 def models(tmp_path):
-    for task, version in [('loco', 'v1'), ('loco', 'v2'), ('imitation', 'v30'),
-                          ('imitation', 'v40')]:
+    for task, version in [('loco', 'v1'), ('loco', 'v2'), ('loco', 'v1741'),
+                          ('imitation', 'v30'), ('imitation', 'v40')]:
         os.makedirs(tmp_path / 'full_body_4dof' / task / f'{task}_{version}_mjlab')
     return str(tmp_path)
 
@@ -68,14 +68,10 @@ def test_overrides_apply_to_every_policy(models):
     assert params['imitation_v30']['gains_as_commands'] is True
 
 
-def test_known_motions_have_default_frames(models):
-    params = launch.policy_parameters(TEMPLATE, models, 'full_body_4dof', ['v1'], ['v30'], [])
-    assert params['imitation_v30']['max_steps'] == 300
-
-
-def test_unknown_motions_need_their_frames(models):
+def test_imitations_need_their_frames(models):
+    # No motion has default frames: the same version may be another motion in another source.
     with pytest.raises(ValueError, match='imitation_frames'):
-        launch.policy_parameters(TEMPLATE, models, 'full_body_4dof', ['v1'], ['v40'], [])
+        launch.policy_parameters(TEMPLATE, models, 'full_body_4dof', ['v1'], ['v30'], [])
     with pytest.raises(ValueError, match='imitation_frames'):
         launch.policy_parameters(TEMPLATE, models, 'full_body_4dof', ['v1'], ['v30', 'v40'], [1])
 
@@ -124,7 +120,7 @@ def launch_actions(mode, use_sim_time, models_dir, **arguments):
                 context, action.default_value)
     context.launch_configurations.update(
         mode=mode, use_sim_time=use_sim_time, robot_type='full_body_4dof',
-        models_dir=models_dir, loco_models='v1', imitation_models='v30')
+        models_dir=models_dir, loco_models='v1', imitation_models='v30', imitation_frames='300')
     context.launch_configurations.update(arguments)
     return launch.launch_setup(context)
 
@@ -176,11 +172,7 @@ def test_config_resolves_each_model_on_its_task_template(models):
     assert CONFIG_POLICIES['walk']['model'] == 'loco/v2'
 
 
-def test_config_imitation_without_frames_uses_the_known_motion(models):
-    params = launch.resolve_policies(TEMPLATE, models, 'full_body_4dof', {
-        'policies': ['walk', 'dance'], 'walk': {'model': 'loco/v1'},
-        'dance': {'model': 'imitation/v30'}})
-    assert params['dance']['max_steps'] == 300
+def test_config_imitation_needs_its_frames(models):
     with pytest.raises(ValueError, match='max_steps'):
         launch.resolve_policies(TEMPLATE, models, 'full_body_4dof', {
             'policies': ['walk', 'dance'], 'walk': {'model': 'loco/v1'},
@@ -213,7 +205,7 @@ def test_read_config_rejects_a_file_that_is_not_a_policy_config(tmp_path, conten
 
 def test_shipped_example_config_resolves(models):
     # Relative to config/kangaroo/; its models are created in the models fixture layout.
-    config = launch.read_config('examples/full_body_4dof_loco_imitation.yaml')
+    config = launch.read_config('examples/full_body_4dof_loco.yaml')
     for policy in config['policies']:
         task, version = config[policy]['model'].split('/')
         os.makedirs(os.path.join(models, 'full_body_4dof', task, f'{task}_{version}_mjlab'),
@@ -235,7 +227,7 @@ def test_controller_config_policies_get_the_controller_overrides(models, tmp_pat
     config = tmp_path / 'policies.yaml'
     config.write_text(yaml.safe_dump(CONFIG_POLICIES))
     [spawner] = launch_actions('controller', 'true', models, config=str(config),
-                               loco_models='', imitation_models='')
+                               loco_models='', imitation_models='', imitation_frames='')
     params = spawner_policies(spawner)
     assert params['policies'] == ['walk', 'dance']
     assert params['walk']['gains_as_commands'] is True
@@ -247,3 +239,33 @@ def test_config_excludes_the_version_arguments(models, tmp_path):
     config.write_text(yaml.safe_dump(CONFIG_POLICIES))
     with pytest.raises(ValueError, match='loco_models'):
         launch_actions('controller', 'true', models, config=str(config))
+
+
+def test_models_come_from_pal_rl_policies(monkeypatch):
+    monkeypatch.setattr(launch, 'get_package_share_directory', lambda p: f'/share/{p}')
+    assert launch.default_models_dir() == '/share/pal_rl_policies/models/simple'
+
+
+def default_actions(models_dir, **arguments):
+    """Actions of the launch with only its defaults, models_dir and the given arguments."""
+    context = LaunchContext()
+    for action in launch.generate_launch_description().entities:
+        if getattr(action, 'default_value', None) is not None:
+            context.launch_configurations[action.name] = perform_substitutions(
+                context, action.default_value)
+    context.launch_configurations.update(models_dir=models_dir, use_sim_time='true',
+                                         **arguments)
+    return launch.launch_setup(context)
+
+
+def test_default_is_the_4dof_loco_policy_without_imitation(models):
+    [spawner] = default_actions(models)
+    params = spawner_policies(spawner)
+    assert params['policies'] == ['loco_v1741']
+    assert params['loco_v1741']['model_path'].endswith(
+        os.path.join('full_body_4dof', 'loco', 'loco_v1741_mjlab'))
+
+
+def test_lower_body_has_no_default_model(models):
+    with pytest.raises(ValueError, match='loco_models'):
+        default_actions(models, robot_type='lower_body')
