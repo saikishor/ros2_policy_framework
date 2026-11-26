@@ -376,6 +376,90 @@ TEST(EncoderMismatchCheckConfigTest, RejectsANonPositiveTolerance)
   EXPECT_ANY_THROW(check.configure({node, "encoders"}, commands, state));
 }
 
+class StateValueCheckTest : public ::testing::Test
+{
+protected:
+  void configure(bool persist)
+  {
+    const auto node = make_node(
+      "values", {
+        {"actuators.prefixes", StringArray{"a1", "a2"}},
+        {"actuators.interfaces", StringArray{"mode"}},
+        {"actuators.mode.fault_values", std::vector<int64_t>{103, 104}},
+        {"actuators.persist", persist}});
+    check.configure({node, "actuators"}, commands, state);
+  }
+
+  void set(const std::string & name, double v) {state.set(state.index(name), v, 0.0);}
+  bool ok()
+  {
+    verdict = check.check(state, 0.0, reason);
+    return verdict.safe;
+  }
+
+  policy_framework::StateValueCheck check;
+  DataStore commands;
+  DataStore state;
+  std::string reason;
+  policy_framework::SafetyCheck::Verdict verdict;
+};
+
+TEST_F(StateValueCheckTest, RegistersAnEntryPerPrefixAndInterface)
+{
+  configure(false);
+  EXPECT_TRUE(state.find("a1/mode").has_value());
+  EXPECT_TRUE(state.find("a2/mode").has_value());
+}
+
+TEST_F(StateValueCheckTest, FaultsWhileAnEntryHasAFaultValue)
+{
+  configure(false);
+  EXPECT_TRUE(ok());  // nothing received yet
+  set("a1/mode", 3.0);
+  set("a2/mode", 102.0);  // e.g. a drive switching control mode: fine
+  EXPECT_TRUE(ok());
+  set("a1/mode", 103.0);
+  set("a2/mode", 104.0);
+  EXPECT_FALSE(ok());
+  EXPECT_FALSE(verdict.reaction.has_value());  // the configured on_fault
+  // Every failing entry is named, like rl_safety_controller's log.
+  EXPECT_NE(reason.find("a1/mode is 103"), std::string::npos) << reason;
+  EXPECT_NE(reason.find("a2/mode is 104"), std::string::npos) << reason;
+  set("a1/mode", 3.0);
+  set("a2/mode", 3.0);
+  EXPECT_TRUE(ok());  // without persist: passes again
+}
+
+TEST_F(StateValueCheckTest, FaultsOnANonFiniteValue)
+{
+  configure(false);
+  set("a1/mode", std::nan(""));
+  EXPECT_FALSE(ok());
+}
+
+TEST_F(StateValueCheckTest, WithPersistKeepsFailingUntilReset)
+{
+  configure(true);
+  set("a1/mode", 103.0);
+  EXPECT_FALSE(ok());
+  set("a1/mode", 3.0);
+  EXPECT_FALSE(ok());
+  EXPECT_NE(reason.find("a1/mode"), std::string::npos) << reason;
+  check.reset();
+  EXPECT_TRUE(ok());
+}
+
+TEST(StateValueCheckConfigTest, RejectsAnInterfaceWithoutFaultValues)
+{
+  const auto node = make_node(
+    "no_fault_values", {
+      {"actuators.prefixes", StringArray{"a1"}},
+      {"actuators.interfaces", StringArray{"mode"}}});
+  policy_framework::StateValueCheck check;
+  DataStore commands, state;
+  EXPECT_ANY_THROW(check.configure({node, "actuators"}, commands, state));
+}
+
 }  // namespace
 
 namespace

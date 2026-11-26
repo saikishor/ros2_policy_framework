@@ -38,6 +38,9 @@
   <class name="policy_framework/EncoderMismatchCheck" type="policy_framework::EncoderMismatchCheck" base_class_type="policy_framework::SafetyCheck">
     <description>Fails when the &lt;joint&gt;/absolute_position and &lt;joint&gt;/position of a joint differ more than a tolerance (e.g. a slipping incremental encoder).</description>
   </class>
+  <class name="policy_framework/StateValueCheck" type="policy_framework::StateValueCheck" base_class_type="policy_framework::SafetyCheck">
+    <description>Fails while a state entry &lt;prefix&gt;/&lt;interface&gt; has one of its fault_values (e.g. an actuator mode in error, a false is_safe).</description>
+  </class>
   <class name="policy_framework/MockSafetyCheck" type="policy_framework::MockSafetyCheck" base_class_type="policy_framework::SafetyCheck">
     <description>Fails on request from a policy_framework_msgs/msg/MockFault topic, to test the fault reactions.</description>
   </class>

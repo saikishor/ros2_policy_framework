@@ -1,0 +1,26 @@
+state_value_check:
+  prefixes:
+    type: string_array
+    description: "Prefixes of the checked state entries <prefix>/<interface>, e.g. actuator names or robot."
+    read_only: true
+    validation:
+      not_empty<>: null
+      unique<>: null
+  interfaces:
+    type: string_array
+    description: "Interfaces checked for every prefix, e.g. mode, is_safe; each needs <interface>.fault_values."
+    read_only: true
+    validation:
+      not_empty<>: null
+      unique<>: null
+  __map_interfaces:
+    fault_values:
+      type: int_array
+      default_value: []
+      description: "Values (rounded to the nearest integer) that mean a fault, e.g. [103] for an actuator mode in error, [0] for a false is_safe; required."
+      read_only: true
+  persist:
+    type: bool
+    default_value: false
+    description: "Once failed, keep failing until the host is reactivated or its safety is reset (~/reset_safety), even when the values are fine again."
+    read_only: true
