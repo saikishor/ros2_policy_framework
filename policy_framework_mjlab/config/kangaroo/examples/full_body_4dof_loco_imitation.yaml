@@ -1,0 +1,21 @@
+# Kangaroo full_body_4dof: the default loco and imitation policies, as a policy config. The
+# equivalent of:
+#
+#   ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py robot_type:=full_body_4dof \
+#       loco_models:=v265 imitation_models:=v30 imitation_frames:=300
+#
+# Launch it with:
+#
+#   ros2 launch policy_framework_mjlab kangaroo_mjlab.launch.py robot_type:=full_body_4dof \
+#       config:=examples/full_body_4dof_loco_imitation.yaml
+#
+# Each policy starts from the settings of its task in config/kangaroo/policies.yaml, gets the
+# model_path of `model` (<task>/<version> under <models_dir>/<robot_type>), then its own keys on
+# top. Names are free. The first policy must be a loco one: it is active at start and every
+# imitation returns to it after its max_steps (default: the frames of a known motion).
+policies: [loco_v265, imitation_v30]
+loco_v265:
+  model: loco/v265
+imitation_v30:
+  model: imitation/v30
+  max_steps: 300
