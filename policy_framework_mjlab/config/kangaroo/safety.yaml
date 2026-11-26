@@ -1,0 +1,30 @@
+# Safety checks of the real Kangaroo legs, loaded by kangaroo_mjlab.launch.py after the
+# policy_controller configuration. Not with use_sim_time:=true, as the MuJoCo simulation exposes
+# neither <joint>/absolute_position nor <actuator>/mode. Not for policy_node yet (#45): none of
+# its sources feeds these entries.
+/**:
+  ros__parameters:
+    safety_checks: [leg_encoders, leg_actuators]
+    # The absolute and the incremental encoder of every leg joint must agree.
+    leg_encoders:
+      type: policy_framework/EncoderMismatchCheck
+      on_fault: neutral_commands
+      joints: [
+        leg_left_1_joint, leg_left_2_joint, leg_left_3_joint,
+        leg_left_4_joint, leg_left_5_joint, leg_left_length_joint,
+        leg_right_1_joint, leg_right_2_joint, leg_right_3_joint,
+        leg_right_4_joint, leg_right_5_joint, leg_right_length_joint]
+      tolerance: 0.05   # rad, m for the length joints; tune on the robot
+      persist: true     # a wrong homing does not fix itself: ignore the operator until reset
+    # No leg actuator in error (mode 103) or idle (mode 50)
+    leg_actuators:
+      type: policy_framework/StateValueCheck
+      on_fault: neutral_commands
+      prefixes: [
+        leg_left_1_actuator, leg_left_2_actuator, leg_left_3_actuator,
+        leg_left_4_actuator, leg_left_5_actuator, leg_left_length_actuator,
+        leg_right_1_actuator, leg_right_2_actuator, leg_right_3_actuator,
+        leg_right_4_actuator, leg_right_5_actuator, leg_right_length_actuator]
+      interfaces: [mode]
+      mode: {fault_values: [50, 103]}
+      persist: true
