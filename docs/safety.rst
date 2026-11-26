@@ -149,7 +149,7 @@ one is shown in :doc:`extending`.
 They are listed in ``safety_checks``, each with its ``type`` and its reaction ``on_fault``
 (default ``error``, see `Fault reactions`_). ``policy_node`` runs them on every tick, before
 the policy step. ``PolicyController`` runs them on every update, before the policy, and claims
-what they read as state interfaces. The framework ships four:
+what they read as state interfaces. The framework ships five:
 
 ``StateBoundsCheck`` checks every ``<prefix>/<interface>`` entry against the bounds of its
 interface. A non-finite value is out of bounds; an entry never received is not checked. With a
@@ -195,6 +195,33 @@ joint and both values:
      joints: [leg_left_1_joint, leg_left_2_joint]
      tolerance: 0.05
      persist: true   # never recover by itself
+
+``StateValueCheck`` fails while an entry has one of the ``<interface>.fault_values`` (compared
+after rounding to the nearest integer), or is not finite: codes whose faulty values are not at
+either end of the range, so that bounds cannot express them. The reason names every failing
+entry. ``persist`` works as for ``EncoderMismatchCheck``. A bool state interface reads as 0 or 1.
+It covers what ``rl_safety_controller`` watches, the actuators in error and the hardware's
+safety flag, with ``neutral_commands`` and ``persist`` for its "ignore the operator until
+reactivated". Unlike it, the latch is per host (it clears when that host is reactivated or
+reset), and every actuator is listed in ``prefixes`` (no regular expression):
+
+.. code-block:: yaml
+
+   safety_checks: [actuators, hardware]
+   actuators:
+     type: policy_framework/StateValueCheck
+     on_fault: neutral_commands
+     prefixes: [leg_left_1_actuator, leg_left_2_actuator]
+     interfaces: [mode]
+     mode: {fault_values: [103]}   # other modes, e.g. while a drive switches, are fine
+     persist: true
+   hardware:
+     type: policy_framework/StateValueCheck
+     on_fault: neutral_commands
+     prefixes: [robot]
+     interfaces: [is_safe]
+     is_safe: {fault_values: [0]}
+     persist: true
 
 ``MockSafetyCheck`` fails on request, to see how the robot really reacts to a fault at a chosen
 moment (standing, walking, during a jump) before a real one happens. It subscribes to
