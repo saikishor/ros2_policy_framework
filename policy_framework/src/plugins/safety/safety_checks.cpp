@@ -278,4 +278,5 @@ void MockSafetyCheck::reset() {forgotten_ = topic_.get().msg;}
 PLUGINLIB_EXPORT_CLASS(policy_framework::StateBoundsCheck, policy_framework::SafetyCheck)
 PLUGINLIB_EXPORT_CLASS(policy_framework::JumpCheck, policy_framework::SafetyCheck)
 PLUGINLIB_EXPORT_CLASS(policy_framework::EncoderMismatchCheck, policy_framework::SafetyCheck)
+PLUGINLIB_EXPORT_CLASS(policy_framework::StateValueCheck, policy_framework::SafetyCheck)
 PLUGINLIB_EXPORT_CLASS(policy_framework::MockSafetyCheck, policy_framework::SafetyCheck)
