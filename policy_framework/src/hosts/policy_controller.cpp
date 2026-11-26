@@ -471,7 +471,8 @@ controller_interface::return_type PolicyController::update_items(
     }
   }
   if (status == PolicyPipeline::Status::ERROR) {
-    return react(runner_->policy_failure("The policy step failed"));
+    return react(
+      runner_->policy_failure("The policy step failed: " + runner_->pipeline().error()));
   }
   if (status == PolicyPipeline::Status::OK) {policy_ready_ = true;}
   // Before the first commands since activation the command store may still hold the previous
