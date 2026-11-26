@@ -170,11 +170,22 @@ def resolve_policies(template, models_dir, robot_type, config, overrides=None):
 
 
 def read_config(path):
-    """Load a policy config: an absolute path, or relative to config/kangaroo/."""
+    """Load a policy config: an absolute path, or relative to config/kangaroo/.
+
+    :raises ValueError: when the file is empty or is a node parameter file (ros__parameters),
+        e.g. a pal_policy_controller config: the policies are given to whichever host the mode
+        runs, so the config holds them alone.
+    """
     path = os.path.join(get_package_share_directory('policy_framework_mjlab'), 'config',
                         'kangaroo', path)
     with open(path) as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+    if not isinstance(config, dict):
+        raise ValueError(f'{path} is empty or not a mapping: it needs a policies list')
+    if any(isinstance(v, dict) and 'ros__parameters' in v for v in config.values()):
+        raise ValueError(f'{path} has ros__parameters: give the policies at the top level, '
+                         'without a node name (see config/kangaroo/examples)')
+    return config
 
 
 def write_parameters(params):
