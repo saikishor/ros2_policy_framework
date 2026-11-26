@@ -154,7 +154,9 @@ or, chaining into a pid_controller that closes the loop:
     `PdEffortExecutor`, nothing for `ReferenceInterfaceExecutor`.
   - *Fault reactions*: the safety checks run on every update, before the policy. A failing
     check applies its reaction; a failed policy step (including a non-finite model output,
-    which never reaches the commands) applies `on_policy_failure`. While a reaction other than
+    which never reaches the commands) applies `on_policy_failure`; the logged and published
+    reason says which policy failed and why (e.g. `model output 'actions' is not finite`).
+    While a reaction other than
     `neutral_commands` is latched the policy is neither stepped nor followed: the executors
     write `hold`, `damp` or `safe` on every update until the controller is reactivated or its
     safety is reset (see [Safety reset](#safety-reset)), or for `error` they write their safe
@@ -165,6 +167,10 @@ or, chaining into a pid_controller that closes the loop:
   - *Unreadable state interfaces* (locked by their writer, e.g. an asynchronous hardware
     component): the previous value is used for up to `max_failed_reads` consecutive updates;
     one more writes the safe values and returns `ERROR`.
+  - *NaN state interfaces at startup*: hardware interfaces start as NaN until their driver
+    writes them. Such an interface counts as not received yet, so the policy waits for it
+    (the executors hold) instead of failing. Once it had a value, a NaN goes through and
+    fails the step (`on_policy_failure`).
   - *Safety entry* (`safety_entry`, e.g. `rl_safety_controller/safe`): a state entry, claimed
     as a state interface, that is 0 while user commands must be ignored. The policy keeps
     running (the robot keeps balancing) with neutral commands: zero velocity (`TwistSource`,
